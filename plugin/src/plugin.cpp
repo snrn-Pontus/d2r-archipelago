@@ -1215,7 +1215,8 @@ void __cdecl OnItemTooltip(const D2RL::PluginContext*, D2RL::SharedEvents::ItemT
 		for (auto line = gHistory.rbegin(); line != gHistory.rend(); ++line) {
 			std::string shown = line->rfind("Archipelago: ", 0) == 0 ? line->substr(13) : *line;
 			// Server housekeeping isn't worth the space.
-			if (shown.find("compressed websocket") != std::string::npos || shown.find(" has joined") != std::string::npos) {
+			if (shown.find("compressed websocket") != std::string::npos || shown.find(" has joined") != std::string::npos
+			    || shown.find(" has left the game") != std::string::npos) {
 				continue;
 			}
 			// Tooltips don't wrap; keep lines short.

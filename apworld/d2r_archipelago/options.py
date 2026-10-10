@@ -55,7 +55,7 @@ class SkillPoolSize(Range):
     display_name = "Skill Pool Size"
     range_start = 10
     range_end = 240
-    default = 30
+    default = 16
 
 
 class SkillCopies(Range):
@@ -63,7 +63,7 @@ class SkillCopies(Range):
     display_name = "Skill Copies"
     range_start = 1
     range_end = 5
-    default = 1
+    default = 2
 
 
 class SkillFocus(Choice):
@@ -75,7 +75,7 @@ class SkillFocus(Choice):
     option_any_skills = 0
     option_class_weighted = 1
     option_few_but_deep = 2
-    default = 0
+    default = 1
 
 
 class SkillLevelScaling(Range):
