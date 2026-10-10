@@ -29,6 +29,8 @@ enum class ConnectionState { Idle, Connecting, Connected, Refused };
 struct SlotData {
 	int  goal        = 0;
 	int  goalAct     = 5;
+	// The class the seed was made for ("Barbarian"), or empty for any.
+	std::string characterClass;
 	int  goalQuest   = 40;
 	bool areaChecks  = true;
 	bool levelChecks = true;

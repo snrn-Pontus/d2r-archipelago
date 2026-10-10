@@ -219,6 +219,7 @@ void Client::Handle(const std::string& text) {
 			const json data = packet.value("slot_data", json::object());
 			slotData_.goal = data.value("goal", 0);
 			slotData_.goalAct = data.value("goal_act", 5);
+			slotData_.characterClass = data.value("character_class", "");
 			slotData_.goalQuest = data.value("goal_quest", 40);
 			slotData_.areaChecks = data.value("area_checks", true);
 			slotData_.levelChecks = data.value("level_checks", true);

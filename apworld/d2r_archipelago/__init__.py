@@ -3,7 +3,7 @@ from typing import Any
 from BaseClasses import Item, ItemClassification, Location, Region, Tutorial
 from worlds.AutoWorld import WebWorld, World
 
-from .data import AREAS, CLASSES, QUESTS, SKILLS
+from .data import AREAS, CLASSES, QUESTS, SKILLS, STARTER_SKILLS
 from .ids import (ACTS, BASIC_LOOT, DIFFICULTIES, EMPOWERMENT, LEVEL_CAPS, LEVEL_STEP, TRAP, UNIQUE_LOOT,
                   area_location_name, item_name_to_id, level_location_name, location_name_to_id,
                   quest_location_name, skill_item_name, skill_names_by_class)
@@ -140,9 +140,9 @@ class D2RWorld(World):
         if size > location_count:
             raise Exception(f"{self.player_name}: {self.required_skills(self.act_count - 1)} skills needed by "
                             f"skills_per_act don't fit in {location_count} locations; lower skills_per_act.")
-        chosen = self.random.sample(candidates, starting + size)
-        self.starting = chosen[:starting]
-        self.skill_pool = chosen[starting:]
+        self.starting = self.pick_starting_skills(starting, candidates)
+        rest = [name for name in candidates if name not in self.starting]
+        self.skill_pool = self.random.sample(rest, min(size, len(rest)))
         for name in self.starting:
             self.multiworld.push_precollected(self.create_item(name))
         pool = [self.create_item(name) for name in self.skill_pool]
@@ -154,6 +154,24 @@ class D2RWorld(World):
         pool += [self.create_item(TRAP) for _ in range(traps)]
         pool += [self.create_filler() for _ in range(remaining - traps)]
         self.multiworld.itempool += pool
+
+    def class_name(self) -> str:
+        """The chosen class's name ("Barbarian"), or "" for any."""
+        if self.options.character_class.value == 0:
+            return ""
+        return list(CLASSES.values())[self.options.character_class.value - 1]
+
+    def pick_starting_skills(self, count: int, candidates: list[str]) -> list[str]:
+        """Starting skills: the chosen class's level-1 skills first, then the rest of its skills.
+        With no class chosen, any skills from the pool."""
+        own = self.class_name()
+        if not own:
+            return self.random.sample(candidates, count)
+        starters = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if CLASSES[cls] == own and sid in STARTER_SKILLS]
+        others = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if CLASSES[cls] == own and sid not in STARTER_SKILLS]
+        self.random.shuffle(starters)
+        self.random.shuffle(others)
+        return (starters + others)[:count]
 
     def loot_weights(self) -> dict[str, float]:
         weights = {name: self.options.basic_loot_weight.value / len(BASIC_LOOT) for name in BASIC_LOOT}
@@ -173,6 +191,7 @@ class D2RWorld(World):
         return {
             "goal": self.options.goal.value,
             "goal_act": self.options.goal_act.value,
+            "character_class": self.class_name(),
             "goal_quest": BOSS_QUESTS[self.options.goal_act.value - 1],
             "area_checks": bool(self.options.area_checks),
             "level_checks": bool(self.options.level_checks),

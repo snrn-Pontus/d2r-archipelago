@@ -23,6 +23,8 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			goalReached = value != 0;
 		} else if (key == "level") {
 			level = static_cast<int>(value);
+		} else if (key == "class") {
+			playerClass = static_cast<int>(value);
 		}
 	}
 	return true;
@@ -39,7 +41,7 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		if (!file) {
 			return false;
 		}
-		file << "fillers " << fillersDelivered << "\ngoal " << (goalReached ? 1 : 0) << "\nlevel " << level << "\n";
+		file << "fillers " << fillersDelivered << "\ngoal " << (goalReached ? 1 : 0) << "\nlevel " << level << "\nclass " << playerClass << "\n";
 		for (const int64_t check : checks) {
 			file << "check " << check << "\n";
 		}

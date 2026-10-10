@@ -23,6 +23,9 @@ struct Config {
 	uint32_t codexPrefix = data::CodexPrefix;
 	// Properties.txt *Id of "oskill" (+N to a skill usable by any class).
 	uint32_t oskillProperty = 265;
+	// Properties.txt *Id of "skill" (+N to one of your own class's skills).
+	// Unlike oskill it adds no +6 to the item's level requirement.
+	uint32_t classSkillProperty = 123;
 };
 
 // Reads the flat `key = value` lines of the plugin's TOML file. Tables are

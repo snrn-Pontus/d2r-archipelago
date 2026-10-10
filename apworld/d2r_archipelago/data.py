@@ -246,6 +246,9 @@ SKILLS = [
     (402, 'Abyss', 'war'),
 ]
 
+# Active skills with a vanilla level requirement of 1.
+STARTER_SKILLS = frozenset([6, 7, 8, 10, 36, 38, 39, 40, 66, 67, 68, 70, 96, 97, 98, 99, 100, 126, 130, 131, 221, 222, 223, 225, 251, 253, 254, 255, 373, 385, 395])
+
 # (level id, act index, name)
 AREAS = [
     (3, 0, 'Cold Plains'),

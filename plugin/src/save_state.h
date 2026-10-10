@@ -15,6 +15,8 @@ struct SaveState {
 	bool goalReached = false;
 	// Highest character level seen, for scaling loot.
 	int level = 0;
+	// The player's class id as seen in game (0 Amazon ... 7 Warlock), or -1.
+	int playerClass = -1;
 
 	bool Load(const std::filesystem::path& path);
 	bool Save(const std::filesystem::path& path) const;

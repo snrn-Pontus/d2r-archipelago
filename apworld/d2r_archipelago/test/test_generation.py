@@ -78,6 +78,23 @@ class TestOnlyBasicLoot(D2RTestBase):
                 self.assertIn(item.name, BASIC_LOOT)
 
 
+class TestBarbarianStart(D2RTestBase):
+    options = {"character_class": "barbarian", "starting_skills": 3}
+
+    def test_starting_skills_are_level_one_barbarian_skills(self) -> None:
+        from ..data import SKILLS, STARTER_SKILLS
+        barbarian = {f"{name} (Barbarian)" for sid, name, cls in SKILLS if cls == "bar" and sid in STARTER_SKILLS}
+        starting = [item.name for item in self.multiworld.precollected_items[self.player]]
+        self.assertEqual(len(starting), 3)
+        for name in starting:
+            self.assertIn(name, barbarian)
+        self.assertEqual(self.world.fill_slot_data()["character_class"], "Barbarian")
+
+    def test_starting_skills_not_in_pool(self) -> None:
+        starting = {item.name for item in self.multiworld.precollected_items[self.player]}
+        self.assertFalse(starting & {item.name for item in self.multiworld.itempool})
+
+
 class TestShortGame(D2RTestBase):
     options = {"goal": "normal", "goal_act": 2}
 

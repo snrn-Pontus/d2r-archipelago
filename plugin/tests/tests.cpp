@@ -64,12 +64,14 @@ void TestSaveStateRoundTrip() {
 	state.checks = { ap::ids::QuestLocation(0, 1), ap::ids::AreaLocation(38), ap::ids::LevelLocation(30) };
 	state.fillersDelivered = 7;
 	state.goalReached = true;
+	state.playerClass = 4;
 	EXPECT(state.Save(path));
 	ap::SaveState loaded;
 	EXPECT(loaded.Load(path));
 	EXPECT(loaded.checks == state.checks);
 	EXPECT(loaded.fillersDelivered == 7);
 	EXPECT(loaded.goalReached);
+	EXPECT(loaded.playerClass == 4);
 	std::filesystem::remove_all(path.parent_path());
 }
 

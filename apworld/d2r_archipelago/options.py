@@ -25,6 +25,24 @@ class GoalAct(Range):
     default = 5
 
 
+class CharacterClass(Choice):
+    """The class you'll play. Your starting skills come from its level-1 skills, and the Codex grants
+    that class's skills as class skills, usable from level 1. Skills of other classes need level 6
+    (Diablo II adds 6 to the requirement of another class's skill). "any" picks starting skills from
+    the whole pool. The plugin also detects your class in game, after your first kill."""
+    display_name = "Character Class"
+    option_any = 0
+    option_amazon = 1
+    option_sorceress = 2
+    option_necromancer = 3
+    option_paladin = 4
+    option_barbarian = 5
+    option_druid = 6
+    option_assassin = 7
+    option_warlock = 8
+    default = 0
+
+
 class SkillPoolSize(Range):
     """How many skills are shuffled into the multiworld. Capped at the number of locations."""
     display_name = "Skill Pool Size"
@@ -183,6 +201,7 @@ class ItemStatRequirements(DefaultOnToggle):
 class D2ROptions(PerGameCommonOptions):
     goal: Goal
     goal_act: GoalAct
+    character_class: CharacterClass
     skill_pool_size: SkillPoolSize
     starting_skills: StartingSkills
     skill_classes: SkillClasses

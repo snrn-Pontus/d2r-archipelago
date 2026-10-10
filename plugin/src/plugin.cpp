@@ -49,7 +49,7 @@ constexpr D2RL::PluginInfo Info {
 // The Codex charm's item seed carries this marker in its top byte, then the
 // chunk number, the skill level (1 + Codex Empowerments) and the skill count.
 // Bump the marker whenever the Codex recipe changes, so old charms get rebuilt.
-constexpr uint32_t CodexMarker     = 0xAC000000U;
+constexpr uint32_t CodexMarker     = 0xAD000000U;
 constexpr uint32_t CodexMarkerMask = 0xFF000000U;
 constexpr uint32_t CodexMaxSkills  = 60;
 constexpr auto     FeedLifetime    = std::chrono::seconds(12);
@@ -88,6 +88,29 @@ int                   gPlayerLevel  = 0;
 // Where the character is, for estimating its level before that.
 int                   gDifficulty   = 0;
 int                   gAct          = 0;
+// The player's class id seen in game (from the killer of a monster), or -1.
+int                   gPlayerClass  = -1;
+
+// D2 class ids, in order.
+constexpr const char* ClassNames[] = { "Amazon", "Sorceress", "Necromancer", "Paladin", "Barbarian", "Druid", "Assassin", "Warlock" };
+
+auto ClassIndex(const std::string& name) -> int {
+	for (int i = 0; i < static_cast<int>(std::size(ClassNames)); ++i) {
+		if (name == ClassNames[i]) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+auto SkillClass(uint32_t skill) -> int {
+	for (const auto& entry : ap::data::Skills) {
+		if (entry.id == skill) {
+			return ClassIndex(entry.cls);
+		}
+	}
+	return -1;
+}
 Clock::time_point     gLastRoomWarning;
 // After a failed item update, wait before trying again instead of every frame.
 Clock::time_point     gRetryAt;
@@ -242,6 +265,10 @@ void BindSession(uint64_t session) {
 		goal = gSave.goalReached;
 		gPlayerLevel = std::max(gPlayerLevel, gSave.level);
 		gSave.level = gPlayerLevel;
+		if (gPlayerClass < 0) {
+			gPlayerClass = gSave.playerClass;
+		}
+		gSave.playerClass = gPlayerClass;
 		level = gPlayerLevel;
 		gBoundSession = session;
 		gCodexDirty = true;
@@ -422,10 +449,10 @@ struct CodexScan {
 	std::vector<D2RL::Items::ItemInfo> found;
 };
 
-// Markers 0xA9-0xAB were earlier recipes (Magic charms with random affixes).
+// Markers 0xA9-0xAC were earlier recipes.
 auto IsCodexSeed(uint32_t seed) -> bool {
 	const uint32_t marker = seed & CodexMarkerMask;
-	return marker == CodexMarker || (marker >= 0xA9000000U && marker <= 0xAB000000U);
+	return marker == CodexMarker || (marker >= 0xA9000000U && marker <= 0xAC000000U);
 }
 
 // The Codex seed, from whichever seed field kept it (0 if neither did).
@@ -500,13 +527,14 @@ void DiagnoseCodex(D2RL::PlayerHandle player, const D2RL::Items::ItemCreateSpec&
 	}
 }
 
-auto CodexSeed(uint32_t chunk, uint32_t level, uint32_t count) -> uint32_t {
-	return CodexMarker | (chunk << 16) | (std::min<uint32_t>(level, 255) << 8) | count;
+// marker(8) | class + 1 (4) | chunk (4) | skill level (8) | skill count (8)
+auto CodexSeed(uint32_t chunk, int playerClass, uint32_t level, uint32_t count) -> uint32_t {
+	return CodexMarker | (static_cast<uint32_t>(playerClass + 1) << 20) | ((chunk & 0xF) << 16) | (std::min<uint32_t>(level, 255) << 8) | count;
 }
 
 // Make sure each 60-skill chunk has exactly one up-to-date Codex charm in the
 // inventory. Returns false when an update couldn't be placed.
-bool SyncCodex(D2RL::PlayerHandle player, const std::vector<uint32_t>& skills, uint32_t level, const ap::Config& config) {
+bool SyncCodex(D2RL::PlayerHandle player, const std::vector<uint32_t>& skills, uint32_t level, int playerClass, const ap::Config& config) {
 	CodexScan scan { ap::loot::CodeFromText(config.codexItem.c_str()), {} };
 	const D2RL::Inventory::ItemFilter filter {
 		.structSize    = D2RL::Inventory::ItemFilterSize,
@@ -520,12 +548,12 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<uint32_t>& skills, u
 	for (uint32_t chunk = 0; chunk < std::max<uint32_t>(chunks, 1); ++chunk) {
 		const size_t first = chunk * CodexMaxSkills;
 		const size_t count = first < skills.size() ? std::min<size_t>(CodexMaxSkills, skills.size() - first) : 0;
-		const uint32_t wanted = CodexSeed(chunk, level, static_cast<uint32_t>(count));
+		const uint32_t wanted = CodexSeed(chunk, playerClass, level, static_cast<uint32_t>(count));
 		bool current = false;
 		std::vector<D2RL::Items::TransactionInput> stale;
 		for (const auto& item : scan.found) {
 			const uint32_t seed = CodexSeedOf(item);
-			if (((seed >> 16) & 0xFF) != chunk && (seed & CodexMarkerMask) == CodexMarker) {
+			if (((seed >> 16) & 0xF) != chunk && (seed & CodexMarkerMask) == CodexMarker) {
 				continue;
 			}
 			if (!current && seed == wanted && item.container == D2RL::Items::ItemContainer::Inventory) {
@@ -539,7 +567,10 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<uint32_t>& skills, u
 		}
 		std::vector<D2RL::Items::PropertySpec> properties;
 		for (size_t index = first; index < first + count; ++index) {
-			properties.push_back(D2RL::Items::MakeExactProperty(config.oskillProperty, static_cast<int32_t>(level), static_cast<int32_t>(skills[index])));
+			// Your own class's skills as class skills (no +6 level requirement).
+			const bool own = playerClass >= 0 && SkillClass(skills[index]) == playerClass;
+			properties.push_back(D2RL::Items::MakeExactProperty(own ? config.classSkillProperty : config.oskillProperty, static_cast<int32_t>(level),
+				static_cast<int32_t>(skills[index])));
 		}
 		std::vector<D2RL::Items::ItemCreateSpec> outputs;
 		if (!current && count > 0) {
@@ -657,7 +688,15 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		}
 		level += item.item == ap::ids::EmpowermentItem ? 1 : 0;
 	}
-	const bool codexOk = SyncCodex(player, skills, level, config);
+	int playerClass = -1;
+	{
+		std::lock_guard lock(gMutex);
+		playerClass = gPlayerClass;
+	}
+	if (playerClass < 0) {
+		playerClass = ClassIndex(gClient->Slots().characterClass);
+	}
+	const bool codexOk = SyncCodex(player, skills, level, playerClass, config);
 
 	std::mt19937 random(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
 	const int characterLevel = EffectiveLevel();
@@ -900,9 +939,21 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 
 // Runs on the server thread; only used to learn the current difficulty.
 void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::MonsterDeathEvent* event, void*) noexcept {
-	if (D2RL::Lifecycle::HasMonsterDeathEventField(event, D2RL::Lifecycle::MonsterDeathEventRequiredSize)) {
-		std::lock_guard lock(gMutex);
-		gDifficulty = static_cast<int>(event->difficulty);
+	if (!D2RL::Lifecycle::HasMonsterDeathEventField(event, D2RL::Lifecycle::MonsterDeathEventRequiredSize)) {
+		return;
+	}
+	std::lock_guard lock(gMutex);
+	gDifficulty = static_cast<int>(event->difficulty);
+	// A player's kill tells us the player's class (single player: it's you).
+	const int killerClass = static_cast<int>(event->killer.classId);
+	if (event->killer.type == D2RL::Lifecycle::UnitType::Player && killerClass >= 0 && killerClass < static_cast<int>(std::size(ClassNames))
+		&& killerClass != gPlayerClass) {
+		gPlayerClass = killerClass;
+		gCodexDirty = true;
+		if (gBoundSession != 0) {
+			gSave.playerClass = killerClass;
+			gSave.Save(gSavePath);
+		}
 	}
 }
 
