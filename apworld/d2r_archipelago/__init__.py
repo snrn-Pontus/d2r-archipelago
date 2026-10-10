@@ -61,6 +61,9 @@ class D2RWorld(World):
         cap = previous + (LEVEL_CAPS[goal] - previous) * goal_act // len(ACTS)
         self.level_cap = max(LEVEL_STEP, cap - cap % LEVEL_STEP)
         self.randomizer_seed = self.random.getrandbits(31)
+        # Logic caps, filled in by create_regions and create_items.
+        self.locations_before: list[int] = [0] * (self.act_count + 1)
+        self.skill_cap = 1 << 30
         self.skill_pool: list[str] = []
         self.starting: list[str] = []
 
@@ -68,7 +71,9 @@ class D2RWorld(World):
         return f"{DIFFICULTIES[index // len(ACTS)]} {ACTS[index % len(ACTS)]}"
 
     def required_skills(self, index: int) -> int:
-        return index * self.options.skills_per_act.value
+        """Skills logic expects before act `index`: skills_per_act each, but never more skills than the
+        seed has, nor more than half the locations in the earlier acts (the rest hold keys and loot)."""
+        return min(index * self.options.skills_per_act.value, self.skill_cap, self.locations_before[index] // 2)
 
     def create_regions(self) -> None:
         menu = Region("Menu", self.player, self.multiworld)
@@ -81,9 +86,11 @@ class D2RWorld(World):
         menu.connect(acts[0])
         keys = bool(self.options.act_keys)
         for index in range(1, self.act_count):
-            need, key = self.required_skills(index), act_key_name(index)
-            acts[index - 1].connect(acts[index], rule=lambda state, need=need, key=key:
-                                    state.has_group(SKILLS_GROUP, self.player, need) and (not keys or state.has(key, self.player)))
+            # The skill count is looked up when the rule runs: the caps are only known after create_items.
+            key = act_key_name(index)
+            acts[index - 1].connect(acts[index], rule=lambda state, index=index, key=key:
+                                    state.has_group(SKILLS_GROUP, self.player, self.required_skills(index))
+                                    and (not keys or state.has(key, self.player)))
 
         def add(region: Region, name: str) -> None:
             region.locations.append(D2RLocation(self.player, name, location_name_to_id[name], region))
@@ -101,6 +108,13 @@ class D2RWorld(World):
             for level in range(LEVEL_STEP, cap + 1, LEVEL_STEP):
                 # Spread the milestones over the acts in proportion to the level cap.
                 add(acts[min(self.act_count - 1, (level - 1) * self.act_count // cap)], level_location_name(level))
+
+        # Locations open before each act, not counting the boss quests' locked uniques.
+        boss_locked = {quest_location_name(d, name) for d in range(3) for flag, _act, name in QUESTS if flag in BOSS_QUESTS} \
+            if self.options.boss_quests_give_uniques else set()
+        for index in range(1, self.act_count + 1):
+            self.locations_before[index] = self.locations_before[index - 1] + sum(
+                1 for location in acts[index - 1].locations if location.name not in boss_locked)
 
         final = acts[-1]
         victory = D2RLocation(self.player, f"Defeat {BOSS_NAMES[self.options.goal_act.value - 1]}", None, final)
@@ -145,15 +159,14 @@ class D2RWorld(World):
         # Logic needs every act's skill count to be reachable from the pool plus starting skills.
         needed = self.required_skills(self.act_count - 1) - starting
         if distinct * copies < needed:
-            distinct = min(len(candidates) - starting, -(-needed // copies))
-        if distinct * copies > location_count or distinct * copies < needed:
-            raise Exception(f"{self.player_name}: {self.required_skills(self.act_count - 1)} skills needed by "
-                            f"skills_per_act don't fit in {location_count} locations; lower skills_per_act.")
+            distinct = min(len(candidates) - starting, location_count // copies, -(-needed // copies))
         self.starting = self.pick_starting_skills(starting, candidates)
         rest = [name for name in candidates if name not in self.starting]
         self.skill_pool = self.pick_skill_pool(rest, distinct)
         for name in self.starting:
             self.multiworld.push_precollected(self.create_item(name))
+        # Logic never asks for more skills than the seed holds.
+        self.skill_cap = len(self.starting) + len(self.skill_pool) * copies
         pool = [self.create_item(name) for name in self.skill_pool for _ in range(copies)]
         empowerments = min(self.options.codex_empowerments.value, location_count - len(pool))
         location_count += len(keys)
@@ -210,6 +223,8 @@ class D2RWorld(World):
 
     def fill_slot_data(self) -> dict[str, Any]:
         return {
+            # The plugin warns when its version doesn't match the world that made the seed.
+            "world_version": ".".join(str(part) for part in self.world_version),
             "goal": self.options.goal.value,
             "goal_act": self.options.goal_act.value,
             "character_class": self.class_name(),

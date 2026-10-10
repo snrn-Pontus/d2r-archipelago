@@ -36,12 +36,15 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
+// Must share major.minor with apworld/d2r_archipelago/archipelago.json.
+constexpr const char* PluginVersion = "0.2.0";
+
 constexpr D2RL::PluginInfo Info {
 	.infoSize    = D2RL::PluginInfoSize,
 	.abiVersion  = D2RL_PLUGIN_ABI_VERSION,
 	.id          = "archipelago",
 	.name        = "Archipelago",
-	.version     = "0.1.0",
+	.version     = PluginVersion,
 	.author      = "snrn",
 	.description = "Archipelago multiworld client: shuffled skills arrive as a Codex charm, loot scales to your level.",
 	.flags       = D2RL::PluginFlags::Shared,
@@ -338,6 +341,18 @@ void CheckInstalledMod(const std::string& seed) {
 	}
 }
 
+// Seeds from a different apworld version may use ids or settings this plugin
+// doesn't know, so say so instead of misbehaving quietly.
+void CheckVersion() {
+	const std::string world = gClient->Slots().worldVersion;
+	auto majorMinor = [](const std::string& version) { return version.substr(0, version.rfind('.')); };
+	if (world.empty()) {
+		Feed("Archipelago: this seed doesn't say which apworld made it; it may be older than plugin " + std::string(PluginVersion) + ".");
+	} else if (majorMinor(world) != majorMinor(PluginVersion)) {
+		Feed("Archipelago: this seed was made with apworld " + world + " but the plugin is " + PluginVersion + "; update the older one.");
+	}
+}
+
 // Load the save for a newly connected seed and send what the server is missing.
 void BindSession(uint64_t session) {
 	const std::string seed = gClient->Seed();
@@ -377,6 +392,7 @@ void BindSession(uint64_t session) {
 	}
 	Log("Archipelago: bound to seed " + seed + " slot " + slot + ", " + std::to_string(unsent) + " checks not on the server yet.");
 	CheckInstalledMod(seed);
+	CheckVersion();
 }
 
 // ---- Items (game thread) --------------------------------------------------
@@ -567,12 +583,6 @@ auto __cdecl CollectCodex(const D2RL::PluginContext*, const D2RL::Items::ItemInf
 	if (item == nullptr || item->structSize < D2RL::Items::ItemInfoRequiredSize || item->code != scan->code) {
 		return D2RL::Inventory::IterationAction::Continue;
 	}
-	// Log every charm of the Codex type a few times per run, to diagnose matching.
-	static int logged = 0;
-	if (logged < 12) {
-		++logged;
-		Log("Archipelago: scan found " + DescribeItem(*item) + (CodexSeedOf(*item) != 0 ? " (Codex)" : "") + ".");
-	}
 	if (CodexSeedOf(*item) != 0) {
 		scan->found.push_back(*item);
 	}
@@ -710,7 +720,6 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& s
 			for (const uint32_t record : UniqueRecords("Archipelago Codex")) {
 				outputs[0].qualityRecordId = record;
 				status = apply();
-				Log("Archipelago: Codex unique at row " + std::to_string(record) + ": result " + std::to_string(static_cast<uint32_t>(status)) + ".");
 				if (status == D2RL::Items::Result::Success) {
 					break;
 				}
@@ -847,9 +856,6 @@ auto MeasureText(const D2RL::Overlay::Frame* frame, const std::string& text, flo
 	return gOverlay->measureText(gContext, &request, &metrics) == D2RL::Overlay::Result::Success ? metrics.width : size * 0.55F * text.size();
 }
 
-uint32_t gLastRectResult = UINT32_MAX;
-uint32_t gLastTextResult = UINT32_MAX;
-
 void FillRect(const D2RL::Overlay::Frame* frame, D2RL::Overlay::Rect rect, D2RL::Overlay::Color color) {
 	const D2RL::Overlay::FilledRectangleRequest request {
 		.structSize = D2RL::Overlay::FilledRectangleRequestSize,
@@ -858,7 +864,7 @@ void FillRect(const D2RL::Overlay::Frame* frame, D2RL::Overlay::Rect rect, D2RL:
 		.color      = color,
 		.rounding   = 4.0F,
 	};
-	gLastRectResult = static_cast<uint32_t>(gOverlay->drawFilledRectangle(gContext, &request));
+	gOverlay->drawFilledRectangle(gContext, &request);
 }
 
 void DrawText(const D2RL::Overlay::Frame* frame, float x, float y, const std::string& text, D2RL::Overlay::Color color) {
@@ -871,23 +877,10 @@ void DrawText(const D2RL::Overlay::Frame* frame, float x, float y, const std::st
 		.text       = text.data(),
 		.textLength = static_cast<uint32_t>(std::min<size_t>(text.size(), D2RL::Overlay::MaxTextBytes)),
 	};
-	gLastTextResult = static_cast<uint32_t>(gOverlay->drawText(gContext, &request));
+	gOverlay->drawText(gContext, &request);
 }
 
-// Logs the overlay's state every ten seconds for the first minute.
-void ReportOverlay(const D2RL::Overlay::Frame* frame) {
-	static auto next = Clock::now();
-	static int reports = 0;
-	if (reports >= 6 || Clock::now() < next) {
-		return;
-	}
-	++reports;
-	next = Clock::now() + std::chrono::seconds(10);
-	char message[200] {};
-	std::snprintf(message, sizeof(message), "Archipelago: overlay frame %llu, screen %.0fx%.0f, text size %.1f, last box result %u, last text result %u.",
-		static_cast<unsigned long long>(frame->frameNumber), frame->screenWidth, frame->screenHeight, TextSize(frame), gLastRectResult, gLastTextResult);
-	Log(message);
-}
+
 
 void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* frame, void*) noexcept {
 	if (frame == nullptr || !gClient) {
@@ -945,8 +938,6 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	const float statusX = size * 0.5F, statusY = size * 0.4F;
 	FillRect(frame, { statusX - pad, statusY - pad, statusX + MeasureText(frame, status, size) + pad, statusY + size + pad }, { 0.0F, 0.0F, 0.0F, 0.55F });
 	DrawText(frame, statusX, statusY, status, { 0.85F, 0.75F, 0.45F, 1.0F });
-
-	ReportOverlay(frame);
 
 	// Messages in the bottom-left, above the skill bar, like D2's chat.
 	if (!feed.empty()) {

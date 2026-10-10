@@ -50,6 +50,16 @@ The apworld's tests run inside an Archipelago source checkout with `worlds/d2r_a
 python -m pytest worlds/d2r_archipelago/test
 ```
 
+## Playing in a multiworld
+
+Only whoever generates the multiworld needs this project: build `dist/d2r_archipelago.apworld` and the
+options template with `python -I tools/build_apworld.py <archipelago-checkout>`, and give the host the
+`.apworld` and your YAML. Custom worlds can't be generated on archipelago.gg, so the host generates locally
+and can upload the seed there to host it. The other players need nothing extra.
+
+`tools/fuzz_apworld.py <archipelago-checkout> [rounds]` generates random option sets, solo and with up to
+three players, and checks every seed fills and can be beaten.
+
 ## Installing and playing
 
 See [the setup guide](apworld/d2r_archipelago/docs/setup_en.md).

@@ -217,6 +217,7 @@ void Client::Handle(const std::string& text) {
 			}
 			locationCount_ = checked_.size() + packet.value("missing_locations", json::array()).size();
 			const json data = packet.value("slot_data", json::object());
+			slotData_.worldVersion = data.value("world_version", "");
 			slotData_.goal = data.value("goal", 0);
 			slotData_.goalAct = data.value("goal_act", 5);
 			slotData_.characterClass = data.value("character_class", "");

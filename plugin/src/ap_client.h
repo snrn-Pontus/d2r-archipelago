@@ -27,6 +27,8 @@ struct NetworkItem {
 enum class ConnectionState { Idle, Connecting, Connected, Refused };
 
 struct SlotData {
+	// The apworld version that generated the seed ("0.2.0"), or empty.
+	std::string worldVersion;
 	int  goal        = 0;
 	int  goalAct     = 5;
 	// The class the seed was made for ("Barbarian"), or empty for any.
