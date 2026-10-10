@@ -22,7 +22,7 @@ class GoalAct(Range):
     display_name = "Goal Act"
     range_start = 1
     range_end = 5
-    default = 5
+    default = 4
 
 
 class CharacterClass(Choice):
@@ -43,12 +43,19 @@ class CharacterClass(Choice):
     default = 0
 
 
+class ActKeys(DefaultOnToggle):
+    """Each act after the first needs its key ("Normal Act II Key" and so on), which can be anywhere in the
+    multiworld. You can still walk into a locked act, but the checks you complete there are held and only
+    sent once its key arrives, so you'll sometimes wait on other players, and they on you."""
+    display_name = "Act Keys"
+
+
 class SkillPoolSize(Range):
     """How many skills are shuffled into the multiworld. Capped at the number of locations."""
     display_name = "Skill Pool Size"
     range_start = 10
     range_end = 240
-    default = 60
+    default = 30
 
 
 class StartingSkills(Range):
@@ -72,7 +79,7 @@ class SkillsPerAct(Range):
     display_name = "Skills Per Act"
     range_start = 0
     range_end = 6
-    default = 2
+    default = 1
 
 
 class AreaChecks(DefaultOnToggle):
@@ -91,7 +98,7 @@ class CodexEmpowerments(Range):
     display_name = "Codex Empowerments"
     range_start = 0
     range_end = 10
-    default = 3
+    default = 2
 
 
 class BossQuestsGiveUniques(DefaultOnToggle):
@@ -195,7 +202,7 @@ class BetterDrops(Range):
     display_name = "Better Drops"
     range_start = 100
     range_end = 500
-    default = 100
+    default = 150
 
 
 class RunewordShuffle(Toggle):
@@ -209,7 +216,7 @@ class ExperienceMultiplier(Range):
     display_name = "Experience Multiplier"
     range_start = 50
     range_end = 500
-    default = 100
+    default = 150
 
 
 class ItemLevelRequirements(DefaultOnToggle):
@@ -227,6 +234,7 @@ class D2ROptions(PerGameCommonOptions):
     goal: Goal
     goal_act: GoalAct
     character_class: CharacterClass
+    act_keys: ActKeys
     skill_pool_size: SkillPoolSize
     starting_skills: StartingSkills
     skill_classes: SkillClasses

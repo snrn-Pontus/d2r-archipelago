@@ -10,7 +10,9 @@ charm that grants +1 to every skill you've found (D2's `oskill` property, which 
 Locations are story quests on each difficulty up to the goal, first visits to waypoint and landmark areas,
 and every fifth character level. The goal is killing Baal on the chosen difficulty.
 
-Games can be as short as Normal Act 1 or as long as a full Hell run (`goal` and `goal_act`). The setup tool
+Each act after the first needs an Act Key from the multiworld; checks in a locked act are held until it
+arrives. The defaults aim at a 4-6 hour game (Normal to Diablo). Games can be as short as Normal Act 1 or as
+long as a full Hell run (`goal` and `goal_act`). The setup tool
 also randomizes the game itself per seed: monster line-ups (levelled to fit when shuffled across acts),
 superuniques, runeword recipes, monster density, champion packs, drop quality, experience and item
 requirements.

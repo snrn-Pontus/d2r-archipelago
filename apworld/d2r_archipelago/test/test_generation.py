@@ -20,16 +20,23 @@ class TestDefaults(D2RTestBase):
         self.assertEqual(len(self.multiworld.precollected_items[self.player]), 2)
 
     def test_act_gate(self) -> None:
-        # Two starting skills cover Act II (2 needed) but not Act III (4 needed).
+        # Act II needs its key (and 1 skill, which the 2 starting skills cover).
+        self.assertFalse(self.can_reach_region("Normal Act II"))
+        self.collect_by_name("Normal Act II Key")
         self.assertTrue(self.can_reach_region("Normal Act II"))
         self.assertFalse(self.can_reach_region("Normal Act III"))
-        self.collect(self.world.create_item(self.world.skill_pool[0]))
-        self.collect(self.world.create_item(self.world.skill_pool[1]))
+        self.collect_by_name("Normal Act III Key")
         self.assertTrue(self.can_reach_region("Normal Act III"))
+
+    def test_keys_in_pool(self) -> None:
+        names = [item.name for item in self.multiworld.itempool]
+        for key in ("Normal Act II Key", "Normal Act III Key", "Normal Act IV Key"):
+            self.assertEqual(names.count(key), 1)
+        self.assertNotIn("Normal Act V Key", names)
 
 
 class TestHell(D2RTestBase):
-    options = {"goal": "hell", "skills_per_act": 2, "skill_pool_size": 10}
+    options = {"goal": "hell", "goal_act": 5, "skills_per_act": 2, "skill_pool_size": 10}
 
     def test_pool_grows_to_satisfy_logic(self) -> None:
         skills = [item for item in self.multiworld.get_items() if item.name in self.world.item_name_groups["Skills"]]
@@ -47,7 +54,7 @@ class TestSingleClass(D2RTestBase):
 
 
 class TestLoot(D2RTestBase):
-    options = {"goal": "nightmare", "codex_empowerments": 4, "junk_trap_percentage": 20}
+    options = {"goal": "nightmare", "goal_act": 5, "codex_empowerments": 4, "junk_trap_percentage": 20}
 
     def test_boss_quests_hold_uniques(self) -> None:
         for difficulty in ("Normal", "Nightmare"):

@@ -220,6 +220,7 @@ void Client::Handle(const std::string& text) {
 			slotData_.goal = data.value("goal", 0);
 			slotData_.goalAct = data.value("goal_act", 5);
 			slotData_.characterClass = data.value("character_class", "");
+			slotData_.actKeys = data.value("act_keys", false);
 			slotData_.goalQuest = data.value("goal_quest", 40);
 			slotData_.areaChecks = data.value("area_checks", true);
 			slotData_.levelChecks = data.value("level_checks", true);

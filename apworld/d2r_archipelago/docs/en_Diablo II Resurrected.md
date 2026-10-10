@@ -20,6 +20,14 @@ Kill the boss of the act set by `goal_act` on the difficulty set by `goal`. That
 `goal: normal` with `goal_act: 2` ends at Duriel and is a short game, `goal: hell` with `goal_act: 5` is the
 full run. Quests, areas and level milestones past the goal are left out.
 
+## What makes me wait for other players?
+
+With `act_keys` (on by default), every act after the first needs its key, such as "Normal Act II Key", and
+the keys are shuffled into the multiworld. You can still walk into a locked act, but the quests and areas
+you complete there are only recorded; they're sent, all at once, when the key arrives. Level milestones
+aren't held. The defaults (Normal to Diablo, with a little more experience and loot) aim at a 4 to 6 hour
+game.
+
 ## What else is randomized?
 
 The setup tool rewrites the game's tables for your seed:

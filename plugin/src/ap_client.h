@@ -31,6 +31,8 @@ struct SlotData {
 	int  goalAct     = 5;
 	// The class the seed was made for ("Barbarian"), or empty for any.
 	std::string characterClass;
+	// Checks in an act are held until its key arrives.
+	bool actKeys     = false;
 	int  goalQuest   = 40;
 	bool areaChecks  = true;
 	bool levelChecks = true;

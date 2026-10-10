@@ -4,7 +4,7 @@ from BaseClasses import Item, ItemClassification, Location, Region, Tutorial
 from worlds.AutoWorld import WebWorld, World
 
 from .data import AREAS, CLASSES, QUESTS, SKILLS, STARTER_SKILLS
-from .ids import (ACTS, BASIC_LOOT, DIFFICULTIES, EMPOWERMENT, LEVEL_CAPS, LEVEL_STEP, TRAP, UNIQUE_LOOT,
+from .ids import (ACTS, BASIC_LOOT, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, LEVEL_CAPS, LEVEL_STEP, TRAP, UNIQUE_LOOT, act_key_name,
                   area_location_name, item_name_to_id, level_location_name, location_name_to_id,
                   quest_location_name, skill_item_name, skill_names_by_class)
 from .options import D2ROptions
@@ -50,7 +50,7 @@ class D2RWorld(World):
 
     item_name_to_id = item_name_to_id
     location_name_to_id = location_name_to_id
-    item_name_groups = {SKILLS_GROUP: set().union(*skill_names_by_class.values()), **skill_names_by_class}
+    item_name_groups = {SKILLS_GROUP: set().union(*skill_names_by_class.values()), **skill_names_by_class, "Act Keys": set(KEY_NAMES)}
 
     def generate_early(self) -> None:
         goal, goal_act = self.options.goal.value, self.options.goal_act.value
@@ -79,10 +79,11 @@ class D2RWorld(World):
             self.multiworld.regions.append(region)
             acts.append(region)
         menu.connect(acts[0])
+        keys = bool(self.options.act_keys)
         for index in range(1, self.act_count):
-            need = self.required_skills(index)
-            acts[index - 1].connect(acts[index], rule=lambda state, need=need:
-                                    state.has_group(SKILLS_GROUP, self.player, need))
+            need, key = self.required_skills(index), act_key_name(index)
+            acts[index - 1].connect(acts[index], rule=lambda state, need=need, key=key:
+                                    state.has_group(SKILLS_GROUP, self.player, need) and (not keys or state.has(key, self.player)))
 
         def add(region: Region, name: str) -> None:
             region.locations.append(D2RLocation(self.player, name, location_name_to_id[name], region))
@@ -108,7 +109,9 @@ class D2RWorld(World):
         self.multiworld.completion_condition[self.player] = lambda state: state.has("Victory", self.player)
 
     def create_item(self, name: str) -> D2RItem:
-        if name == TRAP:
+        if name in KEY_NAMES:
+            classification = ItemClassification.progression
+        elif name == TRAP:
             classification = ItemClassification.trap
         elif name in USEFUL_LOOT:
             classification = ItemClassification.useful
@@ -130,9 +133,10 @@ class D2RWorld(World):
                         location = self.get_location(quest_location_name(difficulty, name))
                         location.place_locked_item(self.create_item(BOSS_UNIQUE))
 
-        allowed = {CLASSES[code] for code in CLASSES} if not self.options.skill_classes.value             else set(self.options.skill_classes.value)
+        allowed = set(self.options.skill_classes.value) or set(CLASSES.values())
         candidates = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if CLASSES[cls] in allowed]
-        location_count = len(self.multiworld.get_unfilled_locations(self.player))
+        keys = [self.create_item(act_key_name(index)) for index in range(1, self.act_count)] if self.options.act_keys else []
+        location_count = len(self.multiworld.get_unfilled_locations(self.player)) - len(keys)
         starting = min(self.options.starting_skills.value, len(candidates))
         size = min(self.options.skill_pool_size.value, len(candidates) - starting, location_count)
         # Logic needs every act's skill count to be reachable from the pool plus starting skills.
@@ -147,6 +151,8 @@ class D2RWorld(World):
             self.multiworld.push_precollected(self.create_item(name))
         pool = [self.create_item(name) for name in self.skill_pool]
         empowerments = min(self.options.codex_empowerments.value, location_count - len(pool))
+        location_count += len(keys)
+        pool = keys + pool
         pool += [self.create_item(EMPOWERMENT) for _ in range(empowerments)]
 
         remaining = location_count - len(pool)
@@ -192,6 +198,7 @@ class D2RWorld(World):
             "goal": self.options.goal.value,
             "goal_act": self.options.goal_act.value,
             "character_class": self.class_name(),
+            "act_keys": bool(self.options.act_keys),
             "goal_quest": BOSS_QUESTS[self.options.goal_act.value - 1],
             "area_checks": bool(self.options.area_checks),
             "level_checks": bool(self.options.level_checks),

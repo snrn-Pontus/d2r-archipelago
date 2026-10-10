@@ -174,22 +174,112 @@ auto SanitizeFileName(std::string name) -> std::string {
 
 // ---- Checks ---------------------------------------------------------------
 
+// ---- Act keys ---------------------------------------------------------------
+//
+// With act keys, a check in an act is recorded when you complete it but only
+// sent once you hold that act's key, so progress waits on other players.
+
+// Checks already sent this session, so key arrivals don't resend everything.
+std::set<int64_t> gSent;
+bool              gGoalSent = false;
+// Acts we've already said are locked this session.
+std::set<int>     gWarnedActs;
+uint64_t          gKeyItems = UINT64_MAX;
+
+constexpr const char* ActNames[] = { "Act I", "Act II", "Act III", "Act IV", "Act V" };
+constexpr const char* DifficultyNames[] = { "Normal", "Nightmare", "Hell" };
+
+auto ActLabel(int act) -> std::string {
+	return std::string(DifficultyNames[act / 5]) + " " + ActNames[act % 5];
+}
+
+// The act (0 = Normal Act I ... 14 = Hell Act V) a location belongs to, or -1
+// for checks that aren't tied to an act (level milestones).
+auto ActOfLocation(int64_t location) -> int {
+	const int64_t offset = location - ap::ids::LocationBase;
+	if (offset >= 0 && offset < 300) {
+		for (const auto& quest : ap::data::Quests) {
+			if (quest.flag == offset % 100) {
+				return static_cast<int>(offset / 100) * 5 + quest.act;
+			}
+		}
+	} else if (offset >= 1000 && offset < 2000) {
+		for (const auto& area : ap::data::Areas) {
+			if (area.id == offset - 1000) {
+				return area.act;
+			}
+		}
+	}
+	return -1;
+}
+
+auto UnlockedActs() -> std::set<int> {
+	std::set<int> acts { 0 };
+	for (const auto& item : gClient->Items()) {
+		if (ap::ids::IsKeyItem(item.item)) {
+			acts.insert(static_cast<int>(item.item - ap::ids::KeyBase));
+		}
+	}
+	return acts;
+}
+
+// Sends every recorded check (and the goal) that isn't held behind a key.
+void SendReady() {
+	if (!gClient || gClient->State() != ap::ConnectionState::Connected) {
+		return;
+	}
+	const ap::SlotData slots = gClient->Slots();
+	const std::set<int64_t> server = gClient->Checked();
+	const std::set<int> unlocked = UnlockedActs();
+	auto open = [&](int act) { return !slots.actKeys || act <= 0 || unlocked.contains(act); };
+	std::vector<int64_t> ready;
+	bool goal = false;
+	{
+		std::lock_guard lock(gMutex);
+		if (gBoundSession == 0) {
+			return;
+		}
+		for (const int64_t check : gSave.checks) {
+			if (!server.contains(check) && !gSent.contains(check) && open(ActOfLocation(check))) {
+				ready.push_back(check);
+				gSent.insert(check);
+			}
+		}
+		goal = gSave.goalReached && !gGoalSent && open(slots.goal * 5 + slots.goalAct - 1);
+		gGoalSent = gGoalSent || goal;
+	}
+	gClient->SendChecks(ready);
+	if (goal) {
+		gClient->SendGoal();
+		Feed("Archipelago: goal complete!");
+	}
+}
+
 void AddChecks(const std::vector<int64_t>& locations) {
-	std::vector<int64_t> fresh;
+	bool added = false;
+	std::vector<int> locked;
+	const ap::SlotData slots = gClient ? gClient->Slots() : ap::SlotData {};
+	const std::set<int> unlocked = gClient ? UnlockedActs() : std::set<int> { 0 };
 	{
 		std::lock_guard lock(gMutex);
 		for (const int64_t location : locations) {
-			const bool added = gBoundSession != 0 ? gSave.checks.insert(location).second : gUnbound.insert(location).second;
-			if (added) {
-				fresh.push_back(location);
+			if (gBoundSession != 0 ? gSave.checks.insert(location).second : gUnbound.insert(location).second) {
+				added = true;
+				const int act = ActOfLocation(location);
+				if (slots.actKeys && act > 0 && !unlocked.contains(act) && gWarnedActs.insert(act).second) {
+					locked.push_back(act);
+				}
 			}
 		}
-		if (!fresh.empty() && gBoundSession != 0) {
+		if (added && gBoundSession != 0) {
 			gSave.Save(gSavePath);
 		}
 	}
-	if (!fresh.empty() && gClient) {
-		gClient->SendChecks(fresh);
+	for (const int act : locked) {
+		Feed("Archipelago: " + ActLabel(act) + " is locked; its checks are held until you find the " + ActLabel(act) + " Key.");
+	}
+	if (added) {
+		SendReady();
 	}
 }
 
@@ -201,8 +291,15 @@ void ReachGoal() {
 			gSave.Save(gSavePath);
 		}
 	}
-	gClient->SendGoal();
-	Feed("Archipelago: goal complete!");
+	SendReady();
+	bool sent = false;
+	{
+		std::lock_guard lock(gMutex);
+		sent = gGoalSent;
+	}
+	if (!sent) {
+		Feed("Archipelago: goal reached! It counts once you hold the key for its act.");
+	}
 }
 
 void CheckLevelMilestones(int level) {
@@ -245,8 +342,7 @@ void BindSession(uint64_t session) {
 	const std::string seed = gClient->Seed();
 	const std::string slot = gClient->Slot();
 	const std::set<int64_t> serverChecked = gClient->Checked();
-	std::vector<int64_t> unsent;
-	bool goal = false;
+	size_t unsent = 0;
 	int level = 0;
 	{
 		std::lock_guard lock(gMutex);
@@ -258,11 +354,12 @@ void BindSession(uint64_t session) {
 		gSave.checks.insert(serverChecked.begin(), serverChecked.end());
 		gSave.Save(gSavePath);
 		for (const int64_t check : gSave.checks) {
-			if (!serverChecked.contains(check)) {
-				unsent.push_back(check);
-			}
+			unsent += serverChecked.contains(check) ? 0 : 1;
 		}
-		goal = gSave.goalReached;
+		gSent.clear();
+		gGoalSent = false;
+		gWarnedActs.clear();
+		gKeyItems = UINT64_MAX;
 		gPlayerLevel = std::max(gPlayerLevel, gSave.level);
 		gSave.level = gPlayerLevel;
 		if (gPlayerClass < 0) {
@@ -273,14 +370,11 @@ void BindSession(uint64_t session) {
 		gBoundSession = session;
 		gCodexDirty = true;
 	}
-	gClient->SendChecks(unsent);
-	if (goal) {
-		gClient->SendGoal();
-	}
+	SendReady();
 	if (level > 0) {
 		CheckLevelMilestones(level);
 	}
-	Log("Archipelago: bound to seed " + seed + " slot " + slot + ", resent " + std::to_string(unsent.size()) + " checks.");
+	Log("Archipelago: bound to seed " + seed + " slot " + slot + ", " + std::to_string(unsent) + " checks not on the server yet.");
 	CheckInstalledMod(seed);
 }
 
@@ -817,6 +911,10 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	}
 	for (const std::string& message : gClient->TakeMessages()) {
 		Feed(message);
+	}
+	if (const uint64_t items = gClient->ItemsGeneration(); items != gKeyItems && gClient->State() == ap::ConnectionState::Connected) {
+		gKeyItems = items;
+		SendReady();
 	}
 
 	bool work = false;
