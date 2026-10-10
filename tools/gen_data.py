@@ -95,6 +95,9 @@ def main() -> None:
     # like "Expansion" included, so they're the row position, not the *ID column.
     # (Confirmed in game: asking for *ID-based record 438 was refused.)
     LAST_LOD_SET_ID = 126  # McAuley's Superstition
+    # Quest items have unique rows too (Khalim's Will, Horadric Staff...). As loot
+    # they'd trip the quest-item checks, so they're never rewards.
+    QUEST_ITEM_CODES = {"leg", "hdm", "hfh", "hst", "msf", "qf1", "qf2", "g33", "d33", "vip"}
 
     def quality_rows(table: str, code_column: str):
         rows = []
@@ -107,6 +110,8 @@ def main() -> None:
             if table == "setitems.txt" and row.get("*ID", "").isdigit() and int(row["*ID"]) > LAST_LOD_SET_ID:
                 continue
             code = row.get(code_column, "")
+            if code in QUEST_ITEM_CODES:
+                continue
             if not code or row.get("disabled") == "1" or row.get("firstLadderSeason"):
                 continue
             kind = kind_of(code)
