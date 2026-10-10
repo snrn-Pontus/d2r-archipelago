@@ -94,9 +94,18 @@ def main() -> None:
     # D2R's record numbers count every row of UniqueItems/SetItems, divider rows
     # like "Expansion" included, so they're the row position, not the *ID column.
     # (Confirmed in game: asking for *ID-based record 438 was refused.)
+    LAST_LOD_SET_ID = 126  # McAuley's Superstition
+
     def quality_rows(table: str, code_column: str):
         rows = []
         for position, row in enumerate(read_table(excel / table)):
+            # Reign of the Warlock items: uniques after the "Warlock Class Pack"
+            # divider and sets past McAuley's Folly. Lord of Destruction
+            # characters can't receive them.
+            if row.get("index") == "Warlock Class Pack":
+                break
+            if table == "setitems.txt" and row.get("*ID", "").isdigit() and int(row["*ID"]) > LAST_LOD_SET_ID:
+                continue
             code = row.get(code_column, "")
             if not code or row.get("disabled") == "1" or row.get("firstLadderSeason"):
                 continue

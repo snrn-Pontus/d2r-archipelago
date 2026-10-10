@@ -913,6 +913,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	std::mt19937 random(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
 	const int characterLevel = EffectiveLevel();
 	size_t next = std::min(delivered, items.size());
+	bool   roomFull = false;
 	for (; next < items.size(); ++next) {
 		if (!ap::ids::IsLootItem(items[next].item)) {
 			continue;
@@ -922,13 +923,32 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			Feed("Archipelago: a Junk Backpack! " + std::to_string(GiveJunk(player, random)) + " pieces of junk in your inventory.");
 			continue;
 		}
-		const auto pick = ap::loot::Roll(loot, characterLevel, random);
+		// An item D2R refuses everywhere may not exist for this character, so roll
+		// others. If none fit, a mid rune stands in; if even that won't fit, the
+		// containers are full and we wait for the player to make room.
+		ap::loot::Pick pick {};
+		bool placed = false;
+		for (int attempt = 0; attempt < 5 && !placed; ++attempt) {
+			pick = ap::loot::Roll(loot, characterLevel, random);
+			if (pick.code == 0) {
+				break;
+			}
+			placed = GiveLoot(player, pick);
+			if (!placed) {
+				Log("Archipelago: couldn't place " + pick.name + "; rolling another.");
+			}
+		}
 		if (pick.code == 0) {
 			continue;
 		}
-		if (!GiveLoot(player, pick)) {
-			Log("Archipelago: couldn't place " + pick.name + "; will retry.");
-			break;
+		if (!placed) {
+			pick = ap::loot::Roll(ap::loot::Loot::MidRune, characterLevel, random);
+			placed = pick.code != 0 && GiveLoot(player, pick);
+			if (!placed) {
+				roomFull = true;
+				break;
+			}
+			Log("Archipelago: gave " + pick.name + " in place of a reward that wouldn't fit.");
 		}
 		if (pick.quality == D2RL::Items::Quality::Unique || pick.quality == D2RL::Items::Quality::Set || loot == ap::loot::Loot::HighRune) {
 			Feed("Archipelago: you got " + pick.name + "!");
@@ -949,6 +969,10 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	if (!codexOk && Clock::now() - gLastRoomWarning > std::chrono::seconds(30)) {
 		gLastRoomWarning = Clock::now();
 		gFeed.push_back({ "Archipelago: couldn't place the Codex charm; make room in your inventory (details in the log).", Clock::now() });
+	}
+	if (roomFull && Clock::now() - gLastRoomWarning > std::chrono::seconds(30)) {
+		gLastRoomWarning = Clock::now();
+		gFeed.push_back({ "Archipelago: rewards are waiting; make room in your inventory, cube or stash.", Clock::now() });
 	}
 }
 

@@ -710,18 +710,6 @@ inline constexpr QualityItem Uniques[] = {
 	{ 398, "jew", 85, 49, Jewelry, "Rainbow Facet" },
 	{ 399, "jew", 85, 49, Jewelry, "Rainbow Facet" },
 	{ 400, "jew", 85, 49, Jewelry, "Rainbow Facet" },
-	{ 409, "waf", 85, 80, Armor, "Ars Al'Diablolos" },
-	{ 410, "wae", 85, 73, Armor, "Ars Tor'Baalos" },
-	{ 411, "wac", 85, 78, Armor, "Ars Dul'Mephistos" },
-	{ 412, "wa6", 58, 52, Armor, "Measured Wrath" },
-	{ 413, "72h", 69, 61, Weapon, "Dreadfang" },
-	{ 414, "utb", 73, 67, Armor, "Wraithstep" },
-	{ 415, "7di", 73, 67, Weapon, "Bloodpact Shard" },
-	{ 416, "rin", 58, 50, Jewelry, "Sling" },
-	{ 417, "rin", 58, 50, Jewelry, "Opalvein" },
-	{ 418, "amu", 60, 54, Jewelry, "Entropy Locket" },
-	{ 419, "utc", 79, 71, Armor, "Gheed's Wager" },
-	{ 420, "xsk", 55, 50, Armor, "Unique Warlock Helm" },
 };
 
 inline constexpr QualityItem SetItems[] = {
@@ -848,19 +836,6 @@ inline constexpr QualityItem SetItems[] = {
 	{ 125, "vbt", 20, 20, Armor, "McAuley's Riprap" },
 	{ 126, "vgl", 20, 28, Armor, "McAuley's Taboo" },
 	{ 127, "bwn", 20, 25, Weapon, "McAuley's Superstition" },
-	{ 128, "hgl", 99, 1, Armor, "Warlord's Conquest" },
-	{ 129, "ghm", 99, 1, Armor, "Warlord's Lust" },
-	{ 130, "ful", 99, 1, Armor, "Warlord's Mantle" },
-	{ 131, "hbt", 99, 1, Armor, "Warlord's Crushers" },
-	{ 132, "hbl", 99, 1, Armor, "Warlord's Authority" },
-	{ 133, "kri", 7, 8, Weapon, "Bane's Oathmaker" },
-	{ 134, "hla", 7, 8, Armor, "Bane's Wraithskin" },
-	{ 135, "vbl", 7, 8, Armor, "Bane's Authority" },
-	{ 136, "usk", 40, 62, Armor, "Horazon's Countenance" },
-	{ 137, "xpl", 40, 55, Armor, "Horazon's Dominion" },
-	{ 138, "xlg", 40, 48, Armor, "Horazon's Hold" },
-	{ 139, "utb", 40, 67, Armor, "Horazon's Legacy" },
-	{ 140, "wad", 40, 57, Armor, "Horazon's Secrets" },
 };
 
 inline constexpr Base SocketBases[] = {
