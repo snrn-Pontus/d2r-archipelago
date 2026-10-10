@@ -6,6 +6,7 @@
 #include "game_data.h"
 #include "ids.h"
 #include "loot.h"
+#include "quest_triggers.h"
 #include "randomizer.h"
 #include "table.h"
 #include "save_state.h"
@@ -52,6 +53,27 @@ void TestCodexLevels() {
 	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) != ap::codex::Fingerprint(flat, 0, 2, 4));
 	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) == ap::codex::Fingerprint(ap::codex::Entries(items, 14, 3), 0, 2, 4));
 	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) != ap::codex::Fingerprint(entries, 0, 2, 3));
+}
+
+void TestQuestTriggers() {
+	using ap::quests::Find;
+	using ap::quests::Trigger;
+	EXPECT(Find(Trigger::Kill, 156) == 6);   // Andariel
+	EXPECT(Find(Trigger::Kill, 544) == 40);  // Baal
+	EXPECT(Find(Trigger::Item, ap::quests::Code("hst")) == 10);
+	EXPECT(Find(Trigger::Area, 38) == 4);    // Tristram
+	EXPECT(!Find(Trigger::Kill, 1).has_value());
+	// Every trigger points at a known quest, and every quest but Den of Evil has one.
+	std::set<uint8_t> covered { 1 };
+	for (const auto& trigger : ap::quests::Triggers) {
+		bool known = false;
+		for (const auto& quest : ap::data::Quests) {
+			known |= quest.flag == trigger.flag;
+		}
+		EXPECT(known);
+		covered.insert(trigger.flag);
+	}
+	EXPECT(covered.size() == std::size(ap::data::Quests));
 }
 
 void TestConfigRoundTrip() {
@@ -341,6 +363,7 @@ void TestTableEdits() {
 } // namespace
 
 int main() {
+	TestQuestTriggers();
 	TestCodexLevels();
 	TestTableRoundTrip();
 	TestMonsterShuffle();

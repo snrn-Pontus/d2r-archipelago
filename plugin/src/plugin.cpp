@@ -10,6 +10,7 @@
 #include "game_data.h"
 #include "ids.h"
 #include "loot.h"
+#include "quest_triggers.h"
 #include "save_state.h"
 
 #include <D2RLPlugin/api.h>
@@ -87,6 +88,13 @@ std::deque<FeedLine>  gFeed;
 bool                  gInGame       = false;
 bool                  gCodexDirty   = true;
 uint64_t              gCodexItems   = UINT64_MAX;
+// Quests completed by kills (server thread) or item scans (game thread), as
+// difficulty * 100 + flag; the render thread sends them, off the game threads.
+std::set<int>         gQuestQueue;
+// Den of Evil kills per difficulty this session.
+uint32_t              gDenKills[3] = {};
+Clock::time_point     gNextQuestScan;
+
 // Highest character level seen; 0 until a level-up event or a save says.
 int                   gPlayerLevel  = 0;
 // Where the character is, for estimating its level before that.
@@ -295,6 +303,21 @@ void ReachGoal() {
 	}
 	if (!sent) {
 		Feed("Archipelago: goal reached! It counts once you hold the key for its act.");
+	}
+}
+
+void CompleteQuest(uint32_t difficulty, uint32_t flag) {
+	if (difficulty >= 3) {
+		return;
+	}
+	for (const auto& quest : ap::data::Quests) {
+		if (quest.flag == flag) {
+			AddChecks({ ap::ids::QuestLocation(difficulty, quest.flag) });
+			const ap::SlotData slots = gClient->Slots();
+			if (static_cast<int>(quest.flag) == slots.goalQuest && static_cast<int>(difficulty) == slots.goal) {
+				ReachGoal();
+			}
+		}
 	}
 }
 
@@ -755,6 +778,28 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& s
 	return ok;
 }
 
+auto __cdecl CollectQuestItems(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
+	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize) {
+		if (const auto flag = ap::quests::Find(ap::quests::Trigger::Item, item->code)) {
+			static_cast<std::set<uint8_t>*>(userData)->insert(*flag);
+		}
+	}
+	return D2RL::Inventory::IterationAction::Continue;
+}
+
+// Quest items anywhere on the character (inventory, cube, stash, cursor).
+void ScanQuestItems(D2RL::PlayerHandle player) {
+	std::set<uint8_t> flags;
+	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
+	if (gInventory->forEachInventoryItem(gContext, player, &filter, CollectQuestItems, &flags) != D2RL::Inventory::Result::Success) {
+		return;
+	}
+	std::lock_guard lock(gMutex);
+	for (const uint8_t flag : flags) {
+		gQuestQueue.insert(std::clamp(gDifficulty, 0, 2) * 100 + flag);
+	}
+}
+
 void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	gWorkQueued = false;
 	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
@@ -774,6 +819,14 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		delivered = gSave.fillersDelivered;
 	}
 
+	ScanQuestItems(player);
+	{
+		// After a failed item update, only scan until the retry pause is over.
+		std::lock_guard lock(gMutex);
+		if (Clock::now() < gRetryAt) {
+			return;
+		}
+	}
 	const auto skills = ap::codex::Entries(items, EffectiveLevel(), gClient->Slots().skillScaling);
 	int playerClass = -1;
 	{
@@ -894,11 +947,24 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		SendReady();
 	}
 
+	std::set<int> quests;
+	{
+		std::lock_guard lock(gMutex);
+		quests.swap(gQuestQueue);
+	}
+	for (const int quest : quests) {
+		CompleteQuest(static_cast<uint32_t>(quest / 100), static_cast<uint32_t>(quest % 100));
+	}
+
 	bool work = false;
 	std::vector<FeedLine> feed;
 	{
 		std::lock_guard lock(gMutex);
-		work = gInGame && gBoundSession != 0 && (gCodexDirty || gCodexItems != gClient->ItemsGeneration()) && Clock::now() >= gRetryAt;
+		const bool scanDue = Clock::now() >= gNextQuestScan;
+		if (scanDue) {
+			gNextQuestScan = Clock::now() + std::chrono::seconds(5);
+		}
+		work = gInGame && gBoundSession != 0 && (scanDue || ((gCodexDirty || gCodexItems != gClient->ItemsGeneration()) && Clock::now() >= gRetryAt));
 		const auto now = Clock::now();
 		while (!gFeed.empty() && now - gFeed.front().shown > FeedLifetime) {
 			gFeed.pop_front();
@@ -969,15 +1035,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 		}
 		case Kind::QuestCompleted: {
 			Log("Archipelago: quest row " + std::to_string(event->questRecordId) + " completed on difficulty " + std::to_string(event->difficulty) + ".");
-			for (const auto& quest : ap::data::Quests) {
-				if (quest.flag == event->questRecordId && event->difficulty < 3) {
-					AddChecks({ ap::ids::QuestLocation(event->difficulty, quest.flag) });
-					const ap::SlotData slots = gClient->Slots();
-					if (static_cast<int>(quest.flag) == slots.goalQuest && static_cast<int>(event->difficulty) == slots.goal) {
-						ReachGoal();
-					}
-				}
-			}
+			CompleteQuest(event->difficulty, event->questRecordId);
 			break;
 		}
 		case Kind::LevelChanged: {
@@ -986,6 +1044,15 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 				if (area.id == level) {
 					AddChecks({ ap::ids::AreaLocation(area.id) });
 				}
+			}
+			if (const auto flag = ap::quests::Find(ap::quests::Trigger::Area, static_cast<uint32_t>(level))) {
+				int difficulty = 0;
+				{
+					std::lock_guard lock(gMutex);
+					difficulty = event->difficulty > 0 ? static_cast<int>(event->difficulty) : gDifficulty;
+				}
+				Log("Archipelago: reached the area for quest " + std::to_string(*flag) + ".");
+				CompleteQuest(static_cast<uint32_t>(difficulty), *flag);
 			}
 			break;
 		}
@@ -1019,6 +1086,13 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 	}
 	std::lock_guard lock(gMutex);
 	gDifficulty = static_cast<int>(event->difficulty);
+	const int difficulty = std::clamp(gDifficulty, 0, 2);
+	if (const auto flag = ap::quests::Find(ap::quests::Trigger::Kill, event->monster.classId)) {
+		gQuestQueue.insert(difficulty * 100 + *flag);
+	}
+	if (event->levelId == static_cast<int32_t>(ap::quests::DenLevel) && ++gDenKills[difficulty] == ap::quests::DenKills) {
+		gQuestQueue.insert(difficulty * 100 + 1);
+	}
 	// A player's kill tells us the player's class (single player: it's you).
 	const int killerClass = static_cast<int>(event->killer.classId);
 	if (event->killer.type == D2RL::Lifecycle::UnitType::Player && killerClass >= 0 && killerClass < static_cast<int>(std::size(ClassNames))
