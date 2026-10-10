@@ -67,6 +67,9 @@ const D2RL::ItemService*      gItems;
 const D2RL::ThreadService*    gThreads;
 // Optional: lets the plugin find unique and set rows by name in the live tables.
 const D2RL::DataTableService* gTables;
+// Optional: the Codex tooltip and the UI-message log.
+const D2RL::SharedEventService* gEvents;
+const D2RL::WidgetService*      gWidgets;
 const D2RL::OverlayService*   gOverlay;
 
 std::unique_ptr<ap::Client> gClient;
@@ -141,8 +144,16 @@ void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 	}
 }
 
+// The latest messages, shown in the Codex's tooltip.
+std::deque<std::string> gHistory;
+constexpr size_t        HistoryLines = 8;
+
 void Feed(const std::string& text) {
 	std::lock_guard lock(gMutex);
+	gHistory.push_back(text);
+	while (gHistory.size() > HistoryLines) {
+		gHistory.pop_front();
+	}
 	gConsoleQueue.push_back(text);
 	gFeed.push_back({ text, Clock::now() });
 	while (gFeed.size() > FeedLines) {
@@ -1079,6 +1090,54 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 	}
 }
 
+// ---- Codex tooltip and UI messages (UI thread) --------------------------------
+
+// Hovering over the Codex shows the connection and the latest messages, so you
+// don't have to open the console.
+void __cdecl OnItemTooltip(const D2RL::PluginContext*, D2RL::SharedEvents::ItemTooltipEvent* event, void*) noexcept {
+	if (event == nullptr || event->structSize < D2RL::SharedEvents::ItemTooltipEventRequiredSize || event->text == nullptr || !gClient) {
+		return;
+	}
+	D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
+	if (gItems->getItemInfo(gContext, event->item, &info) != D2RL::Items::Result::Success || CodexSeedOf(info) == 0) {
+		return;
+	}
+	// \xC3\xBF is D2's color marker: c4 gold, c0 white, c5 grey.
+	std::string text = "\xC3\xBF" "c4" "Archipelago: ";
+	text += gClient->State() == ap::ConnectionState::Connected
+	          ? gClient->Slot() + ", " + std::to_string(gClient->CheckedCount()) + "/" + std::to_string(gClient->LocationCount()) + " checks"
+	          : gClient->StatusText();
+	{
+		std::lock_guard lock(gMutex);
+		for (auto line = gHistory.rbegin(); line != gHistory.rend(); ++line) {
+			std::string shown = *line;
+			if (shown.rfind("Archipelago: ", 0) == 0) {
+				shown = shown.substr(13);
+			}
+			text += "\n\xC3\xBF" "c5" + shown;
+		}
+	}
+	const size_t length = std::min<size_t>(text.size(), event->capacity - 1);
+	std::memcpy(event->text, text.data(), length);
+	event->text[length] = '\0';
+	event->length = static_cast<uint32_t>(length);
+}
+
+// Logs each distinct D2R UI message once, to find one that shows text in game.
+auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::UiMessageEvent* event, void*) noexcept -> D2RL::SharedEvents::UiMessageAction {
+	static std::set<std::string> seen;
+	if (event == nullptr || event->structSize < D2RL::SharedEvents::UiMessageEventRequiredSize || event->target == nullptr || event->command == nullptr
+		|| seen.size() >= 400) {
+		return D2RL::SharedEvents::UiMessageAction::Continue;
+	}
+	const std::string key = std::string(event->target) + ":" + event->command;
+	if (seen.insert(key).second) {
+		const std::string text = event->text != nullptr ? std::string(event->text).substr(0, 80) : "";
+		Log("Archipelago: UI message " + key + (text.empty() ? "" : " \"" + text + "\""));
+	}
+	return D2RL::SharedEvents::UiMessageAction::Continue;
+}
+
 // Runs on the server thread; only used to learn the current difficulty.
 void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::MonsterDeathEvent* event, void*) noexcept {
 	if (!D2RL::Lifecycle::HasMonsterDeathEventField(event, D2RL::Lifecycle::MonsterDeathEventRequiredSize)) {
@@ -1178,6 +1237,28 @@ auto CommandSay(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, 
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
+// ap-ui <target> <command> [text]: sends a D2R UI message, for finding one that shows text.
+auto CommandUi(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
+	const auto args = SplitArgs(command);
+	if (args.size() < 2 || gWidgets == nullptr) {
+		gContext->WriteConsoleMessage("Usage: ap-ui <target> <command> [text]");
+		return D2RL::ConsoleCommandResult::InvalidArguments;
+	}
+	std::string text;
+	for (size_t i = 2; i < args.size(); ++i) {
+		text += (i > 2 ? " " : "") + args[i];
+	}
+	const D2RL::Widgets::UiAction action {
+		.structSize = D2RL::Widgets::UiActionSize,
+		.target     = args[0].c_str(),
+		.command    = args[1].c_str(),
+		.text       = text.c_str(),
+	};
+	const auto result = gWidgets->dispatchUiAction(gContext, &action);
+	gContext->WriteConsoleMessage(("ap-ui: result " + std::to_string(static_cast<uint32_t>(result))).c_str());
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
 auto CommandCodex(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
 	std::lock_guard lock(gMutex);
 	gCodexDirty = true;
@@ -1211,6 +1292,29 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	if (context->QueryService(&gTables) != D2RL::ServiceQueryResult::Success || !D2RL::HasDataTableServiceField(gTables, D2RL::DataTableServiceRequiredSize)) {
 		gTables = nullptr;
 		context->LogWarn("Archipelago: no data table service; unique and set rows come from the generated numbers.");
+	}
+	if (context->QueryService(&gWidgets) != D2RL::ServiceQueryResult::Success || !D2RL::HasWidgetServiceField(gWidgets, D2RL::WidgetServiceRequiredSize)) {
+		gWidgets = nullptr;
+	}
+	if (context->QueryService(&gEvents) == D2RL::ServiceQueryResult::Success && D2RL::HasSharedEventServiceField(gEvents, D2RL::SharedEventServiceRequiredSize)) {
+		const D2RL::SharedEvents::ItemTooltipListener tooltip {
+			.structSize = D2RL::SharedEvents::ItemTooltipListenerSize,
+			.region     = D2RL::SharedEvents::ItemTooltipRegion::Attributes,
+			.position   = D2RL::SharedEvents::ItemTooltipPosition::Bottom,
+			.anchor     = D2RL::SharedEvents::ItemTooltipAnchor::None,
+			.fallback   = D2RL::SharedEvents::ItemTooltipFallback::Omit,
+			.callback   = OnItemTooltip,
+		};
+		const D2RL::SharedEvents::UiMessageListener messages {
+			.structSize = D2RL::SharedEvents::UiMessageListenerSize,
+			.priority   = -1000,
+			.callback   = OnUiMessage,
+		};
+		D2RL::SharedEvents::ListenerHandle handle = D2RL::SharedEvents::InvalidHandle;
+		if (gEvents->registerItemTooltipListener(context, &tooltip, &handle) != D2RL::SharedEvents::Result::Success
+			|| gEvents->registerUiMessageListener(context, &messages, &handle) != D2RL::SharedEvents::Result::Success) {
+			context->LogWarn("Archipelago: couldn't register the Codex tooltip or the UI-message log.");
+		}
 	}
 	gConfig = ap::ParseConfig(ConfigText());
 	gClient = std::make_unique<ap::Client>(Log);
@@ -1253,7 +1357,8 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-disconnect", CommandDisconnect, "Disconnect from the Archipelago server.")
 	                   && context->RegisterConsoleCommand("ap-status", CommandStatus, "Show the Archipelago connection and progress.")
 	                   && context->RegisterConsoleCommand("ap-say", CommandSay, "Send a chat message to the Archipelago server.")
-	                   && context->RegisterConsoleCommand("ap-codex", CommandCodex, "Rebuild the Archipelago Codex charm.");
+	                   && context->RegisterConsoleCommand("ap-codex", CommandCodex, "Rebuild the Archipelago Codex charm.")
+	                   && context->RegisterConsoleCommand("ap-ui", CommandUi, "Send a D2R UI message: ap-ui <target> <command> [text].");
 	if (!commands) {
 		context->LogError("Archipelago: couldn't register console commands.");
 		return false;
