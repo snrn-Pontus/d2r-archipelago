@@ -144,6 +144,10 @@ void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 	}
 }
 
+// The Archipelago Codex's unique rows, found on the game thread for the
+// tooltip (item copies on the UI thread don't carry the seed marker).
+std::vector<uint32_t> gCodexRecords;
+
 // The latest messages, shown in the Codex's tooltip.
 std::deque<std::string> gHistory;
 constexpr size_t        HistoryLines = 8;
@@ -832,6 +836,11 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 
 	ScanQuestItems(player);
 	{
+		auto records = UniqueRecords("Archipelago Codex");
+		std::lock_guard lock(gMutex);
+		gCodexRecords = std::move(records);
+	}
+	{
 		// After a failed item update, only scan until the retry pause is over.
 		std::lock_guard lock(gMutex);
 		if (Clock::now() < gRetryAt) {
@@ -1099,22 +1108,35 @@ void __cdecl OnItemTooltip(const D2RL::PluginContext*, D2RL::SharedEvents::ItemT
 		return;
 	}
 	D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
-	if (gItems->getItemInfo(gContext, event->item, &info) != D2RL::Items::Result::Success || CodexSeedOf(info) == 0) {
+	if (gItems->getItemInfo(gContext, event->item, &info) != D2RL::Items::Result::Success || event->capacity < 2) {
 		return;
 	}
-	// \xC3\xBF is D2's color marker: c4 gold, c0 white, c5 grey.
+	// The Codex is the Archipelago Codex unique; a fallback Magic Codex keeps its seed marker.
+	bool codex = CodexSeedOf(info) != 0;
+	if (info.quality == D2RL::Items::Quality::Unique && info.qualityRecordId >= 0) {
+		std::lock_guard lock(gMutex);
+		codex = codex
+		     || (info.code == ap::loot::CodeFromText(gConfig.codexItem.c_str())
+		         && std::ranges::find(gCodexRecords, static_cast<uint32_t>(info.qualityRecordId)) != gCodexRecords.end());
+	}
+	if (!codex) {
+		return;
+	}
+	// \xC3\xBF is D2's color marker: c4 gold, c5 grey. Newest message first,
+	// as many as fit in the buffer.
 	std::string text = "\xC3\xBF" "c4" "Archipelago: ";
 	text += gClient->State() == ap::ConnectionState::Connected
-	          ? gClient->Slot() + ", " + std::to_string(gClient->CheckedCount()) + "/" + std::to_string(gClient->LocationCount()) + " checks"
-	          : gClient->StatusText();
+	          ? std::to_string(gClient->CheckedCount()) + "/" + std::to_string(gClient->LocationCount()) + " checks"
+	          : std::string("not connected");
 	{
 		std::lock_guard lock(gMutex);
 		for (auto line = gHistory.rbegin(); line != gHistory.rend(); ++line) {
-			std::string shown = *line;
-			if (shown.rfind("Archipelago: ", 0) == 0) {
-				shown = shown.substr(13);
+			std::string shown = line->rfind("Archipelago: ", 0) == 0 ? line->substr(13) : *line;
+			const std::string next = "\n\xC3\xBF" "c5" + shown;
+			if (text.size() + next.size() + 1 > event->capacity) {
+				break;
 			}
-			text += "\n\xC3\xBF" "c5" + shown;
+			text += next;
 		}
 	}
 	const size_t length = std::min<size_t>(text.size(), event->capacity - 1);
