@@ -1,18 +1,28 @@
 from dataclasses import dataclass
 
-from Options import Choice, DefaultOnToggle, OptionSet, PerGameCommonOptions, Range
+from Options import Choice, DefaultOnToggle, OptionSet, PerGameCommonOptions, Range, Toggle
 
 from .data import CLASSES
 
 
 class Goal(Choice):
-    """Which difficulty's Baal kill (Eve of Destruction) wins the game.
-    Quests on harder difficulties are left out of the seed."""
-    display_name = "Goal"
+    """The difficulty the game ends on. Together with Goal Act, this sets how long a game is:
+    Normal with Goal Act 2 is a short game, Hell with Goal Act 5 is the full run.
+    Everything past the goal is left out of the seed."""
+    display_name = "Goal Difficulty"
     option_normal = 0
     option_nightmare = 1
     option_hell = 2
     default = 0
+
+
+class GoalAct(Range):
+    """The act whose boss ends the game on the goal difficulty: 1 Andariel, 2 Duriel, 3 Mephisto,
+    4 Diablo, 5 Baal."""
+    display_name = "Goal Act"
+    range_start = 1
+    range_end = 5
+    default = 5
 
 
 class SkillPoolSize(Range):
@@ -123,9 +133,56 @@ class JunkTrapPercentage(Range):
     default = 0
 
 
+class MonsterShuffle(Choice):
+    """Shuffles which monsters live in which areas (all three difficulties).
+    Nearby: areas trade monsters within the same act, so the challenge stays about the same.
+    Anywhere: any area can get any act's monsters; on Normal this can be brutal early on."""
+    display_name = "Monster Shuffle"
+    option_off = 0
+    option_nearby = 1
+    option_anywhere = 2
+    default = 1
+
+
+class SuperUniqueShuffle(Choice):
+    """Gives field superuniques (Bishibosh, Rakanishu, Pindleskin...) another superunique's monster type.
+    Quest bosses, act bosses, the Chaos Sanctuary seal bosses and Baal's waves are left alone.
+    Nearby: only swaps between monsters of similar strength. Anywhere: any swap."""
+    display_name = "Superunique Shuffle"
+    option_off = 0
+    option_nearby = 1
+    option_anywhere = 2
+    default = 1
+
+
+class RunewordShuffle(Toggle):
+    """Gives every runeword a new recipe of similar-tier runes. The setup tool writes the new
+    recipes to runewords.txt in the mod folder."""
+    display_name = "Runeword Shuffle"
+
+
+class ExperienceMultiplier(Range):
+    """Monster experience, in percent. Raise it for shorter games."""
+    display_name = "Experience Multiplier"
+    range_start = 50
+    range_end = 500
+    default = 100
+
+
+class ItemLevelRequirements(DefaultOnToggle):
+    """Items keep their level requirements. Turn off to wear anything you find."""
+    display_name = "Item Level Requirements"
+
+
+class ItemStatRequirements(DefaultOnToggle):
+    """Items keep their strength and dexterity requirements."""
+    display_name = "Item Stat Requirements"
+
+
 @dataclass
 class D2ROptions(PerGameCommonOptions):
     goal: Goal
+    goal_act: GoalAct
     skill_pool_size: SkillPoolSize
     starting_skills: StartingSkills
     skill_classes: SkillClasses
@@ -140,3 +197,9 @@ class D2ROptions(PerGameCommonOptions):
     high_rune_weight: HighRuneWeight
     socketed_base_weight: SocketedBaseWeight
     junk_trap_percentage: JunkTrapPercentage
+    monster_shuffle: MonsterShuffle
+    superunique_shuffle: SuperUniqueShuffle
+    runeword_shuffle: RunewordShuffle
+    experience_multiplier: ExperienceMultiplier
+    item_level_requirements: ItemLevelRequirements
+    item_stat_requirements: ItemStatRequirements

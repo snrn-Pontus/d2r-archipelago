@@ -16,7 +16,20 @@ so a Barbarian can end up casting Frozen Orb.
 
 ## What is the goal?
 
-Complete Eve of Destruction (kill Baal) on the difficulty set by the `goal` option.
+Kill the boss of the act set by `goal_act` on the difficulty set by `goal`. That sets the game's length:
+`goal: normal` with `goal_act: 2` ends at Duriel and is a short game, `goal: hell` with `goal_act: 5` is the
+full run. Quests, areas and level milestones past the goal are left out.
+
+## What else is randomized?
+
+The setup tool rewrites the game's tables for your seed:
+
+- `monster_shuffle`: areas trade monster line-ups, within their act (`nearby`) or anywhere.
+- `superunique_shuffle`: field superuniques like Bishibosh and Pindleskin become other monsters. Quest and
+  act bosses stay as they are.
+- `runeword_shuffle`: every runeword gets a new recipe of similar-tier runes, listed in `runewords.txt` in the
+  mod folder.
+- `experience_multiplier`, `item_level_requirements` and `item_stat_requirements`.
 
 ## What do other items look like?
 

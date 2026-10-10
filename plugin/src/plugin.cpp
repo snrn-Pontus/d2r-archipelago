@@ -20,6 +20,7 @@
 #include <chrono>
 #include <deque>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <random>
@@ -168,6 +169,29 @@ void CheckLevelMilestones(int level) {
 	AddChecks(reached);
 }
 
+// The game reads its tables at startup, so the skill lock and the seed's
+// shuffles only apply if d2r-ap-setup wrote them for this seed beforehand.
+// d2r-ap-setup leaves archipelago.txt (seed, slot, settings) in the mod folder.
+void CheckInstalledMod(const std::string& seed) {
+	const std::filesystem::path directory = gContext->modDirectory != nullptr ? gContext->modDirectory : L"";
+	std::vector<std::string> stamp;
+	for (const auto& candidate : { directory / L"archipelago.txt", directory.parent_path() / L"archipelago.txt" }) {
+		std::ifstream file(candidate);
+		for (std::string line; file && std::getline(file, line);) {
+			stamp.push_back(line);
+		}
+		if (!stamp.empty()) {
+			break;
+		}
+	}
+	const ap::randomizer::Settings settings = gClient->Slots().randomizer;
+	if (directory.empty() || stamp.empty()) {
+		Feed("Archipelago: the Archipelago mod isn't running, so the skill trees aren't locked. Run d2r-ap-setup and start D2R with it.");
+	} else if (settings.Any() && (stamp[0] != seed || stamp.size() < 3 || stamp[2] != settings.Stamp())) {
+		Feed("Archipelago: the Archipelago mod was set up for another seed. Quit, run d2r-ap-setup, and restart.");
+	}
+}
+
 // Load the save for a newly connected seed and send what the server is missing.
 void BindSession(uint64_t session) {
 	const std::string seed = gClient->Seed();
@@ -205,6 +229,7 @@ void BindSession(uint64_t session) {
 		CheckLevelMilestones(level);
 	}
 	Log("Archipelago: bound to seed " + seed + " slot " + slot + ", resent " + std::to_string(unsent.size()) + " checks.");
+	CheckInstalledMod(seed);
 }
 
 // ---- Items (game thread) --------------------------------------------------

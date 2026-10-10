@@ -76,3 +76,38 @@ class TestOnlyBasicLoot(D2RTestBase):
         for item in self.multiworld.itempool:
             if item.classification == item.classification.filler:
                 self.assertIn(item.name, BASIC_LOOT)
+
+
+class TestShortGame(D2RTestBase):
+    options = {"goal": "normal", "goal_act": 2}
+
+    def test_only_first_two_acts(self) -> None:
+        names = {location.name for location in self.multiworld.get_locations(self.player)}
+        self.assertIn("Normal: The Seven Tombs", names)
+        self.assertNotIn("Normal: Lam Esen's Tome", names)
+        self.assertIn("Enter Lut Gholein", names)
+        self.assertNotIn("Enter Kurast Docktown", names)
+        self.assertIn("Reach Character Level 10", names)
+        self.assertNotIn("Reach Character Level 15", names)
+        self.assertIn("Defeat Duriel", names)
+
+    def test_slot_data(self) -> None:
+        data = self.world.fill_slot_data()
+        self.assertEqual(data["goal_quest"], 14)
+        self.assertEqual(data["level_cap"], 10)
+        self.assertEqual(data["randomizer"]["monster_shuffle"], 1)
+
+
+class TestAct1Only(D2RTestBase):
+    options = {"goal": "normal", "goal_act": 1, "level_checks": False}
+
+    def test_generates(self) -> None:
+        self.assertIn("Defeat Andariel", {location.name for location in self.multiworld.get_locations(self.player)})
+
+
+class TestHellAct3(D2RTestBase):
+    options = {"goal": "hell", "goal_act": 3}
+
+    def test_level_cap_between_nightmare_and_hell(self) -> None:
+        self.assertEqual(self.world.level_cap, 75)
+        self.assertEqual(self.world.fill_slot_data()["goal_quest"], 22)

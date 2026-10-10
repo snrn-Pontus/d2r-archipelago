@@ -1,5 +1,6 @@
 #pragma once
 
+#include "randomizer.h"
 #include "websocket.h"
 
 #include <atomic>
@@ -27,11 +28,13 @@ enum class ConnectionState { Idle, Connecting, Connected, Refused };
 
 struct SlotData {
 	int  goal        = 0;
+	int  goalAct     = 5;
 	int  goalQuest   = 40;
 	bool areaChecks  = true;
 	bool levelChecks = true;
 	int  levelStep   = 5;
 	int  levelCap    = 30;
+	randomizer::Settings randomizer;
 };
 
 // Archipelago protocol client. Runs its own network thread; every public

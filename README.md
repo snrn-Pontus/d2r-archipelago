@@ -10,6 +10,10 @@ charm that grants +1 to every skill you've found (D2's `oskill` property, which 
 Locations are story quests on each difficulty up to the goal, first visits to waypoint and landmark areas,
 and every fifth character level. The goal is killing Baal on the chosen difficulty.
 
+Games can be as short as Normal Act 1 or as long as a full Hell run (`goal` and `goal_act`). The setup tool
+also randomizes the game itself per seed: monster line-ups, superuniques, runeword recipes, experience and
+item requirements.
+
 Other rewards are rolled when they arrive and scaled to the character's level: random uniques and set
 items, runes up to Zod, socketed runeword bases, Codex Empowerments (+1 to every Codex skill), and optional
 Junk Backpack traps. Act boss quests always give a unique.
@@ -23,7 +27,7 @@ public plugin API.
 | Folder | What |
 |---|---|
 | `apworld/d2r_archipelago` | The Archipelago world (items, locations, options, logic). |
-| `plugin/` | `d2rl-archipelago.dll`, the in-game client; `d2r-ap-setup.exe`, which writes the skill-lock mod; `ap_probe.exe`, a test client. |
+| `plugin/` | `d2rl-archipelago.dll`, the in-game client; `d2r-ap-setup.exe`, which writes the seed's mod (skill lock and shuffles); `ap_probe.exe`, a test client. |
 | `tools/gen_data.py` | Regenerates the skill, area, quest, unique, set and base tables from excel files (`d2r-ap-setup --extract <folder>` dumps them from your install). |
 
 ## Building

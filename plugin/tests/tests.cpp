@@ -5,11 +5,16 @@
 #include "game_data.h"
 #include "ids.h"
 #include "loot.h"
+#include "randomizer.h"
+#include "table.h"
 #include "save_state.h"
 
 #include <cstdio>
 #include <filesystem>
+#include <algorithm>
 #include <iterator>
+#include <map>
+#include <set>
 #include <random>
 #include <span>
 #include <string_view>
@@ -154,9 +159,123 @@ void TestOtherLoot() {
 	EXPECT(ap::loot::EstimateLevel(2, 4) == 92);
 }
 
+void TestTableRoundTrip() {
+	for (const std::string text : { "a\tb\r\n1\t2\r\n\t\r\n", "a\tb\n1\t2", "Name\tId\nEl\t0\n" }) {
+		const auto table = ap::Table::Parse(text);
+		EXPECT(table.Format() == text);
+	}
+	auto table = ap::Table::Parse("a\tb\r\n1\r\n");
+	EXPECT(table.Column("b") == 1 && table.Cell(0, 1).empty());
+	table.Set(0, 1, "x");
+	EXPECT(table.Format() == "a\tb\r\n1\tx\r\n");
+}
+
+auto MakeLevels() -> ap::Table {
+	// Two acts with three monster areas each, a town, and the Cow Level.
+	std::string text = "Name\tId\tAct\tmon1\tmon2\tnmon1\tumon1\r\n";
+	text += "Town\t1\t0\t\t\t\t\r\n";
+	text += "A\t2\t0\tzombie1\tfallen1\tzombie4\tfallen1\r\n";
+	text += "B\t3\t0\tquill1\tfallen2\tquill4\tquill1\r\n";
+	text += "C\t4\t0\tskeleton1\t\tskeleton4\tskeleton1\r\n";
+	text += "D\t41\t1\tsandraider1\t\tsandraider4\t\r\n";
+	text += "E\t42\t1\tvulture1\t\tvulture4\t\r\n";
+	text += "F\t43\t1\tscarab1\tmummy1\tscarab4\t\r\n";
+	text += "Cows\t39\t0\thellbovine\t\thellbovine\t\r\n";
+	return ap::Table::Parse(text);
+}
+
+void TestMonsterShuffle() {
+	auto lineup = [](const ap::Table& t, size_t row) { return t.Cell(row, 3) + "|" + t.Cell(row, 4) + "|" + t.Cell(row, 5) + "|" + t.Cell(row, 6); };
+	const auto original = MakeLevels();
+	std::mt19937 random(1);
+	auto nearby = MakeLevels();
+	std::multiset<std::string> act0, act1, before0, before1;
+	ap::randomizer::ShuffleMonsters(nearby, ap::randomizer::Shuffle::Nearby, random);
+	for (size_t row = 1; row <= 3; ++row) {
+		act0.insert(lineup(nearby, row));
+		before0.insert(lineup(original, row));
+	}
+	for (size_t row = 4; row <= 6; ++row) {
+		act1.insert(lineup(nearby, row));
+		before1.insert(lineup(original, row));
+	}
+	// Whole line-ups stay together and stay in their act.
+	EXPECT(act0 == before0 && act1 == before1);
+	EXPECT(lineup(nearby, 0) == lineup(original, 0) && lineup(nearby, 7) == lineup(original, 7));
+
+	// Anywhere eventually mixes acts; the same seed gives the same result.
+	bool mixed = false;
+	for (uint32_t seed = 0; seed < 20 && !mixed; ++seed) {
+		auto anywhere = MakeLevels();
+		std::mt19937 r(seed);
+		ap::randomizer::ShuffleMonsters(anywhere, ap::randomizer::Shuffle::Anywhere, r);
+		// Area A (act I) ended up with an act II line-up.
+		const std::string first = anywhere.Cell(1, 3);
+		mixed = first == "sandraider1" || first == "vulture1" || first == "scarab1";
+	}
+	EXPECT(mixed);
+	auto a = MakeLevels(), b = MakeLevels();
+	std::mt19937 ra(5), rb(5);
+	ap::randomizer::ShuffleMonsters(a, ap::randomizer::Shuffle::Anywhere, ra);
+	ap::randomizer::ShuffleMonsters(b, ap::randomizer::Shuffle::Anywhere, rb);
+	EXPECT(a.Format() == b.Format());
+}
+
+void TestSuperUniqueShuffle() {
+	auto superUniques = ap::Table::Parse("Superunique\tName\tClass\r\nBishibosh\tBishibosh\tfallenshaman1\r\nBonebreak\tBonebreak\tskeleton1\r\n"
+	                                     "Radament\tRadament\tradament\r\nPindleskin\tPindleskin\treanimatedhorde5\r\nThe Summoner\tThe Summoner\tsummoner\r\n");
+	const auto monstats = ap::Table::Parse("Id\tLevel\r\nfallenshaman1\t2\r\nskeleton1\t1\r\nreanimatedhorde5\t60\r\nradament\t16\r\nsummoner\t18\r\n");
+	std::mt19937 random(3);
+	ap::randomizer::ShuffleSuperUniques(superUniques, monstats, ap::randomizer::Shuffle::Anywhere, random);
+	EXPECT(superUniques.Cell(2, 2) == "radament" && superUniques.Cell(4, 2) == "summoner");
+	std::multiset<std::string> classes { superUniques.Cell(0, 2), superUniques.Cell(1, 2), superUniques.Cell(3, 2) };
+	EXPECT((classes == std::multiset<std::string> { "fallenshaman1", "skeleton1", "reanimatedhorde5" }));
+}
+
+void TestRunewordShuffle() {
+	auto runes = ap::Table::Parse("Name\t*Rune Name\tcomplete\tRune1\tRune2\tRune3\tRune4\tRune5\tRune6\r\n"
+	                              "Runeword1\tSpirit\t1\tr07\tr10\tr11\tr09\t\t\r\nRuneword2\tOff\t0\tr01\t\t\t\t\t\r\nRuneword3\tZod\t1\tr33\t\t\t\t\t\r\n");
+	std::mt19937 random(9);
+	const auto recipes = ap::randomizer::ShuffleRunewords(runes, random);
+	EXPECT(recipes.size() == 2 && recipes[0].rfind("Spirit:", 0) == 0);
+	const int original[] = { 7, 10, 11, 9 };
+	for (int i = 0; i < 4; ++i) {
+		const int tier = std::stoi(runes.Cell(0, 3 + i).substr(1));
+		EXPECT(tier >= original[i] - 2 && tier <= original[i] + 2);
+	}
+	EXPECT(runes.Cell(1, 3) == "r01");
+	EXPECT(std::stoi(runes.Cell(2, 3).substr(1)) >= 31);
+}
+
+void TestTableEdits() {
+	auto skills = ap::Table::Parse("skill\tcharclass\treqlevel\r\nAttack\t\t1\r\nFire Bolt\tsor\t1\r\nAbyss\twar\t30\r\n");
+	EXPECT(ap::randomizer::BlockClassSkills(skills) == 2);
+	EXPECT(skills.Cell(0, 2) == "1" && skills.Cell(1, 2) == "100" && skills.Cell(2, 2) == "100");
+
+	auto monlvl = ap::Table::Parse("Level\tXP\tXP(N)\tXP(H)\r\n1\t1\t100\t1000\r\n");
+	ap::randomizer::ScaleExperience(monlvl, 250);
+	EXPECT(monlvl.Cell(0, 1) == "2" && monlvl.Cell(0, 2) == "250" && monlvl.Cell(0, 3) == "2500");
+
+	auto armor = ap::Table::Parse("name\treqstr\treqdex\tlevelreq\r\nCap\t0\t\t1\r\nMonarch\t156\t\t54\r\n");
+	ap::randomizer::ClearRequirements(armor, true, false);
+	EXPECT(armor.Cell(1, 1) == "156" && armor.Cell(1, 3) == "0");
+	ap::randomizer::ClearRequirements(armor, false, true);
+	EXPECT(armor.Cell(1, 1) == "0" && armor.Cell(1, 2).empty());
+
+	ap::randomizer::Settings settings;
+	EXPECT(!settings.Any());
+	settings.monsters = ap::randomizer::Shuffle::Nearby;
+	EXPECT(settings.Any() && settings.Stamp().find("monsters=1") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
+	TestTableRoundTrip();
+	TestMonsterShuffle();
+	TestSuperUniqueShuffle();
+	TestRunewordShuffle();
+	TestTableEdits();
 	TestLootScalesToLevel();
 	TestOtherLoot();
 	TestClientParsesServerPackets();

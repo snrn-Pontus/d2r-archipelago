@@ -3,7 +3,7 @@ from typing import Any
 from BaseClasses import Item, ItemClassification, Location, Region, Tutorial
 from worlds.AutoWorld import WebWorld, World
 
-from .data import AREAS, CLASSES, GOAL_QUEST, QUESTS, SKILLS
+from .data import AREAS, CLASSES, QUESTS, SKILLS
 from .ids import (ACTS, BASIC_LOOT, DIFFICULTIES, EMPOWERMENT, LEVEL_CAPS, LEVEL_STEP, TRAP, UNIQUE_LOOT,
                   area_location_name, item_name_to_id, level_location_name, location_name_to_id,
                   quest_location_name, skill_item_name, skill_names_by_class)
@@ -14,6 +14,7 @@ SKILLS_GROUP = "Skills"
 BOSS_UNIQUE = "Random Unique"
 # Quest flags of the act boss kills: Andariel, Duriel, Mephisto, Diablo, Baal.
 BOSS_QUESTS = (6, 14, 22, 26, 40)
+BOSS_NAMES = ("Andariel", "Duriel", "Mephisto", "Diablo", "Baal")
 USEFUL_LOOT = {BOSS_UNIQUE, *UNIQUE_LOOT, "Random Set Item", "High Rune", EMPOWERMENT}
 
 
@@ -52,7 +53,14 @@ class D2RWorld(World):
     item_name_groups = {SKILLS_GROUP: set().union(*skill_names_by_class.values()), **skill_names_by_class}
 
     def generate_early(self) -> None:
-        self.act_count = (self.options.goal.value + 1) * len(ACTS)
+        goal, goal_act = self.options.goal.value, self.options.goal_act.value
+        # Acts in play, counting every act of the easier difficulties.
+        self.act_count = goal * len(ACTS) + goal_act
+        # The level cap grows with the acts in play, from the previous difficulty's cap.
+        previous = LEVEL_CAPS[goal - 1] if goal > 0 else 0
+        cap = previous + (LEVEL_CAPS[goal] - previous) * goal_act // len(ACTS)
+        self.level_cap = max(LEVEL_STEP, cap - cap % LEVEL_STEP)
+        self.randomizer_seed = self.random.getrandbits(31)
         self.skill_pool: list[str] = []
         self.starting: list[str] = []
 
@@ -81,18 +89,20 @@ class D2RWorld(World):
 
         for difficulty in range(self.options.goal.value + 1):
             for _flag, act, name in QUESTS:
-                add(acts[difficulty * len(ACTS) + act], quest_location_name(difficulty, name))
+                if difficulty * len(ACTS) + act < self.act_count:
+                    add(acts[difficulty * len(ACTS) + act], quest_location_name(difficulty, name))
         if self.options.area_checks:
             for _level_id, act, name in AREAS:
-                add(acts[act], area_location_name(name))
+                if act < self.act_count:
+                    add(acts[act], area_location_name(name))
         if self.options.level_checks:
-            cap = LEVEL_CAPS[self.options.goal.value]
+            cap = self.level_cap
             for level in range(LEVEL_STEP, cap + 1, LEVEL_STEP):
                 # Spread the milestones over the acts in proportion to the level cap.
                 add(acts[min(self.act_count - 1, (level - 1) * self.act_count // cap)], level_location_name(level))
 
         final = acts[-1]
-        victory = D2RLocation(self.player, "Defeat Baal", None, final)
+        victory = D2RLocation(self.player, f"Defeat {BOSS_NAMES[self.options.goal_act.value - 1]}", None, final)
         victory.place_locked_item(D2RItem("Victory", ItemClassification.progression, None, self.player))
         final.locations.append(victory)
         self.multiworld.completion_condition[self.player] = lambda state: state.has("Victory", self.player)
@@ -113,10 +123,12 @@ class D2RWorld(World):
     def create_items(self) -> None:
         if self.options.boss_quests_give_uniques:
             boss_names = [name for flag, _act, name in QUESTS if flag in BOSS_QUESTS]
+            ours = {location.name for location in self.get_locations()}
             for difficulty in range(self.options.goal.value + 1):
                 for name in boss_names:
-                    location = self.get_location(quest_location_name(difficulty, name))
-                    location.place_locked_item(self.create_item(BOSS_UNIQUE))
+                    if quest_location_name(difficulty, name) in ours:
+                        location = self.get_location(quest_location_name(difficulty, name))
+                        location.place_locked_item(self.create_item(BOSS_UNIQUE))
 
         allowed = {CLASSES[code] for code in CLASSES} if not self.options.skill_classes.value             else set(self.options.skill_classes.value)
         candidates = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if CLASSES[cls] in allowed]
@@ -160,9 +172,20 @@ class D2RWorld(World):
     def fill_slot_data(self) -> dict[str, Any]:
         return {
             "goal": self.options.goal.value,
-            "goal_quest": GOAL_QUEST,
+            "goal_act": self.options.goal_act.value,
+            "goal_quest": BOSS_QUESTS[self.options.goal_act.value - 1],
             "area_checks": bool(self.options.area_checks),
             "level_checks": bool(self.options.level_checks),
             "level_step": LEVEL_STEP,
-            "level_cap": LEVEL_CAPS[self.options.goal.value],
+            "level_cap": self.level_cap,
+            # d2r-ap-setup reads this and writes the matching game tables.
+            "randomizer": {
+                "seed": self.randomizer_seed,
+                "monster_shuffle": self.options.monster_shuffle.value,
+                "superunique_shuffle": self.options.superunique_shuffle.value,
+                "runeword_shuffle": bool(self.options.runeword_shuffle),
+                "xp_multiplier": self.options.experience_multiplier.value,
+                "item_level_requirements": bool(self.options.item_level_requirements),
+                "item_stat_requirements": bool(self.options.item_stat_requirements),
+            },
         }

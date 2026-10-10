@@ -13,12 +13,14 @@ add_library(ap_core STATIC
 	src/ap_client.cpp
 	src/config.cpp
 	src/loot.cpp
+	src/randomizer.cpp
 	src/save_state.cpp
+	src/table.cpp
 	src/websocket.cpp
 )
 target_include_directories(ap_core PUBLIC src third_party)
 target_link_libraries(ap_core PUBLIC D2RLPlugin::D2RLPlugin winhttp)
-target_compile_definitions(ap_core PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+target_compile_definitions(ap_core PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(ap_core PUBLIC /W4 /utf-8 /EHsc)
 
 add_library(d2rl_archipelago SHARED src/plugin.cpp src/plugin.rc)
@@ -40,10 +42,9 @@ FetchContent_Declare(casclib
 FetchContent_MakeAvailable(casclib)
 
 add_executable(d2r_ap_setup tools/setup.cpp)
-target_link_libraries(d2r_ap_setup PRIVATE casc_static)
+target_link_libraries(d2r_ap_setup PRIVATE ap_core casc_static)
 target_include_directories(d2r_ap_setup PRIVATE "${casclib_SOURCE_DIR}/src")
-target_compile_definitions(d2r_ap_setup PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX CASCLIB_NO_AUTO_LINK_LIBRARY)
-target_compile_options(d2r_ap_setup PRIVATE /W4 /utf-8 /EHsc)
+target_compile_definitions(d2r_ap_setup PRIVATE CASCLIB_NO_AUTO_LINK_LIBRARY)
 set_target_properties(d2r_ap_setup PROPERTIES OUTPUT_NAME "d2r-ap-setup")
 
 enable_testing()

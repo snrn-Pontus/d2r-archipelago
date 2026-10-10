@@ -1,42 +1,57 @@
-// Writes the "Archipelago" D2R mod that stops skill points being spent on the
-// class skill trees. It reads skills.txt from the player's own game files and
-// raises every class skill's level requirement past the level cap, so skills
-// only come from the Codex charm.
+// Writes the "Archipelago" D2R mod from the player's own game files: class
+// skill trees locked (skills only come from the Codex charm), plus the seed's
+// randomization (monsters, superuniques, runewords, experience, requirements).
 //
-//   d2r-ap-setup [--game <D2R folder>] [--mod <name>] [--out <mods folder>]
-//   d2r-ap-setup --extract <folder> [--game <D2R folder>]
+//   d2r-ap-setup                                   use the server and slot saved by the plugin
+//   d2r-ap-setup --connect <server> <slot> [--password <pw>]
+//   d2r-ap-setup --offline                         skill lock only, no seed
+//   d2r-ap-setup --extract <folder>                copy the raw tables for tools/gen_data.py
 //
-// --extract copies the unmodified tables tools/gen_data.py reads, for
-// regenerating the plugin's game data from a new build.
+// Options for all of them: --game <D2R folder>, --mod <name>, --out <mods folder>.
+
+#include "ap_client.h"
+#include "config.h"
+#include "randomizer.h"
+#include "table.h"
 
 #include <CascLib.h>
 
 #include <windows.h>
 
-#include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <set>
+#include <functional>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
 
-// Above the level cap of 99, so the trees can never be allocated.
-constexpr const char* BlockedLevel = "100";
-
-const std::set<std::string> ClassCodes = { "ama", "sor", "nec", "pal", "bar", "dru", "ass", "war" };
-
-// RotW tables live in excel/, the Classic and LoD tables in excel/base/.
-const char* const SkillTables[] = {
-	"data\\global\\excel\\skills.txt",
-	"data\\global\\excel\\base\\skills.txt",
-};
+namespace fs = std::filesystem;
+using ap::Table;
+namespace rnd = ap::randomizer;
 
 // The tables tools/gen_data.py reads, from the RotW bank.
-const char* const ExtractTables[] = { "skills.txt", "levels.txt", "uniqueitems.txt", "setitems.txt", "weapons.txt", "armor.txt", "misc.txt" };
+const char* const ExtractTables[] = { "skills.txt", "levels.txt", "uniqueitems.txt", "setitems.txt", "weapons.txt", "armor.txt", "misc.txt",
+	"superuniques.txt", "runes.txt", "monlvl.txt", "monstats.txt" };
+
+// RotW tables live in excel/, the Classic and LoD tables in excel/base/.
+const char* const Banks[] = { "", "base\\" };
+
+// Written next to the mod; the plugin compares it with the connected seed.
+constexpr const char* StampFile = "archipelago.txt";
+
+struct Options {
+	std::string game;
+	std::string mod = "Archipelago";
+	std::string out;
+	std::string extract;
+	std::string server, slot, password;
+	bool offline = false;
+};
 
 auto FindGameFolder() -> std::string {
 	char path[MAX_PATH] {};
@@ -63,130 +78,224 @@ auto ReadCascFile(HANDLE storage, const std::string& name, std::string& contents
 	return !contents.empty();
 }
 
-auto Split(const std::string& line) -> std::vector<std::string> {
-	std::vector<std::string> fields;
-	size_t start = 0;
-	for (size_t tab = line.find('\t'); tab != std::string::npos; tab = line.find('\t', start)) {
-		fields.push_back(line.substr(start, tab - start));
-		start = tab + 1;
-	}
-	fields.push_back(line.substr(start));
-	return fields;
+auto ReadFile(const fs::path& path) -> std::string {
+	std::ifstream file(path, std::ios::binary);
+	std::stringstream text;
+	text << file.rdbuf();
+	return text.str();
 }
 
-auto Join(const std::vector<std::string>& fields) -> std::string {
-	std::string line;
-	for (size_t i = 0; i < fields.size(); ++i) {
-		line += (i == 0 ? "" : "\t") + fields[i];
+auto ParseArgs(int argc, char** argv) -> Options {
+	Options options;
+	options.game = FindGameFolder();
+	for (int i = 1; i < argc; ++i) {
+		const std::string arg = argv[i];
+		auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
+		if (arg == "--game") {
+			options.game = next();
+		} else if (arg == "--mod") {
+			options.mod = next();
+		} else if (arg == "--out") {
+			options.out = next();
+		} else if (arg == "--extract") {
+			options.extract = next();
+		} else if (arg == "--connect") {
+			options.server = next();
+			options.slot = next();
+		} else if (arg == "--password") {
+			options.password = next();
+		} else if (arg == "--offline") {
+			options.offline = true;
+		}
 	}
-	return line;
+	return options;
 }
 
-// Returns the patched table, or an empty string if the columns are missing.
-auto BlockClassSkills(const std::string& table, int& blocked) -> std::string {
-	std::istringstream lines(table);
-	std::string line, output;
-	int charclass = -1, reqlevel = -1;
-	bool header = true;
-	while (std::getline(lines, line)) {
-		const bool carriageReturn = !line.empty() && line.back() == '\r';
-		if (carriageReturn) {
-			line.pop_back();
+int Extract(HANDLE storage, const Options& options) {
+	fs::create_directories(options.extract);
+	int copied = 0;
+	for (const char* table : ExtractTables) {
+		std::string contents;
+		if (ReadCascFile(storage, std::string("data\\global\\excel\\") + table, contents)) {
+			std::ofstream(fs::path(options.extract) / table, std::ios::binary | std::ios::trunc) << contents;
+			++copied;
+		} else {
+			std::printf("  %s: not found\n", table);
 		}
-		auto fields = Split(line);
-		if (header) {
-			for (int i = 0; i < static_cast<int>(fields.size()); ++i) {
-				charclass = fields[i] == "charclass" ? i : charclass;
-				reqlevel = fields[i] == "reqlevel" ? i : reqlevel;
-			}
-			if (charclass < 0 || reqlevel < 0) {
-				return {};
-			}
-			header = false;
-		} else if (static_cast<int>(fields.size()) > std::max(charclass, reqlevel) && ClassCodes.contains(fields[charclass])) {
-			fields[reqlevel] = BlockedLevel;
-			++blocked;
-		}
-		output += Join(fields) + (carriageReturn ? "\r\n" : "\n");
 	}
-	return output;
+	std::printf("Extracted %d tables to %s\n", copied, options.extract.c_str());
+	return copied == static_cast<int>(std::size(ExtractTables)) ? 0 : 1;
+}
+
+struct Seed {
+	std::string name, slot;
+	rnd::Settings settings;
+};
+
+// Connects to the server just long enough to read the slot's settings.
+auto FetchSeed(const Options& options, Seed& seed) -> bool {
+	std::printf("Connecting to %s as %s...\n", options.server.c_str(), options.slot.c_str());
+	ap::Client client([](const std::string&) {});
+	client.Connect(options.server, options.slot, options.password);
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+	while (client.State() != ap::ConnectionState::Connected && client.State() != ap::ConnectionState::Refused
+		   && std::chrono::steady_clock::now() < deadline) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+	if (client.State() != ap::ConnectionState::Connected) {
+		std::printf("%s\n", client.StatusText().c_str());
+		return false;
+	}
+	seed = { client.Seed(), client.Slot(), client.Slots().randomizer };
+	client.Disconnect();
+	return true;
+}
+
+// Reads one table from a bank, edits it, and writes it to the mod if the edit
+// changed anything.
+auto PatchTable(HANDLE storage, const fs::path& excel, const std::string& bank, const std::string& name, const std::function<void(Table&)>& edit) -> bool {
+	std::string contents;
+	if (!ReadCascFile(storage, "data\\global\\excel\\" + bank + name, contents)) {
+		return false;
+	}
+	Table table = Table::Parse(contents);
+	edit(table);
+	const std::string patched = table.Format();
+	if (patched == contents) {
+		return false;
+	}
+	const fs::path target = excel / (bank.empty() ? fs::path() : fs::path("base")) / name;
+	fs::create_directories(target.parent_path());
+	std::ofstream(target, std::ios::binary | std::ios::trunc) << patched;
+	return true;
+}
+
+// A generator per table, so each table's shuffle depends only on the seed and
+// the table (FNV-1a of its name), never on which other tables were edited.
+auto TableRandom(uint32_t seed, const std::string& table) -> std::mt19937 {
+	uint32_t hash = 2166136261U;
+	for (const char c : table) {
+		hash = (hash ^ static_cast<uint8_t>(c)) * 16777619U;
+	}
+	return std::mt19937(seed ^ hash);
+}
+
+int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
+	const fs::path modRoot = (options.out.empty() ? fs::path(options.game) / "mods" : fs::path(options.out)) / options.mod;
+	const fs::path mpq = modRoot / (options.mod + ".mpq");
+	const fs::path excel = mpq / "data" / "global" / "excel";
+	// Clear the previous seed's tables, but only in a mod this tool made.
+	if (fs::exists(excel) && !fs::exists(modRoot / StampFile)) {
+		std::printf("%s exists but wasn't made by this tool; pick another name with --mod.\n", modRoot.string().c_str());
+		return 1;
+	}
+	std::error_code error;
+	fs::remove_all(excel, error);
+
+	const rnd::Settings settings = seed != nullptr ? seed->settings : rnd::Settings {};
+	std::vector<std::string> recipes;
+	for (const std::string bank : Banks) {
+		const char* label = bank.empty() ? "RotW" : "Classic/LoD";
+		int blocked = 0;
+		PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) { blocked = rnd::BlockClassSkills(t); });
+		std::printf("  %s: blocked %d class skills\n", label, blocked);
+
+		if (settings.monsters != rnd::Shuffle::Off) {
+			int changed = 0;
+			auto random = TableRandom(settings.seed, "levels");
+			PatchTable(storage, excel, bank, "levels.txt", [&](Table& t) { changed = rnd::ShuffleMonsters(t, settings.monsters, random); });
+			std::printf("  %s: new monsters in %d areas\n", label, changed);
+		}
+		if (settings.superUniques != rnd::Shuffle::Off) {
+			std::string stats;
+			ReadCascFile(storage, "data\\global\\excel\\" + bank + "monstats.txt", stats);
+			const Table monstats = Table::Parse(stats);
+			int changed = 0;
+			auto random = TableRandom(settings.seed, "superuniques");
+			PatchTable(storage, excel, bank, "superuniques.txt", [&](Table& t) { changed = rnd::ShuffleSuperUniques(t, monstats, settings.superUniques, random); });
+			std::printf("  %s: %d superuniques changed shape\n", label, changed);
+		}
+		if (settings.runewords) {
+			auto random = TableRandom(settings.seed, "runes");
+			PatchTable(storage, excel, bank, "runes.txt", [&](Table& t) {
+				auto list = rnd::ShuffleRunewords(t, random);
+				if (bank.empty()) {
+					recipes = std::move(list);
+				}
+			});
+		}
+		if (settings.xpPercent != 100) {
+			PatchTable(storage, excel, bank, "monlvl.txt", [&](Table& t) { rnd::ScaleExperience(t, settings.xpPercent); });
+			std::printf("  %s: monster experience at %d%%\n", label, settings.xpPercent);
+		}
+		if (!settings.itemLevelRequirements || !settings.itemStatRequirements) {
+			for (const char* table : { "weapons.txt", "armor.txt", "misc.txt", "uniqueitems.txt", "setitems.txt" }) {
+				PatchTable(storage, excel, bank, table, [&](Table& t) { rnd::ClearRequirements(t, !settings.itemLevelRequirements, !settings.itemStatRequirements); });
+			}
+			std::printf("  %s: item requirements cleared\n", label);
+		}
+	}
+
+	if (!recipes.empty()) {
+		std::ofstream list(modRoot / "runewords.txt", std::ios::trunc);
+		list << "Runeword recipes for this seed:\n\n";
+		for (const auto& recipe : recipes) {
+			list << recipe << "\n";
+		}
+		std::printf("  %zu runeword recipes changed; see %s\n", recipes.size(), (modRoot / "runewords.txt").string().c_str());
+	} else {
+		fs::remove(modRoot / "runewords.txt", error);
+	}
+	const fs::path modinfo = mpq / "modinfo.json";
+	if (!fs::exists(modinfo)) {
+		fs::create_directories(mpq);
+		std::ofstream(modinfo) << "{\n\t\"name\": \"" << options.mod << "\",\n\t\"savepath\": \"" << options.mod << "/\"\n}\n";
+	}
+	std::ofstream(modRoot / StampFile, std::ios::trunc) << (seed != nullptr ? seed->name : "") << "\n"
+	                                                  << (seed != nullptr ? seed->slot : "") << "\n"
+	                                                  << settings.Stamp() << "\n";
+	std::printf("Wrote the %s mod to %s\n", options.mod.c_str(), modRoot.string().c_str());
+	return 0;
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-	std::string game = FindGameFolder();
-	std::string mod = "Archipelago";
-	std::string out;
-	std::string extract;
-	for (int i = 1; i + 1 < argc; i += 2) {
-		const std::string arg = argv[i];
-		if (arg == "--game") {
-			game = argv[i + 1];
-		} else if (arg == "--mod") {
-			mod = argv[i + 1];
-		} else if (arg == "--out") {
-			out = argv[i + 1];
-		} else if (arg == "--extract") {
-			extract = argv[i + 1];
-		}
-	}
-	std::printf("Diablo II: Resurrected folder: %s\n", game.c_str());
+	Options options = ParseArgs(argc, argv);
+	std::printf("Diablo II: Resurrected folder: %s\n", options.game.c_str());
 
 	HANDLE storage = nullptr;
-	if (!CascOpenStorage(game.c_str(), 0, &storage)) {
+	if (!CascOpenStorage(options.game.c_str(), 0, &storage)) {
 		std::printf("Couldn't open the game files (error %lu). Pass the D2R folder with --game.\n", GetLastError());
 		return 1;
 	}
-	if (!extract.empty()) {
-		std::filesystem::create_directories(extract);
-		int copied = 0;
-		for (const char* table : ExtractTables) {
-			std::string contents;
-			if (ReadCascFile(storage, std::string("data\\global\\excel\\") + table, contents)) {
-				std::ofstream(std::filesystem::path(extract) / table, std::ios::binary | std::ios::trunc) << contents;
-				++copied;
-			} else {
-				std::printf("  %s: not found\n", table);
-			}
-		}
+	if (!options.extract.empty()) {
+		const int result = Extract(storage, options);
 		CascCloseStorage(storage);
-		std::printf("Extracted %d tables to %s\n", copied, extract.c_str());
-		return copied == static_cast<int>(std::size(ExtractTables)) ? 0 : 1;
-	}
-	const std::filesystem::path modRoot = (out.empty() ? std::filesystem::path(game) / "mods" : std::filesystem::path(out)) / mod;
-	const std::filesystem::path mpq = modRoot / (mod + ".mpq");
-	int written = 0;
-	for (const char* table : SkillTables) {
-		std::string contents;
-		if (!ReadCascFile(storage, table, contents)) {
-			std::printf("  %s: not in this build, skipped\n", table);
-			continue;
-		}
-		int blocked = 0;
-		const std::string patched = BlockClassSkills(contents, blocked);
-		if (patched.empty()) {
-			std::printf("  %s: charclass or reqlevel column missing, skipped\n", table);
-			continue;
-		}
-		std::string relative = table;
-		std::replace(relative.begin(), relative.end(), '\\', '/');
-		const std::filesystem::path target = mpq / relative;
-		std::filesystem::create_directories(target.parent_path());
-		std::ofstream(target, std::ios::binary | std::ios::trunc) << patched;
-		std::printf("  %s: blocked %d class skills\n", table, blocked);
-		++written;
-	}
-	CascCloseStorage(storage);
-	if (written == 0) {
-		std::printf("No skill tables were written.\n");
-		return 1;
+		return result;
 	}
 
-	const std::filesystem::path modinfo = mpq / "modinfo.json";
-	if (!std::filesystem::exists(modinfo)) {
-		std::ofstream(modinfo) << "{\n\t\"name\": \"" << mod << "\",\n\t\"savepath\": \"" << mod << "/\"\n}\n";
+	// Without --connect, use what the plugin saved after ap-connect.
+	if (!options.offline && options.server.empty()) {
+		const auto config = ap::ParseConfig(ReadFile(fs::path(options.game) / "d2rloader" / "config" / "archipelago.toml"));
+		options.server = config.server;
+		options.slot = config.slot;
+		options.password = config.password;
 	}
-	std::printf("Wrote the %s mod to %s\n", mod.c_str(), modRoot.string().c_str());
-	return 0;
+	Seed seed;
+	bool haveSeed = false;
+	if (!options.offline && !options.server.empty()) {
+		haveSeed = FetchSeed(options, seed);
+		if (!haveSeed) {
+			CascCloseStorage(storage);
+			std::printf("Couldn't read the seed. Check the server and slot, or use --offline for the skill lock alone.\n");
+			return 1;
+		}
+		std::printf("Seed %s, slot %s: %s\n", seed.name.c_str(), seed.slot.c_str(), seed.settings.Stamp().c_str());
+	} else {
+		std::printf("No server given, so only the skill lock is written. Use --connect <server> <slot> for a seed's randomization.\n");
+	}
+	const int result = WriteMod(storage, options, haveSeed ? &seed : nullptr);
+	CascCloseStorage(storage);
+	return result;
 }
