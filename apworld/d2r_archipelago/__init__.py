@@ -138,18 +138,23 @@ class D2RWorld(World):
         keys = [self.create_item(act_key_name(index)) for index in range(1, self.act_count)] if self.options.act_keys else []
         location_count = len(self.multiworld.get_unfilled_locations(self.player)) - len(keys)
         starting = min(self.options.starting_skills.value, len(candidates))
-        size = min(self.options.skill_pool_size.value, len(candidates) - starting, location_count)
+        copies, distinct = self.options.skill_copies.value, self.options.skill_pool_size.value
+        if self.options.skill_focus == self.options.skill_focus.option_few_but_deep:
+            copies, distinct = max(copies, 3), max(5, distinct // 3)
+        distinct = min(distinct, len(candidates) - starting, location_count // copies)
         # Logic needs every act's skill count to be reachable from the pool plus starting skills.
-        size = max(size, min(self.required_skills(self.act_count - 1) - starting, len(candidates) - starting))
-        if size > location_count:
+        needed = self.required_skills(self.act_count - 1) - starting
+        if distinct * copies < needed:
+            distinct = min(len(candidates) - starting, -(-needed // copies))
+        if distinct * copies > location_count or distinct * copies < needed:
             raise Exception(f"{self.player_name}: {self.required_skills(self.act_count - 1)} skills needed by "
                             f"skills_per_act don't fit in {location_count} locations; lower skills_per_act.")
         self.starting = self.pick_starting_skills(starting, candidates)
         rest = [name for name in candidates if name not in self.starting]
-        self.skill_pool = self.random.sample(rest, min(size, len(rest)))
+        self.skill_pool = self.pick_skill_pool(rest, distinct)
         for name in self.starting:
             self.multiworld.push_precollected(self.create_item(name))
-        pool = [self.create_item(name) for name in self.skill_pool]
+        pool = [self.create_item(name) for name in self.skill_pool for _ in range(copies)]
         empowerments = min(self.options.codex_empowerments.value, location_count - len(pool))
         location_count += len(keys)
         pool = keys + pool
@@ -179,6 +184,16 @@ class D2RWorld(World):
         self.random.shuffle(others)
         return (starters + others)[:count]
 
+    def pick_skill_pool(self, rest: list[str], count: int) -> list[str]:
+        """The pool's distinct skills. class_weighted takes half from the chosen class."""
+        own = self.class_name()
+        if self.options.skill_focus != self.options.skill_focus.option_class_weighted or not own:
+            return self.random.sample(rest, count)
+        mine = [name for name in rest if name in self.item_name_groups[own]]
+        others = [name for name in rest if name not in self.item_name_groups[own]]
+        from_class = min(len(mine), count // 2)
+        return self.random.sample(mine, from_class) + self.random.sample(others, min(len(others), count - from_class))
+
     def loot_weights(self) -> dict[str, float]:
         weights = {name: self.options.basic_loot_weight.value / len(BASIC_LOOT) for name in BASIC_LOOT}
         weights.update({name: self.options.unique_weight.value / len(UNIQUE_LOOT) for name in UNIQUE_LOOT})
@@ -199,6 +214,7 @@ class D2RWorld(World):
             "goal_act": self.options.goal_act.value,
             "character_class": self.class_name(),
             "act_keys": bool(self.options.act_keys),
+            "skill_scaling": self.options.skill_level_scaling.value,
             "goal_quest": BOSS_QUESTS[self.options.goal_act.value - 1],
             "area_checks": bool(self.options.area_checks),
             "level_checks": bool(self.options.level_checks),

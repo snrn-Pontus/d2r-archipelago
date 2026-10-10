@@ -1,6 +1,7 @@
 // Unit tests for the parts of the plugin that don't need the game.
 
 #include "ap_client.h"
+#include "codex.h"
 #include "config.h"
 #include "game_data.h"
 #include "ids.h"
@@ -30,6 +31,28 @@ int failures = 0;
 			++failures;                                                          \
 		}                                                                        \
 	} while (false)
+
+void TestCodexLevels() {
+	using ap::NetworkItem;
+	const std::vector<NetworkItem> items {
+		{ ap::ids::ItemBase + 54, 0, 1, 0 },     // Teleport
+		{ ap::ids::ItemBase + 67, 0, 1, 0 },     // Teeth
+		{ ap::ids::ItemBase + 54, 0, 1, 0 },     // Teleport again
+		{ ap::ids::EmpowermentItem, 0, 1, 0 },
+		{ ap::ids::LootBase + 1, 0, 1, 0 },      // a Perfect Gem, ignored
+	};
+	// Level 13 with +1 per 3 levels: 4 from scaling, 1 empowerment, plus copies.
+	const auto entries = ap::codex::Entries(items, 13, 3);
+	EXPECT(entries.size() == 2);
+	EXPECT((entries[0] == ap::codex::Entry { 54, 2 + 1 + 4 }));
+	EXPECT((entries[1] == ap::codex::Entry { 67, 1 + 1 + 4 }));
+	// No scaling, and the fingerprint follows the levels.
+	const auto flat = ap::codex::Entries(items, 13, 0);
+	EXPECT(flat[0].level == 3 && flat[1].level == 2);
+	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) != ap::codex::Fingerprint(flat, 0, 2, 4));
+	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) == ap::codex::Fingerprint(ap::codex::Entries(items, 14, 3), 0, 2, 4));
+	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) != ap::codex::Fingerprint(entries, 0, 2, 3));
+}
 
 void TestConfigRoundTrip() {
 	ap::Config config;
@@ -318,6 +341,7 @@ void TestTableEdits() {
 } // namespace
 
 int main() {
+	TestCodexLevels();
 	TestTableRoundTrip();
 	TestMonsterShuffle();
 	TestBalancedAnywhere();

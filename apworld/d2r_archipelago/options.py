@@ -51,11 +51,41 @@ class ActKeys(DefaultOnToggle):
 
 
 class SkillPoolSize(Range):
-    """How many skills are shuffled into the multiworld. Capped at the number of locations."""
+    """How many different skills are shuffled into the multiworld (each one Skill Copies times).
+    Capped by the number of locations."""
     display_name = "Skill Pool Size"
     range_start = 10
     range_end = 240
     default = 30
+
+
+class SkillCopies(Range):
+    """How many times each skill is in the pool. Every copy you find adds +1 to that skill."""
+    display_name = "Skill Copies"
+    range_start = 1
+    range_end = 5
+    default = 1
+
+
+class SkillFocus(Choice):
+    """Which skills go in the pool.
+    any_skills: any skills from the allowed classes.
+    class_weighted: half of them from your Character Class.
+    few_but_deep: a third as many different skills, each with at least 3 copies."""
+    display_name = "Skill Focus"
+    option_any_skills = 0
+    option_class_weighted = 1
+    option_few_but_deep = 2
+    default = 0
+
+
+class SkillLevelScaling(Range):
+    """Codex skills gain +1 level for every this many character levels (on top of copies and
+    Codex Empowerments), so a skill found early keeps up. 0 turns scaling off."""
+    display_name = "Skill Level Scaling"
+    range_start = 0
+    range_end = 10
+    default = 3
 
 
 class StartingSkills(Range):
@@ -236,6 +266,9 @@ class D2ROptions(PerGameCommonOptions):
     character_class: CharacterClass
     act_keys: ActKeys
     skill_pool_size: SkillPoolSize
+    skill_copies: SkillCopies
+    skill_focus: SkillFocus
+    skill_level_scaling: SkillLevelScaling
     starting_skills: StartingSkills
     skill_classes: SkillClasses
     skills_per_act: SkillsPerAct

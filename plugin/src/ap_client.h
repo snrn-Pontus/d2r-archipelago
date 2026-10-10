@@ -33,6 +33,8 @@ struct SlotData {
 	std::string characterClass;
 	// Checks in an act are held until its key arrives.
 	bool actKeys     = false;
+	// Codex skills gain +1 per this many character levels (0 = off).
+	int  skillScaling = 0;
 	int  goalQuest   = 40;
 	bool areaChecks  = true;
 	bool levelChecks = true;

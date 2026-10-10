@@ -5,7 +5,8 @@ An [Archipelago](https://archipelago.gg/) multiworld integration for Diablo II: 
 
 Every class skill (all eight classes, 240 skills) is shuffled into the multiworld. You can't spend skill
 points on the normal trees; instead each skill you receive is added to your **Archipelago Codex**, a small
-charm that grants +1 to every skill you've found (D2's `oskill` property, which works for any class).
+charm that grants every skill you've found (D2's `oskill` property, which works for any class), at a
+level set by copies found, Codex Empowerments and your character level.
 
 Locations are story quests on each difficulty up to the goal, first visits to waypoint and landmark areas,
 and every fifth character level. The goal is killing Baal on the chosen difficulty.

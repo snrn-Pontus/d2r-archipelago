@@ -102,6 +102,33 @@ class TestBarbarianStart(D2RTestBase):
         self.assertFalse(starting & {item.name for item in self.multiworld.itempool})
 
 
+class TestSkillCopies(D2RTestBase):
+    options = {"skill_copies": 3, "skill_pool_size": 10}
+
+    def test_each_skill_three_times(self) -> None:
+        skills = [item.name for item in self.multiworld.itempool if item.name in self.world.item_name_groups["Skills"]]
+        self.assertEqual(len(skills), 30)
+        self.assertTrue(all(skills.count(name) == 3 for name in skills))
+
+
+class TestFewButDeep(D2RTestBase):
+    options = {"skill_focus": "few_but_deep", "skill_pool_size": 30}
+
+    def test_ten_skills_three_copies(self) -> None:
+        skills = [item.name for item in self.multiworld.itempool if item.name in self.world.item_name_groups["Skills"]]
+        self.assertEqual(len(set(skills)), 10)
+        self.assertEqual(len(skills), 30)
+
+
+class TestClassWeighted(D2RTestBase):
+    options = {"skill_focus": "class_weighted", "character_class": "sorceress", "skill_pool_size": 20}
+
+    def test_half_from_class(self) -> None:
+        sorceress = self.world.item_name_groups["Sorceress"]
+        self.assertEqual(sum(1 for name in self.world.skill_pool if name in sorceress), 10)
+        self.assertEqual(self.world.fill_slot_data()["skill_scaling"], 3)
+
+
 class TestShortGame(D2RTestBase):
     options = {"goal": "normal", "goal_act": 2}
 
