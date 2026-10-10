@@ -233,6 +233,9 @@ void Client::Handle(const std::string& text) {
 			slotData_.randomizer.xpPercent = randomizer.value("xp_multiplier", 100);
 			slotData_.randomizer.itemLevelRequirements = randomizer.value("item_level_requirements", true);
 			slotData_.randomizer.itemStatRequirements = randomizer.value("item_stat_requirements", true);
+			slotData_.randomizer.monsterDensity = randomizer.value("monster_density", 100);
+			slotData_.randomizer.championPacks = randomizer.value("champion_packs", 100);
+			slotData_.randomizer.betterDrops = randomizer.value("better_drops", 100);
 			state_ = ConnectionState::Connected;
 			status_ = "Connected as " + slot_ + ".";
 			++sessionGeneration_;

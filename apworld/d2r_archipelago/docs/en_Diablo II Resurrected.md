@@ -24,11 +24,14 @@ full run. Quests, areas and level milestones past the goal are left out.
 
 The setup tool rewrites the game's tables for your seed:
 
-- `monster_shuffle`: areas trade monster line-ups, within their act (`nearby`) or anywhere.
+- `monster_shuffle`: areas trade monster line-ups, within their act (`nearby`) or from any act (`anywhere`).
+  With `anywhere`, Normal-difficulty monsters are levelled to fit: each area only gets line-ups whose
+  monsters have a version near its level, and each monster becomes that version.
 - `superunique_shuffle`: field superuniques like Bishibosh and Pindleskin become other monsters. Quest and
   act bosses stay as they are.
 - `runeword_shuffle`: every runeword gets a new recipe of similar-tier runes, listed in `runewords.txt` in the
   mod folder.
+- `monster_density`, `champion_packs` and `better_drops` (uniques, sets and rares) in percent.
 - `experience_multiplier`, `item_level_requirements` and `item_stat_requirements`.
 
 ## What do other items look like?

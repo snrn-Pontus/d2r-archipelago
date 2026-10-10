@@ -193,7 +193,8 @@ void TestMonsterShuffle() {
 	std::mt19937 random(1);
 	auto nearby = MakeLevels();
 	std::multiset<std::string> act0, act1, before0, before1;
-	ap::randomizer::ShuffleMonsters(nearby, ap::randomizer::Shuffle::Nearby, random);
+	const ap::Table noFamilies = ap::Table::Parse("Id\tBaseId\tLevel\r\n");
+	ap::randomizer::ShuffleMonsters(nearby, noFamilies, ap::randomizer::Shuffle::Nearby, random);
 	for (size_t row = 1; row <= 3; ++row) {
 		act0.insert(lineup(nearby, row));
 		before0.insert(lineup(original, row));
@@ -211,7 +212,7 @@ void TestMonsterShuffle() {
 	for (uint32_t seed = 0; seed < 20 && !mixed; ++seed) {
 		auto anywhere = MakeLevels();
 		std::mt19937 r(seed);
-		ap::randomizer::ShuffleMonsters(anywhere, ap::randomizer::Shuffle::Anywhere, r);
+		ap::randomizer::ShuffleMonsters(anywhere, noFamilies, ap::randomizer::Shuffle::Anywhere, r);
 		// Area A (act I) ended up with an act II line-up.
 		const std::string first = anywhere.Cell(1, 3);
 		mixed = first == "sandraider1" || first == "vulture1" || first == "scarab1";
@@ -219,9 +220,42 @@ void TestMonsterShuffle() {
 	EXPECT(mixed);
 	auto a = MakeLevels(), b = MakeLevels();
 	std::mt19937 ra(5), rb(5);
-	ap::randomizer::ShuffleMonsters(a, ap::randomizer::Shuffle::Anywhere, ra);
-	ap::randomizer::ShuffleMonsters(b, ap::randomizer::Shuffle::Anywhere, rb);
+	ap::randomizer::ShuffleMonsters(a, noFamilies, ap::randomizer::Shuffle::Anywhere, ra);
+	ap::randomizer::ShuffleMonsters(b, noFamilies, ap::randomizer::Shuffle::Anywhere, rb);
 	EXPECT(a.Format() == b.Format());
+}
+
+void TestBalancedAnywhere() {
+	// A level 2 area and a level 30 area trade line-ups; each monster becomes
+	// its family's variant nearest the new area's level.
+	auto levels = ap::Table::Parse("Name\tId\tAct\tMonLvlEx\tmon1\tnmon1\tumon1\r\n"
+	                               "Low\t2\t0\t2\tzombie1\tzombie4\tzombie1\r\nHigh\t110\t4\t30\tskeleton5\tskeleton5\tskeleton5\r\n");
+	const auto monstats = ap::Table::Parse("Id\tBaseId\tLevel\r\nzombie1\tzombie1\t1\r\nzombie2\tzombie1\t2\r\nzombie3\tzombie1\t12\r\nzombie4\tzombie1\t22\r\n"
+	                                       "skeleton1\tskeleton1\t1\r\nskeleton2\tskeleton1\t4\r\nskeleton5\tskeleton1\t33\r\n");
+	for (uint32_t seed = 0; seed < 20; ++seed) {
+		auto copy = levels;
+		std::mt19937 random(seed);
+		ap::randomizer::ShuffleMonsters(copy, monstats, ap::randomizer::Shuffle::Anywhere, random);
+		if (copy.Cell(0, 4).rfind("skeleton", 0) == 0) {
+			// Swapped: the low area gets weak skeletons, the high area strong zombies.
+			EXPECT(copy.Cell(0, 4) == "skeleton1" && copy.Cell(0, 6) == "skeleton1");
+			EXPECT(copy.Cell(1, 4) == "zombie4");
+			// Nightmare/Hell columns keep the original monsters.
+			EXPECT(copy.Cell(0, 5) == "skeleton5");
+			return;
+		}
+	}
+	EXPECT(false);
+}
+
+void TestDensityAndDrops() {
+	auto levels = ap::Table::Parse("Name\tMonDen\tMonDen(N)\tMonUMin\tMonUMax\r\nTown\t0\t\t\t\r\nMoor\t800\t1500\t1\t3\r\n");
+	ap::randomizer::ScaleDensity(levels, 200, 300);
+	EXPECT(levels.Cell(0, 1) == "0" && levels.Cell(1, 1) == "1600" && levels.Cell(1, 2) == "3000");
+	EXPECT(levels.Cell(1, 3) == "3" && levels.Cell(1, 4) == "9");
+	auto ratio = ap::Table::Parse("Function\tUnique\tUniqueDivisor\tUniqueMin\tRare\tSet\r\nNormal\t400\t2\t6400\t160\t125\r\n");
+	ap::randomizer::BoostDrops(ratio, 200);
+	EXPECT(ratio.Cell(0, 1) == "200" && ratio.Cell(0, 2) == "2" && ratio.Cell(0, 3) == "3200" && ratio.Cell(0, 4) == "80");
 }
 
 void TestSuperUniqueShuffle() {
@@ -286,6 +320,8 @@ void TestTableEdits() {
 int main() {
 	TestTableRoundTrip();
 	TestMonsterShuffle();
+	TestBalancedAnywhere();
+	TestDensityAndDrops();
 	TestSuperUniqueShuffle();
 	TestRunewordShuffle();
 	TestTableEdits();

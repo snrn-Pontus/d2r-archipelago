@@ -206,5 +206,8 @@ class D2RWorld(World):
                 "xp_multiplier": self.options.experience_multiplier.value,
                 "item_level_requirements": bool(self.options.item_level_requirements),
                 "item_stat_requirements": bool(self.options.item_stat_requirements),
+                "monster_density": self.options.monster_density.value,
+                "champion_packs": self.options.champion_packs.value,
+                "better_drops": self.options.better_drops.value,
             },
         }

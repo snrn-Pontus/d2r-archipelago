@@ -239,11 +239,21 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 		PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) { blocked = rnd::BlockClassSkills(t); });
 		std::printf("  %s: locked %d class skills\n", label, blocked);
 
-		if (settings.monsters != rnd::Shuffle::Off) {
+		if (settings.monsters != rnd::Shuffle::Off || settings.monsterDensity != 100 || settings.championPacks != 100) {
+			std::string stats;
+			ReadCascFile(storage, "data\\global\\excel\\" + bank + "monstats.txt", stats);
+			const Table monstats = Table::Parse(stats);
 			int changed = 0;
 			auto random = TableRandom(settings.seed, "levels");
-			PatchTable(storage, excel, bank, "levels.txt", [&](Table& t) { changed = rnd::ShuffleMonsters(t, settings.monsters, random); });
-			std::printf("  %s: new monsters in %d areas\n", label, changed);
+			PatchTable(storage, excel, bank, "levels.txt", [&](Table& t) {
+				changed = rnd::ShuffleMonsters(t, monstats, settings.monsters, random);
+				rnd::ScaleDensity(t, settings.monsterDensity, settings.championPacks);
+			});
+			std::printf("  %s: new monsters in %d areas, density %d%%, champion packs %d%%\n", label, changed, settings.monsterDensity, settings.championPacks);
+		}
+		if (settings.betterDrops > 100) {
+			PatchTable(storage, excel, bank, "itemratio.txt", [&](Table& t) { rnd::BoostDrops(t, settings.betterDrops); });
+			std::printf("  %s: uniques, sets and rares drop at %d%%\n", label, settings.betterDrops);
 		}
 		if (settings.superUniques != rnd::Shuffle::Off) {
 			std::string stats;

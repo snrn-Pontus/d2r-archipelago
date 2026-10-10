@@ -11,8 +11,9 @@ Locations are story quests on each difficulty up to the goal, first visits to wa
 and every fifth character level. The goal is killing Baal on the chosen difficulty.
 
 Games can be as short as Normal Act 1 or as long as a full Hell run (`goal` and `goal_act`). The setup tool
-also randomizes the game itself per seed: monster line-ups, superuniques, runeword recipes, experience and
-item requirements.
+also randomizes the game itself per seed: monster line-ups (levelled to fit when shuffled across acts),
+superuniques, runeword recipes, monster density, champion packs, drop quality, experience and item
+requirements.
 
 Other rewards are rolled when they arrive and scaled to the character's level: random uniques and set
 items, runes up to Zod, socketed runeword bases, Codex Empowerments (+1 to every Codex skill), and optional
@@ -74,3 +75,7 @@ and the overlay. The first in-game session needs to confirm:
 - [D2RLoader Plugin SDK](https://github.com/D2RLoader/PluginSDK) (MIT), vendored in `plugin/sdk`.
 - [nlohmann/json](https://github.com/nlohmann/json) 3.12.0 (MIT), vendored in `plugin/third_party`.
 - [CascLib](https://github.com/ladislav-zezula/CascLib) (MIT), fetched at build time for the setup tool.
+
+Ideas, not code: levelling shuffled monsters to their area comes from
+[mapron/d2modgen](https://github.com/mapron/d2modgen), and finding unique rows by name in the live tables
+from [CelestialRayOne/d2rloader_plugins](https://github.com/CelestialRayOne/d2rloader_plugins).

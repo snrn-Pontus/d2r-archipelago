@@ -154,7 +154,8 @@ class JunkTrapPercentage(Range):
 class MonsterShuffle(Choice):
     """Shuffles which monsters live in which areas (all three difficulties).
     Nearby: areas trade monsters within the same act, so the challenge stays about the same.
-    Anywhere: any area can get any act's monsters; on Normal this can be brutal early on."""
+    Anywhere: any area can get any act's monsters; on Normal each one is swapped for the version of its
+    family nearest the area's level, so early areas stay beatable."""
     display_name = "Monster Shuffle"
     option_off = 0
     option_nearby = 1
@@ -171,6 +172,30 @@ class SuperUniqueShuffle(Choice):
     option_nearby = 1
     option_anywhere = 2
     default = 1
+
+
+class MonsterDensity(Range):
+    """How many monsters each area spawns, in percent."""
+    display_name = "Monster Density"
+    range_start = 50
+    range_end = 400
+    default = 100
+
+
+class ChampionPacks(Range):
+    """How many champion and unique monster packs each area spawns, in percent."""
+    display_name = "Champion Packs"
+    range_start = 50
+    range_end = 400
+    default = 100
+
+
+class BetterDrops(Range):
+    """How often monsters drop uniques, set items and rares, in percent."""
+    display_name = "Better Drops"
+    range_start = 100
+    range_end = 500
+    default = 100
 
 
 class RunewordShuffle(Toggle):
@@ -219,6 +244,9 @@ class D2ROptions(PerGameCommonOptions):
     monster_shuffle: MonsterShuffle
     superunique_shuffle: SuperUniqueShuffle
     runeword_shuffle: RunewordShuffle
+    monster_density: MonsterDensity
+    champion_packs: ChampionPacks
+    better_drops: BetterDrops
     experience_multiplier: ExperienceMultiplier
     item_level_requirements: ItemLevelRequirements
     item_stat_requirements: ItemStatRequirements

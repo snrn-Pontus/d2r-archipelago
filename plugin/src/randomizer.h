@@ -23,6 +23,10 @@ struct Settings {
 	int      xpPercent = 100;
 	bool     itemLevelRequirements = true;
 	bool     itemStatRequirements = true;
+	// Percentages; 100 leaves the game as it is.
+	int      monsterDensity = 100;
+	int      championPacks = 100;
+	int      betterDrops = 100;
 
 	auto Any() const -> bool;
 	// One line describing the settings, stored with the mod so the plugin can
@@ -40,8 +44,19 @@ auto BlockClassSkills(Table& skills) -> int;
 
 // Swaps whole monster line-ups (normal, nightmare/hell and unique lists move
 // together) between areas: Nearby within each act, Anywhere across all of
-// them. Returns how many areas got a new line-up.
-auto ShuffleMonsters(Table& levels, Shuffle mode, std::mt19937& random) -> int;
+// them. With Anywhere, each Normal-difficulty monster then becomes the
+// variant of its family (zombie1..zombie5) closest to the area's level, so a
+// Worldstone Keep line-up in the Blood Moor is beatable (idea from
+// mapron/d2modgen). Nightmare and Hell already scale monsters to the area.
+// Returns how many areas got a new line-up.
+auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt19937& random) -> int;
+
+// Scales monster density and champion/unique pack counts, in percent.
+void ScaleDensity(Table& levels, int densityPercent, int packsPercent);
+
+// Makes uniques, set items and rares drop more often: divides their ratios
+// in ItemRatio by percent / 100.
+void BoostDrops(Table& itemratio, int percent);
 
 // Gives field superuniques (Bishibosh, Pindleskin...) another superunique's
 // monster type. Quest and scripted bosses keep theirs. Nearby only swaps

@@ -26,6 +26,9 @@ const std::set<std::string> FieldSuperUniques = {
 	"Sharp Tooth Sayer", "Magma Torquer", "Blaze Ripper", "Frozenstein",
 };
 
+// Anywhere: an area takes a line-up only if every monster in it has a
+// variant at most this many levels above the area's level.
+constexpr int AnywhereTolerance = 3;
 // Superuniques are swapped within groups of this many, sorted by level.
 constexpr size_t NearbyGroup = 6;
 // Runeword runes are replaced by one at most this many tiers away.
@@ -47,13 +50,15 @@ void Permute(std::vector<T>& values, std::mt19937& random) {
 } // namespace
 
 auto Settings::Any() const -> bool {
-	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != 100 || !itemLevelRequirements || !itemStatRequirements;
+	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != 100 || !itemLevelRequirements || !itemStatRequirements
+	    || monsterDensity != 100 || championPacks != 100 || betterDrops != 100;
 }
 
 auto Settings::Stamp() const -> std::string {
 	return "seed=" + std::to_string(seed) + " monsters=" + std::to_string(static_cast<int>(monsters)) + " superuniques="
 	     + std::to_string(static_cast<int>(superUniques)) + " runewords=" + (runewords ? "1" : "0") + " xp=" + std::to_string(xpPercent)
-	     + " levelreqs=" + (itemLevelRequirements ? "1" : "0") + " statreqs=" + (itemStatRequirements ? "1" : "0");
+	     + " levelreqs=" + (itemLevelRequirements ? "1" : "0") + " statreqs=" + (itemStatRequirements ? "1" : "0") + " density="
+	     + std::to_string(monsterDensity) + " packs=" + std::to_string(championPacks) + " drops=" + std::to_string(betterDrops);
 }
 
 auto BlockClassSkills(Table& skills) -> int {
@@ -78,16 +83,118 @@ auto BlockClassSkills(Table& skills) -> int {
 	return locked;
 }
 
-auto ShuffleMonsters(Table& levels, Shuffle mode, std::mt19937& random) -> int {
+// Picks the variant of a monster's family whose Normal level is closest to
+// the area's level (ties go to the weaker one).
+class FamilyLevels {
+public:
+	explicit FamilyLevels(const Table& monstats) {
+		const int id = monstats.Column("Id");
+		const int base = monstats.Column("BaseId");
+		const int level = monstats.Column("Level");
+		for (size_t row = 0; row < monstats.Rows().size(); ++row) {
+			const int value = ParseInt(monstats.Cell(row, level));
+			const std::string family = monstats.Cell(row, base);
+			if (value > 0 && !family.empty()) {
+				familyOf_[monstats.Cell(row, id)] = family;
+				members_[family].push_back({ value, monstats.Cell(row, id) });
+			}
+		}
+	}
+
+	auto Closest(const std::string& monster, int areaLevel) const -> std::string {
+		const auto family = familyOf_.find(monster);
+		if (family == familyOf_.end()) {
+			return monster;
+		}
+		std::string best = monster;
+		int bestDistance = INT32_MAX;
+		for (const auto& [level, id] : members_.at(family->second)) {
+			const int distance = std::abs(level - areaLevel) * 2 + (level > areaLevel ? 1 : 0);
+			if (distance < bestDistance) {
+				bestDistance = distance;
+				best = id;
+			}
+		}
+		return best;
+	}
+
+	// The lowest level the monster's family can appear at (0 if unknown).
+	auto Floor(const std::string& monster) const -> int {
+		const auto family = familyOf_.find(monster);
+		if (family == familyOf_.end()) {
+			return 0;
+		}
+		int lowest = INT32_MAX;
+		for (const auto& [level, id] : members_.at(family->second)) {
+			lowest = std::min(lowest, level);
+		}
+		return lowest;
+	}
+
+private:
+	std::unordered_map<std::string, std::string> familyOf_;
+	std::unordered_map<std::string, std::vector<std::pair<int, std::string>>> members_;
+};
+
+// Gives each area a random line-up whose monsters can all be scaled near its
+// level: the lowest areas pick first, from line-ups whose floor (the highest
+// of its monsters' lowest family levels) is within AnywhereTolerance.
+auto AssignByLevel(const Table& levels, const std::vector<size_t>& rows, const std::vector<std::vector<std::string>>& lineups, int areaLevel,
+	size_t normalCount, const FamilyLevels& families, std::mt19937& random) -> std::vector<std::vector<std::string>> {
+	std::vector<int> floors;
+	for (const auto& lineup : lineups) {
+		int floor = 0;
+		for (size_t i = 0; i < normalCount && i < lineup.size(); ++i) {
+			if (!lineup[i].empty()) {
+				floor = std::max(floor, families.Floor(lineup[i]));
+			}
+		}
+		floors.push_back(floor);
+	}
+	std::vector<size_t> order(rows.size());
+	for (size_t i = 0; i < order.size(); ++i) {
+		order[i] = i;
+	}
+	Permute(order, random);
+	std::ranges::stable_sort(order, {}, [&](size_t i) { return ParseInt(levels.Cell(rows[i], areaLevel)); });
+
+	std::vector<bool> used(lineups.size(), false);
+	std::vector<std::vector<std::string>> assigned(rows.size());
+	for (const size_t area : order) {
+		const int level = ParseInt(levels.Cell(rows[area], areaLevel));
+		std::vector<size_t> fits;
+		size_t lowest = SIZE_MAX;
+		for (size_t i = 0; i < lineups.size(); ++i) {
+			if (used[i]) {
+				continue;
+			}
+			if (floors[i] <= level + AnywhereTolerance) {
+				fits.push_back(i);
+			}
+			if (lowest == SIZE_MAX || floors[i] < floors[lowest]) {
+				lowest = i;
+			}
+		}
+		const size_t pick = fits.empty() ? lowest : fits[random() % fits.size()];
+		used[pick] = true;
+		assigned[area] = lineups[pick];
+	}
+	return assigned;
+}
+
+auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt19937& random) -> int {
 	if (mode == Shuffle::Off) {
 		return 0;
 	}
+	// Columns in line-up order: mon1..25 (Normal), then nmon, then umon.
 	std::vector<int> columns;
+	size_t normalCount = 0;
 	for (const char* prefix : { "mon", "nmon", "umon" }) {
 		for (int i = 1; i <= 25; ++i) {
 			const int column = levels.Column(prefix + std::to_string(i));
 			if (column >= 0) {
 				columns.push_back(column);
+				normalCount += std::string(prefix) == "mon" ? 1 : 0;
 			}
 		}
 	}
@@ -107,6 +214,18 @@ auto ShuffleMonsters(Table& levels, Shuffle mode, std::mt19937& random) -> int {
 		groups[mode == Shuffle::Nearby ? ParseInt(levels.Cell(row, act)) : 0].push_back(row);
 	}
 	int changed = 0;
+	const FamilyLevels families(monstats);
+	// Normal-difficulty area level: MonLvlEx in the expansion banks, MonLvl in Classic.
+	const int areaLevel = levels.Column("MonLvlEx") >= 0 ? levels.Column("MonLvlEx") : levels.Column("MonLvl");
+	std::vector<int> normalColumns;
+	for (const char* prefix : { "mon", "umon" }) {
+		for (int i = 1; i <= 25; ++i) {
+			const int column = levels.Column(prefix + std::to_string(i));
+			if (column >= 0) {
+				normalColumns.push_back(column);
+			}
+		}
+	}
 	for (auto& [group, rows] : groups) {
 		std::vector<std::vector<std::string>> lineups;
 		for (const size_t row : rows) {
@@ -118,10 +237,22 @@ auto ShuffleMonsters(Table& levels, Shuffle mode, std::mt19937& random) -> int {
 		}
 		auto shuffled = lineups;
 		Permute(shuffled, random);
+		if (mode == Shuffle::Anywhere && areaLevel >= 0) {
+			shuffled = AssignByLevel(levels, rows, lineups, areaLevel, normalCount, families, random);
+		}
 		for (size_t i = 0; i < rows.size(); ++i) {
 			changed += shuffled[i] != lineups[i] ? 1 : 0;
 			for (size_t c = 0; c < columns.size(); ++c) {
 				levels.Set(rows[i], columns[c], shuffled[i][c]);
+			}
+			if (mode == Shuffle::Anywhere && areaLevel >= 0) {
+				const int level = ParseInt(levels.Cell(rows[i], areaLevel));
+				for (const int column : normalColumns) {
+					const std::string monster = levels.Cell(rows[i], column);
+					if (!monster.empty() && level > 0) {
+						levels.Set(rows[i], column, families.Closest(monster, level));
+					}
+				}
 			}
 		}
 	}
@@ -232,6 +363,39 @@ void AddCodexUnique(Table& uniques, uint32_t record) {
 	const int last = uniques.Column("*eol");
 	if (last >= 0 && uniques.Rows()[row].size() < static_cast<size_t>(last) + 1) {
 		uniques.Rows()[row].resize(static_cast<size_t>(last) + 1);
+	}
+}
+
+void ScaleDensity(Table& levels, int densityPercent, int packsPercent) {
+	auto scale = [&](const char* name, int percent, int low, int high) {
+		const int column = levels.Column(name);
+		for (size_t row = 0; column >= 0 && percent != 100 && row < levels.Rows().size(); ++row) {
+			const std::string value = levels.Cell(row, column);
+			if (!value.empty() && value != "0") {
+				levels.Set(row, column, std::to_string(std::clamp(ParseInt(value) * percent / 100, low, high)));
+			}
+		}
+	};
+	for (const char* name : { "MonDen", "MonDen(N)", "MonDen(H)" }) {
+		scale(name, densityPercent, 1, 9900);
+	}
+	for (const char* name : { "MonUMin", "MonUMax", "MonUMin(N)", "MonUMax(N)", "MonUMin(H)", "MonUMax(H)" }) {
+		scale(name, packsPercent, 1, 255);
+	}
+}
+
+void BoostDrops(Table& itemratio, int percent) {
+	if (percent <= 100) {
+		return;
+	}
+	for (const char* name : { "Unique", "UniqueMin", "Rare", "RareMin", "Set", "SetMin" }) {
+		const int column = itemratio.Column(name);
+		for (size_t row = 0; column >= 0 && row < itemratio.Rows().size(); ++row) {
+			const std::string value = itemratio.Cell(row, column);
+			if (!value.empty() && ParseInt(value) > 0) {
+				itemratio.Set(row, column, std::to_string(std::max(1, ParseInt(value) * 100 / percent)));
+			}
+		}
 	}
 }
 
