@@ -1122,9 +1122,9 @@ void __cdecl OnItemTooltip(const D2RL::PluginContext*, D2RL::SharedEvents::ItemT
 	if (!codex) {
 		return;
 	}
-	// \xC3\xBF is D2's color marker: c4 gold, c5 grey. Newest message first,
-	// as many as fit in the buffer.
-	std::string text = "\xC3\xBF" "c4" "Archipelago: ";
+	// Newest message first, as many as fit. (D2's color markers show as plain
+	// text in tooltip additions, so there are none.)
+	std::string text = "Archipelago: ";
 	text += gClient->State() == ap::ConnectionState::Connected
 	          ? std::to_string(gClient->CheckedCount()) + "/" + std::to_string(gClient->LocationCount()) + " checks"
 	          : std::string("not connected");
@@ -1132,7 +1132,15 @@ void __cdecl OnItemTooltip(const D2RL::PluginContext*, D2RL::SharedEvents::ItemT
 		std::lock_guard lock(gMutex);
 		for (auto line = gHistory.rbegin(); line != gHistory.rend(); ++line) {
 			std::string shown = line->rfind("Archipelago: ", 0) == 0 ? line->substr(13) : *line;
-			const std::string next = "\n\xC3\xBF" "c5" + shown;
+			// Server housekeeping isn't worth the space.
+			if (shown.find("compressed websocket") != std::string::npos || shown.find(" has joined") != std::string::npos) {
+				continue;
+			}
+			// Tooltips don't wrap; keep lines short.
+			if (shown.size() > 70) {
+				shown = shown.substr(0, 67) + "...";
+			}
+			const std::string next = "\n" + shown;
 			if (text.size() + next.size() + 1 > event->capacity) {
 				break;
 			}
