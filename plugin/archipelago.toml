@@ -13,5 +13,3 @@ codex_unique = 439
 codex_prefix = 920
 # Properties.txt *Id of oskill.
 oskill_property = 265
-# Properties.txt *Id of skill (your own class's skills).
-class_skill_property = 123

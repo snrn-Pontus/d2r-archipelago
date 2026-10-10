@@ -53,7 +53,7 @@ constexpr D2RL::PluginInfo Info {
 // The Codex charm's item seed carries this marker in its top byte, then the
 // chunk number, the skill level (1 + Codex Empowerments) and the skill count.
 // Bump the marker whenever the Codex recipe changes, so old charms get rebuilt.
-constexpr uint32_t CodexMarker     = 0xAE000000U;
+constexpr uint32_t CodexMarker     = 0xAF000000U;
 constexpr uint32_t CodexMarkerMask = 0xFF000000U;
 constexpr uint32_t CodexMaxSkills  = 60;
 constexpr auto     FeedLifetime    = std::chrono::seconds(12);
@@ -107,14 +107,6 @@ auto ClassIndex(const std::string& name) -> int {
 	return -1;
 }
 
-auto SkillClass(uint32_t skill) -> int {
-	for (const auto& entry : ap::data::Skills) {
-		if (entry.id == skill) {
-			return ClassIndex(entry.cls);
-		}
-	}
-	return -1;
-}
 Clock::time_point     gLastRoomWarning;
 // After a failed item update, wait before trying again instead of every frame.
 Clock::time_point     gRetryAt;
@@ -560,10 +552,10 @@ struct CodexScan {
 	std::vector<D2RL::Items::ItemInfo> found;
 };
 
-// Markers 0xA9-0xAD were earlier recipes.
+// Markers 0xA9-0xAE were earlier recipes.
 auto IsCodexSeed(uint32_t seed) -> bool {
 	const uint32_t marker = seed & CodexMarkerMask;
-	return marker == CodexMarker || (marker >= 0xA9000000U && marker <= 0xAD000000U);
+	return marker == CodexMarker || (marker >= 0xA9000000U && marker <= 0xAE000000U);
 }
 
 // The Codex seed, from whichever seed field kept it (0 if neither did).
@@ -672,10 +664,9 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& s
 		}
 		std::vector<D2RL::Items::PropertySpec> properties;
 		for (size_t index = first; index < first + count; ++index) {
-			// Your own class's skills as class skills (no +6 level requirement).
-			const bool own = playerClass >= 0 && SkillClass(skills[index].skill) == playerClass;
-			properties.push_back(D2RL::Items::MakeExactProperty(own ? config.classSkillProperty : config.oskillProperty, skills[index].level,
-				static_cast<int32_t>(skills[index].skill)));
+			// oskill works for every class. D2 adds 6 to the charm's level requirement only for skills
+			// of another class than the character holding it, so your own class's skills need level 0.
+			properties.push_back(D2RL::Items::MakeExactProperty(config.oskillProperty, skills[index].level, static_cast<int32_t>(skills[index].skill)));
 		}
 		std::vector<D2RL::Items::ItemCreateSpec> outputs;
 		if (!current && count > 0) {

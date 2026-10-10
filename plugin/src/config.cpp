@@ -70,8 +70,6 @@ auto ParseConfig(const std::string& text) -> Config {
 			config.codexPrefix = static_cast<uint32_t>(std::stoul(value));
 		} else if (key == "oskill_property" && !value.empty()) {
 			config.oskillProperty = static_cast<uint32_t>(std::stoul(value));
-		} else if (key == "class_skill_property" && !value.empty()) {
-			config.classSkillProperty = static_cast<uint32_t>(std::stoul(value));
 		}
 	}
 	return config;
@@ -92,9 +90,7 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "# Affix forced onto the fallback Magic Codex (combined affix id); 0 lets D2R roll one.\n"
 	    << "codex_prefix = " << config.codexPrefix << "\n"
 	    << "# Properties.txt *Id of oskill.\n"
-	    << "oskill_property = " << config.oskillProperty << "\n"
-	    << "# Properties.txt *Id of skill (your own class's skills).\n"
-	    << "class_skill_property = " << config.classSkillProperty << "\n";
+	    << "oskill_property = " << config.oskillProperty << "\n";
 	return out.str();
 }
 

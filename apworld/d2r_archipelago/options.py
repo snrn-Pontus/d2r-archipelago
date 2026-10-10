@@ -26,10 +26,9 @@ class GoalAct(Range):
 
 
 class CharacterClass(Choice):
-    """The class you'll play. Your starting skills come from its level-1 skills, and the Codex grants
-    that class's skills as class skills, usable from level 1. Skills of other classes need level 6
-    (Diablo II adds 6 to the requirement of another class's skill). "any" picks starting skills from
-    the whole pool. The plugin also detects your class in game, after your first kill."""
+    """The class you'll play: your starting skills come from its level-1 skills. Codex skills of your own
+    class work from level 1; other classes' skills need level 6 (Diablo II adds 6 to the requirement of
+    another class's skill). "any" picks starting skills from the whole pool."""
     display_name = "Character Class"
     option_any = 0
     option_amazon = 1
