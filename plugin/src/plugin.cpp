@@ -570,8 +570,9 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick) {
 	} else if (pick.quality == D2RL::Items::Quality::Set) {
 		records = SetRecords(pick.name);
 	}
+	std::string results;
 	for (const auto container : { D2RL::Items::ItemContainer::Inventory, D2RL::Items::ItemContainer::Cube, D2RL::Items::ItemContainer::PersonalStash,
-		     D2RL::Items::ItemContainer::Ground }) {
+		     D2RL::Items::ItemContainer::Ground, D2RL::Items::ItemContainer::Cursor }) {
 		auto result = D2RL::Items::Result::NotFound;
 		for (const uint32_t record : records) {
 			result = CreateIn(player, pick, record, container);
@@ -585,9 +586,14 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick) {
 			result = CreateIn(player, pick, D2RL::Items::RandomQualityRecord, container);
 		}
 		if (result == D2RL::Items::Result::Success) {
+			if (container == D2RL::Items::ItemContainer::Ground || container == D2RL::Items::ItemContainer::Cursor) {
+				Feed("Archipelago: your bags are full, so " + pick.name + (container == D2RL::Items::ItemContainer::Ground ? " dropped at your feet." : " is in your hand."));
+			}
 			return true;
 		}
+		results += " " + std::to_string(static_cast<uint32_t>(container)) + "=" + std::to_string(static_cast<uint32_t>(result));
 	}
+	Log("Archipelago: no room for " + pick.name + " (container=result:" + results + ").");
 	return false;
 }
 
