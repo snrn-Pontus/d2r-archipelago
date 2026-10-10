@@ -148,6 +148,9 @@ class D2RWorld(World):
                         location.place_locked_item(self.create_item(BOSS_UNIQUE))
 
         allowed = set(self.options.skill_classes.value) or set(CLASSES.values())
+        if not self.options.include_warlock:
+            # Warlock skills need the Reign of the Warlock expansion.
+            allowed = (allowed - {"Warlock"}) or set(CLASSES.values()) - {"Warlock"}
         candidates = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if CLASSES[cls] in allowed]
         keys = [self.create_item(act_key_name(index)) for index in range(1, self.act_count)] if self.options.act_keys else []
         location_count = len(self.multiworld.get_unfilled_locations(self.player)) - len(keys)
@@ -189,6 +192,8 @@ class D2RWorld(World):
         """Starting skills: the chosen class's level-1 skills first, then the rest of its skills.
         With no class chosen, any skills from the pool."""
         own = self.class_name()
+        if own == "Warlock" and not self.options.include_warlock:
+            own = ""
         if not own:
             return self.random.sample(candidates, count)
         starters = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if CLASSES[cls] == own and sid in STARTER_SKILLS]

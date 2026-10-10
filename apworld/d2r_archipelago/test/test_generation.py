@@ -43,8 +43,15 @@ class TestHell(D2RTestBase):
         self.assertGreaterEqual(len(skills) + 2, 28)
 
 
+class TestNoWarlockByDefault(D2RTestBase):
+    def test_no_warlock_skills(self) -> None:
+        warlock = self.world.item_name_groups["Warlock"]
+        for item in [*self.multiworld.itempool, *self.multiworld.precollected_items[self.player]]:
+            self.assertNotIn(item.name, warlock)
+
+
 class TestSingleClass(D2RTestBase):
-    options = {"skill_classes": ["Warlock"], "skills_per_act": 0, "skill_pool_size": 30}
+    options = {"skill_classes": ["Warlock"], "include_warlock": True, "skills_per_act": 0, "skill_pool_size": 30}
 
     def test_only_warlock_skills(self) -> None:
         warlock = self.world.item_name_groups["Warlock"]

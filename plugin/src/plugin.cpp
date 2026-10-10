@@ -144,6 +144,29 @@ void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 	}
 }
 
+// Set when the Codex unique only works from the Lord of Destruction table: the
+// character isn't a Reign of the Warlock one, so Warlock skills don't exist for it.
+bool                  gLodCharacter = false;
+std::set<uint32_t>    gWarnedWarlockSkills;
+
+auto IsWarlockSkill(uint32_t skill) -> bool {
+	for (const auto& entry : ap::data::Skills) {
+		if (entry.id == skill) {
+			return std::string_view(entry.cls) == "Warlock";
+		}
+	}
+	return false;
+}
+
+auto SkillName(uint32_t skill) -> std::string {
+	for (const auto& entry : ap::data::Skills) {
+		if (entry.id == skill) {
+			return entry.name;
+		}
+	}
+	return "skill " + std::to_string(skill);
+}
+
 // The Archipelago Codex's unique rows, found on the game thread for the
 // tooltip (item copies on the UI thread don't carry the seed marker).
 std::vector<uint32_t> gCodexRecords;
@@ -746,10 +769,18 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& s
 		};
 		auto status = D2RL::Items::Result::NotFound;
 		if (!outputs.empty()) {
-			for (const uint32_t record : UniqueRecords("Archipelago Codex")) {
-				outputs[0].qualityRecordId = record;
+			// RotW row first, then LoD: which one works tells us the character's expansion.
+			const auto records = UniqueRecords("Archipelago Codex");
+			for (size_t i = 0; i < records.size(); ++i) {
+				outputs[0].qualityRecordId = records[i];
 				status = apply();
 				if (status == D2RL::Items::Result::Success) {
+					const bool lod = records.size() > 1 && i == records.size() - 1;
+					std::lock_guard lock(gMutex);
+					if (lod != gLodCharacter) {
+						gLodCharacter = lod;
+						gCodexDirty = true;
+					}
 					break;
 				}
 			}
@@ -847,7 +878,28 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			return;
 		}
 	}
-	const auto skills = ap::codex::Entries(items, EffectiveLevel(), gClient->Slots().skillScaling);
+	auto skills = ap::codex::Entries(items, EffectiveLevel(), gClient->Slots().skillScaling);
+	{
+		// Lord of Destruction characters have no Warlock skills (D2R asserts on them).
+		std::vector<std::string> dropped;
+		{
+			std::lock_guard lock(gMutex);
+			if (gLodCharacter) {
+				std::erase_if(skills, [&](const ap::codex::Entry& entry) {
+					if (!IsWarlockSkill(entry.skill)) {
+						return false;
+					}
+					if (gWarnedWarlockSkills.insert(entry.skill).second) {
+						dropped.push_back(SkillName(entry.skill));
+					}
+					return true;
+				});
+			}
+		}
+		for (const auto& name : dropped) {
+			Feed("Archipelago: " + name + " (Warlock) needs a Reign of the Warlock character; it's left off your Codex.");
+		}
+	}
 	int playerClass = -1;
 	{
 		std::lock_guard lock(gMutex);

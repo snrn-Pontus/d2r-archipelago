@@ -102,6 +102,12 @@ class SkillClasses(OptionSet):
     default = frozenset()
 
 
+class IncludeWarlock(Toggle):
+    """Put Warlock skills in the pool. Only for characters created in the Reign of the Warlock expansion:
+    Lord of Destruction characters can't use them (the plugin leaves them off their Codex)."""
+    display_name = "Include Warlock"
+
+
 class SkillsPerAct(Range):
     """Logic: how many skills you must have received for each act past the first.
     Act 3 of Normal with the default needs 4 skills, Act 1 of Nightmare needs 10."""
@@ -270,6 +276,7 @@ class D2ROptions(PerGameCommonOptions):
     skill_level_scaling: SkillLevelScaling
     starting_skills: StartingSkills
     skill_classes: SkillClasses
+    include_warlock: IncludeWarlock
     skills_per_act: SkillsPerAct
     area_checks: AreaChecks
     level_checks: LevelChecks
