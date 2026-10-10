@@ -58,6 +58,7 @@ public:
 	auto Slot() const -> std::string;
 	auto Slots() const -> SlotData;
 	auto Checked() const -> std::set<int64_t>;
+	auto CheckedCount() const -> size_t;
 	auto LocationCount() const -> size_t;
 	// Bumped whenever the received-item list changes.
 	auto ItemsGeneration() const -> uint64_t;

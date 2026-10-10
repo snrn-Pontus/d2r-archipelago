@@ -450,7 +450,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	const float size = frame->defaultTextSize > 0 ? frame->defaultTextSize : 16.0F;
 	std::string status = "AP: " + gClient->StatusText();
 	if (gClient->State() == ap::ConnectionState::Connected) {
-		status = "AP: " + gClient->Slot() + " - " + std::to_string(gClient->Checked().size()) + "/" + std::to_string(gClient->LocationCount()) + " checks";
+		status = "AP: " + gClient->Slot() + " - " + std::to_string(gClient->CheckedCount()) + "/" + std::to_string(gClient->LocationCount()) + " checks";
 	}
 	DrawText(frame, 12.0F, 8.0F, status, { 0.85F, 0.75F, 0.45F, 0.9F });
 	float y = 8.0F + size * 1.4F;
@@ -617,6 +617,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		return false;
 	}
 	gConfig = ap::ParseConfig(ConfigText());
+	gClient = std::make_unique<ap::Client>(Log);
 
 	using Kind = D2RL::Lifecycle::GameplayEventKind;
 	for (const auto kind : { Kind::GameJoined, Kind::GameLeft, Kind::LocalPlayerReady, Kind::LevelChanged, Kind::PlayerLevelChanged, Kind::QuestCompleted }) {
@@ -652,7 +653,6 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		return false;
 	}
 
-	gClient = std::make_unique<ap::Client>(Log);
 	if (gConfig.autoConnect && !gConfig.server.empty() && !gConfig.slot.empty()) {
 		gClient->Connect(gConfig.server, gConfig.slot, gConfig.password);
 	}

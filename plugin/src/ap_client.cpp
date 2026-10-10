@@ -419,6 +419,11 @@ auto Client::Checked() const -> std::set<int64_t> {
 	return checked_;
 }
 
+auto Client::CheckedCount() const -> size_t {
+	std::lock_guard lock(mutex_);
+	return checked_.size();
+}
+
 auto Client::LocationCount() const -> size_t {
 	std::lock_guard lock(mutex_);
 	return locationCount_;
