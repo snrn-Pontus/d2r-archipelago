@@ -1,0 +1,12 @@
+[archipelago]
+# Set by ap-connect. The plugin reconnects on its own when auto_connect is true.
+server = ""
+slot = ""
+password = ""
+auto_connect = true
+
+# The Codex charm that carries your received skills.
+codex_item = "cm1"
+codex_quality = "magic"
+# Properties.txt *Id of oskill.
+oskill_property = 265

@@ -1,0 +1,4 @@
+plugin/build/
+__pycache__/
+*.pyc
+plugin/build-config.log
