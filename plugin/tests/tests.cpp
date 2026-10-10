@@ -4,11 +4,14 @@
 #include "config.h"
 #include "game_data.h"
 #include "ids.h"
+#include "loot.h"
 #include "save_state.h"
 
 #include <cstdio>
 #include <filesystem>
 #include <iterator>
+#include <random>
+#include <span>
 #include <string_view>
 
 namespace {
@@ -71,7 +74,8 @@ void TestIdsMatchApworld() {
 	EXPECT(ap::ids::AreaLocation(38) == 2'421'038);
 	EXPECT(ap::ids::LevelLocation(30) == 2'422'030);
 	EXPECT(ap::ids::IsSkillItem(2'430'054) && ap::ids::SkillOf(2'430'054) == 54);
-	EXPECT(!ap::ids::IsSkillItem(ap::ids::FillerBase));
+	EXPECT(!ap::ids::IsSkillItem(ap::ids::EmpowermentItem) && !ap::ids::IsSkillItem(ap::ids::LootBase));
+	EXPECT(ap::ids::IsLootItem(ap::ids::LootBase + 5) && !ap::ids::IsLootItem(ap::ids::EmpowermentItem));
 }
 
 void TestGameData() {
@@ -104,9 +108,57 @@ void TestClientParsesServerPackets() {
 	EXPECT(client.Items().size() == 1);
 }
 
+auto FindRecord(std::span<const ap::data::QualityItem> items, uint32_t record) -> const ap::data::QualityItem* {
+	for (const auto& item : items) {
+		if (item.record == record) {
+			return &item;
+		}
+	}
+	return nullptr;
+}
+
+void TestLootScalesToLevel() {
+	std::mt19937 random(7);
+	for (int level : { 1, 15, 30, 45, 60, 75, 90 }) {
+		for (int i = 0; i < 50; ++i) {
+			const auto weapon = ap::loot::Roll(ap::loot::Loot::UniqueWeapon, level, random);
+			const auto* row = FindRecord(ap::data::Uniques, weapon.record);
+			EXPECT(weapon.quality == D2RL::Items::Quality::Unique && row != nullptr && row->kind == ap::data::Weapon);
+			// In the window, or among the closest few when the window is empty.
+			EXPECT(row != nullptr && row->reqLevel <= level + 12);
+			EXPECT(weapon.itemLevel >= static_cast<uint32_t>(level));
+			const auto set = ap::loot::Roll(ap::loot::Loot::SetItem, level, random);
+			EXPECT(set.quality == D2RL::Items::Quality::Set && FindRecord(ap::data::SetItems, set.record) != nullptr);
+		}
+	}
+	// At level 80 nothing should come from the Normal-difficulty tier.
+	for (int i = 0; i < 200; ++i) {
+		const auto* row = FindRecord(ap::data::Uniques, ap::loot::Roll(ap::loot::Loot::RandomUnique, 80, random).record);
+		EXPECT(row != nullptr && row->reqLevel >= 68);
+	}
+}
+
+void TestOtherLoot() {
+	std::mt19937 random(11);
+	for (int i = 0; i < 200; ++i) {
+		const auto rune = ap::loot::Roll(ap::loot::Loot::HighRune, 50, random);
+		const char first = static_cast<char>(rune.code & 0xFF);
+		const int number = (static_cast<char>((rune.code >> 8) & 0xFF) - '0') * 10 + (static_cast<char>((rune.code >> 16) & 0xFF) - '0');
+		EXPECT(first == 'r' && number >= 21 && number <= 33);
+		const auto base = ap::loot::Roll(ap::loot::Loot::SocketedBase, 40, random);
+		EXPECT(base.sockets >= 3 && base.sockets <= 6 && base.quality == D2RL::Items::Quality::Normal);
+		EXPECT(ap::loot::Roll(ap::loot::Loot::JunkBackpack, 1, random).code != 0);
+	}
+	EXPECT(ap::loot::Roll(ap::loot::Loot::LowRune, 1, random).code != 0);
+	EXPECT(ap::loot::EstimateLevel(0, 0) == 1);
+	EXPECT(ap::loot::EstimateLevel(2, 4) == 92);
+}
+
 } // namespace
 
 int main() {
+	TestLootScalesToLevel();
+	TestOtherLoot();
 	TestClientParsesServerPackets();
 	TestConfigRoundTrip();
 	TestConfigDefaults();

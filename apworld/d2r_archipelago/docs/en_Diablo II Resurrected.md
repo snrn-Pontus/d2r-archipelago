@@ -20,7 +20,19 @@ Complete Eve of Destruction (kill Baal) on the difficulty set by the `goal` opti
 
 ## What do other items look like?
 
-Filler items arrive in your inventory: Full Rejuvenation Potions, perfect gems and runes.
+Everything else arrives in your inventory, rolled when you receive it and scaled to your character level:
+
+- **Random Unique** (weapon, armor or jewelry) and **Random Set Item**: one your level can use, so you won't
+  find a Windforce at level 3. The act boss quests always give a Random Unique (`boss_quests_give_uniques`).
+- **Runes** in three tiers. High runes run from Pul to Zod, and the higher the rune, the rarer it is.
+- **Socketed Base**: a white weapon or armor with three or more sockets, ready for a runeword.
+- **Codex Empowerment**: +1 to every skill in your Codex.
+- Potions and perfect gems.
+- Optionally, **Junk Backpack** traps that stuff your free inventory space with worthless gear
+  (`junk_trap_percentage`).
+
+The weight options (`unique_weight`, `set_item_weight`, `high_rune_weight`, `socketed_base_weight` and
+`basic_loot_weight`) set the mix.
 
 ## What does another world's item look like in Diablo II?
 

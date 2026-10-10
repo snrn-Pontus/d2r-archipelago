@@ -4,6 +4,10 @@
 // only come from the Codex charm.
 //
 //   d2r-ap-setup [--game <D2R folder>] [--mod <name>] [--out <mods folder>]
+//   d2r-ap-setup --extract <folder> [--game <D2R folder>]
+//
+// --extract copies the unmodified tables tools/gen_data.py reads, for
+// regenerating the plugin's game data from a new build.
 
 #include <CascLib.h>
 
@@ -30,6 +34,9 @@ const char* const SkillTables[] = {
 	"data\\global\\excel\\skills.txt",
 	"data\\global\\excel\\base\\skills.txt",
 };
+
+// The tables tools/gen_data.py reads, from the RotW bank.
+const char* const ExtractTables[] = { "skills.txt", "levels.txt", "uniqueitems.txt", "setitems.txt", "weapons.txt", "armor.txt", "misc.txt" };
 
 auto FindGameFolder() -> std::string {
 	char path[MAX_PATH] {};
@@ -111,6 +118,7 @@ int main(int argc, char** argv) {
 	std::string game = FindGameFolder();
 	std::string mod = "Archipelago";
 	std::string out;
+	std::string extract;
 	for (int i = 1; i + 1 < argc; i += 2) {
 		const std::string arg = argv[i];
 		if (arg == "--game") {
@@ -119,6 +127,8 @@ int main(int argc, char** argv) {
 			mod = argv[i + 1];
 		} else if (arg == "--out") {
 			out = argv[i + 1];
+		} else if (arg == "--extract") {
+			extract = argv[i + 1];
 		}
 	}
 	std::printf("Diablo II: Resurrected folder: %s\n", game.c_str());
@@ -127,6 +137,22 @@ int main(int argc, char** argv) {
 	if (!CascOpenStorage(game.c_str(), 0, &storage)) {
 		std::printf("Couldn't open the game files (error %lu). Pass the D2R folder with --game.\n", GetLastError());
 		return 1;
+	}
+	if (!extract.empty()) {
+		std::filesystem::create_directories(extract);
+		int copied = 0;
+		for (const char* table : ExtractTables) {
+			std::string contents;
+			if (ReadCascFile(storage, std::string("data\\global\\excel\\") + table, contents)) {
+				std::ofstream(std::filesystem::path(extract) / table, std::ios::binary | std::ios::trunc) << contents;
+				++copied;
+			} else {
+				std::printf("  %s: not found\n", table);
+			}
+		}
+		CascCloseStorage(storage);
+		std::printf("Extracted %d tables to %s\n", copied, extract.c_str());
+		return copied == static_cast<int>(std::size(ExtractTables)) ? 0 : 1;
 	}
 	const std::filesystem::path modRoot = (out.empty() ? std::filesystem::path(game) / "mods" : std::filesystem::path(out)) / mod;
 	const std::filesystem::path mpq = modRoot / (mod + ".mpq");

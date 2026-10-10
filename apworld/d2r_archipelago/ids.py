@@ -9,13 +9,28 @@ ACTS = ("Act I", "Act II", "Act III", "Act IV", "Act V")
 LEVEL_STEP = 5
 LEVEL_CAPS = (30, 60, 90)
 
-# Filler ids are ITEM_BASE + 1000 + index; the plugin maps each index to an item.
-FILLERS = (
+# Loot ids are ITEM_BASE + 1000 + index; the plugin rolls the actual item, scaled to
+# the character's level, when it arrives. Append only: the index is the id.
+LOOT = (
     "Full Rejuvenation Potion",
     "Perfect Gem",
     "Low Rune",
     "Mid Rune",
+    "High Rune",
+    "Random Unique",
+    "Random Unique Weapon",
+    "Random Unique Armor",
+    "Random Unique Jewelry",
+    "Random Set Item",
+    "Socketed Base",
+    "Junk Backpack",
 )
+BASIC_LOOT = ("Full Rejuvenation Potion", "Perfect Gem", "Low Rune", "Mid Rune")
+UNIQUE_LOOT = ("Random Unique Weapon", "Random Unique Armor", "Random Unique Jewelry")
+TRAP = "Junk Backpack"
+# Each copy adds +1 to every skill in the Codex.
+EMPOWERMENT = "Codex Empowerment"
+EMPOWERMENT_ID = ITEM_BASE + 900
 
 
 def skill_item_name(skill_id: int, name: str, cls: str) -> str:
@@ -41,8 +56,9 @@ for skill_id, name, cls in SKILLS:
     assert item_name not in item_name_to_id, item_name
     item_name_to_id[item_name] = ITEM_BASE + skill_id
     skill_names_by_class[CLASSES[cls]].add(item_name)
-for index, name in enumerate(FILLERS):
+for index, name in enumerate(LOOT):
     item_name_to_id[name] = ITEM_BASE + 1000 + index
+item_name_to_id[EMPOWERMENT] = EMPOWERMENT_ID
 
 location_name_to_id: dict[str, int] = {}
 for difficulty in range(3):

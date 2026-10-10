@@ -10,6 +10,10 @@ charm that grants +1 to every skill you've found (D2's `oskill` property, which 
 Locations are story quests on each difficulty up to the goal, first visits to waypoint and landmark areas,
 and every fifth character level. The goal is killing Baal on the chosen difficulty.
 
+Other rewards are rolled when they arrive and scaled to the character's level: random uniques and set
+items, runes up to Zod, socketed runeword bases, Codex Empowerments (+1 to every Codex skill), and optional
+Junk Backpack traps. Act boss quests always give a unique.
+
 It's inspired by [Diablo II Archipelago](https://github.com/solida1987/Diablo-II-Archipelago) for LoD 1.10f,
 but shares no code with it: that mod hooks fixed 1.10f addresses, while this one uses only D2RLoader's
 public plugin API.
@@ -20,7 +24,7 @@ public plugin API.
 |---|---|
 | `apworld/d2r_archipelago` | The Archipelago world (items, locations, options, logic). |
 | `plugin/` | `d2rl-archipelago.dll`, the in-game client; `d2r-ap-setup.exe`, which writes the skill-lock mod; `ap_probe.exe`, a test client. |
-| `tools/gen_data.py` | Regenerates the skill, area and quest tables from extracted excel files. |
+| `tools/gen_data.py` | Regenerates the skill, area, quest, unique, set and base tables from excel files (`d2r-ap-setup --extract <folder>` dumps them from your install). |
 
 ## Building
 
@@ -52,6 +56,8 @@ and the overlay. The first in-game session needs to confirm:
   in the config can change this).
 - Oskills from the Codex work even though the trees' level requirement is 100.
 - `QuestCompleted`'s quest row ids match D2's quest flags (the plugin logs every quest it sees).
+- Uniques and set items come out as the rolled item: the plugin forces the table's `*ID` as the record and
+  logs "created X as record N (asked for M)". If D2R rejects a record, it falls back to any unique for that base.
 
 ## Known limits
 

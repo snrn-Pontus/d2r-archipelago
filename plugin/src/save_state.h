@@ -13,6 +13,8 @@ struct SaveState {
 	// How many received items have had their filler handed out.
 	size_t fillersDelivered = 0;
 	bool goalReached = false;
+	// Highest character level seen, for scaling loot.
+	int level = 0;
 
 	bool Load(const std::filesystem::path& path);
 	bool Save(const std::filesystem::path& path) const;

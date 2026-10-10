@@ -8,10 +8,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(D2RLPLUGIN_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(sdk)
 
-# Network and save code shared by the plugin and the ap-probe test tool.
+# Code shared by the plugin, the unit tests and the ap-probe test tool.
 add_library(ap_core STATIC
 	src/ap_client.cpp
 	src/config.cpp
+	src/loot.cpp
 	src/save_state.cpp
 	src/websocket.cpp
 )

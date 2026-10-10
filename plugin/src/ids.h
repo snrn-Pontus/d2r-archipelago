@@ -8,7 +8,9 @@ namespace ap::ids {
 
 inline constexpr int64_t ItemBase     = 2'430'000;
 inline constexpr int64_t LocationBase = 2'420'000;
-inline constexpr int64_t FillerBase   = ItemBase + 1000;
+// Skills are ItemBase + skill id (all below 900).
+inline constexpr int64_t EmpowermentItem = ItemBase + 900;
+inline constexpr int64_t LootBase        = ItemBase + 1000;
 
 inline constexpr auto QuestLocation(uint32_t difficulty, uint32_t questFlag) noexcept -> int64_t {
 	return LocationBase + difficulty * 100 + questFlag;
@@ -23,11 +25,15 @@ inline constexpr auto LevelLocation(uint32_t level) noexcept -> int64_t {
 }
 
 inline constexpr auto IsSkillItem(int64_t item) noexcept -> bool {
-	return item >= ItemBase && item < FillerBase;
+	return item >= ItemBase && item < EmpowermentItem;
 }
 
 inline constexpr auto SkillOf(int64_t item) noexcept -> uint32_t {
 	return static_cast<uint32_t>(item - ItemBase);
+}
+
+inline constexpr auto IsLootItem(int64_t item) noexcept -> bool {
+	return item >= LootBase && item < LootBase + 1000;
 }
 
 } // namespace ap::ids

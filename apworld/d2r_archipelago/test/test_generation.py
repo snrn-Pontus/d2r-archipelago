@@ -44,3 +44,35 @@ class TestSingleClass(D2RTestBase):
         for item in self.multiworld.get_items():
             if item.name in self.world.item_name_groups["Skills"]:
                 self.assertIn(item.name, warlock)
+
+
+class TestLoot(D2RTestBase):
+    options = {"goal": "nightmare", "codex_empowerments": 4, "junk_trap_percentage": 20}
+
+    def test_boss_quests_hold_uniques(self) -> None:
+        for difficulty in ("Normal", "Nightmare"):
+            for quest in ("Sisters to the Slaughter", "The Seven Tombs", "The Guardian", "Terror's End",
+                          "Eve of Destruction"):
+                item = self.multiworld.get_location(f"{difficulty}: {quest}", self.player).item
+                self.assertEqual(item.name, "Random Unique")
+
+    def test_empowerments_and_traps(self) -> None:
+        names = [item.name for item in self.multiworld.itempool if item.player == self.player]
+        self.assertEqual(names.count("Codex Empowerment"), 4)
+        self.assertGreater(names.count("Junk Backpack"), 0)
+
+    def test_pool_matches_locations(self) -> None:
+        locations = [loc for loc in self.multiworld.get_locations(self.player) if loc.address is not None]
+        items = [item for item in self.multiworld.get_items() if item.code is not None]
+        self.assertEqual(len(locations), len(items))
+
+
+class TestOnlyBasicLoot(D2RTestBase):
+    options = {"unique_weight": 0, "set_item_weight": 0, "high_rune_weight": 0, "socketed_base_weight": 0,
+               "basic_loot_weight": 0, "boss_quests_give_uniques": False}
+
+    def test_falls_back_to_basic_loot(self) -> None:
+        from ..ids import BASIC_LOOT
+        for item in self.multiworld.itempool:
+            if item.classification == item.classification.filler:
+                self.assertIn(item.name, BASIC_LOOT)

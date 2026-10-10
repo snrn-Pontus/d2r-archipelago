@@ -6,7 +6,7 @@
 
 namespace ap {
 
-// One "key value" pair per line: "check <id>", "fillers <count>", "goal 1".
+// One "key value" pair per line: "check <id>", "fillers <count>", "goal 1", "level <n>".
 bool SaveState::Load(const std::filesystem::path& path) {
 	std::ifstream file(path);
 	if (!file) {
@@ -21,6 +21,8 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			fillersDelivered = static_cast<size_t>(value);
 		} else if (key == "goal") {
 			goalReached = value != 0;
+		} else if (key == "level") {
+			level = static_cast<int>(value);
 		}
 	}
 	return true;
@@ -37,7 +39,7 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		if (!file) {
 			return false;
 		}
-		file << "fillers " << fillersDelivered << "\ngoal " << (goalReached ? 1 : 0) << "\n";
+		file << "fillers " << fillersDelivered << "\ngoal " << (goalReached ? 1 : 0) << "\nlevel " << level << "\n";
 		for (const int64_t check : checks) {
 			file << "check " << check << "\n";
 		}

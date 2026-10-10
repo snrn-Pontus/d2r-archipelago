@@ -58,6 +58,71 @@ class LevelChecks(DefaultOnToggle):
     display_name = "Level Checks"
 
 
+class CodexEmpowerments(Range):
+    """How many Codex Empowerments are in the pool. Each one adds +1 to every skill in your Codex."""
+    display_name = "Codex Empowerments"
+    range_start = 0
+    range_end = 10
+    default = 3
+
+
+class BossQuestsGiveUniques(DefaultOnToggle):
+    """The act boss quests (Andariel, Duriel, Mephisto, Diablo, Baal) always reward you with a
+    Random Unique, scaled to your level, instead of an item from the multiworld."""
+    display_name = "Boss Quests Give Uniques"
+
+
+class BasicLootWeight(Range):
+    """Weight of potions, perfect gems, and low and mid runes among the filler items."""
+    display_name = "Basic Loot Weight"
+    range_start = 0
+    range_end = 100
+    default = 40
+
+
+class UniqueWeight(Range):
+    """Weight of Random Unique Weapon / Armor / Jewelry among the filler items. Uniques are rolled
+    when you receive them, from those your character level can use."""
+    display_name = "Unique Weight"
+    range_start = 0
+    range_end = 100
+    default = 15
+
+
+class SetItemWeight(Range):
+    """Weight of Random Set Items among the filler items, scaled to your level like uniques."""
+    display_name = "Set Item Weight"
+    range_start = 0
+    range_end = 100
+    default = 10
+
+
+class HighRuneWeight(Range):
+    """Weight of High Runes (Pul through Zod; the higher, the rarer) among the filler items."""
+    display_name = "High Rune Weight"
+    range_start = 0
+    range_end = 100
+    default = 3
+
+
+class SocketedBaseWeight(Range):
+    """Weight of Socketed Bases among the filler items: a white weapon or armor with three or more
+    sockets, ready for a runeword."""
+    display_name = "Socketed Base Weight"
+    range_start = 0
+    range_end = 100
+    default = 7
+
+
+class JunkTrapPercentage(Range):
+    """Percentage of filler items replaced by Junk Backpack traps, which stuff your free inventory
+    space with worthless gear."""
+    display_name = "Junk Trap Percentage"
+    range_start = 0
+    range_end = 50
+    default = 0
+
+
 @dataclass
 class D2ROptions(PerGameCommonOptions):
     goal: Goal
@@ -67,3 +132,11 @@ class D2ROptions(PerGameCommonOptions):
     skills_per_act: SkillsPerAct
     area_checks: AreaChecks
     level_checks: LevelChecks
+    codex_empowerments: CodexEmpowerments
+    boss_quests_give_uniques: BossQuestsGiveUniques
+    basic_loot_weight: BasicLootWeight
+    unique_weight: UniqueWeight
+    set_item_weight: SetItemWeight
+    high_rune_weight: HighRuneWeight
+    socketed_base_weight: SocketedBaseWeight
+    junk_trap_percentage: JunkTrapPercentage
