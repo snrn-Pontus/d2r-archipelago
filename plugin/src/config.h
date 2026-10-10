@@ -1,5 +1,7 @@
 #pragma once
 
+#include "game_data.h"
+
 #include <D2RLPlugin/item.h>
 
 #include <cstdint>
@@ -12,9 +14,13 @@ struct Config {
 	std::string slot;
 	std::string password;
 	bool autoConnect = true;
-	// The Codex is a small charm by default; Magic quality so charm stats apply.
+	// The Codex is the "Archipelago Codex" unique small charm that d2r-ap-setup
+	// adds to UniqueItems. If D2R refuses it, the plugin makes a Magic small
+	// charm with a fixed, level-1 affix instead ("Stout", +1 Defense).
 	std::string codexItem = "cm1";
-	D2RL::Items::Quality codexQuality = D2RL::Items::Quality::Magic;
+	uint32_t codexUnique = data::CodexUnique;
+	// Combined MagicSuffix/MagicPrefix/AutoMagic id; 0 lets D2R roll one.
+	uint32_t codexPrefix = data::CodexPrefix;
 	// Properties.txt *Id of "oskill" (+N to a skill usable by any class).
 	uint32_t oskillProperty = 265;
 };

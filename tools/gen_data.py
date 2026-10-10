@@ -87,18 +87,36 @@ def main() -> None:
             return ARMOR
         return None
 
+    # D2R's record numbers count every row of UniqueItems/SetItems, divider rows
+    # like "Expansion" included, so they're the row position, not the *ID column.
+    # (Confirmed in game: asking for *ID-based record 438 was refused.)
     def quality_rows(table: str, code_column: str):
         rows = []
-        for row in read_table(excel / table):
-            record = row.get("*ID", "")
+        for position, row in enumerate(read_table(excel / table)):
             code = row.get(code_column, "")
-            if not record.isdigit() or not code or row.get("disabled") == "1" or row.get("firstLadderSeason"):
+            if not code or row.get("disabled") == "1" or row.get("firstLadderSeason"):
                 continue
             kind = kind_of(code)
             if kind is None or not row.get("lvl req", "").isdigit():
                 continue
-            rows.append((int(record), code, int(row["lvl"] or 1), int(row["lvl req"]), kind, row["index"]))
+            rows.append((position, code, int(row["lvl"] or 1), int(row["lvl req"]), kind, row["index"]))
         return rows
+
+    # The Codex charm's forced affix: "Stout" (+1 Defense), the small-charm prefix
+    # with no level requirement. Affix ids count MagicSuffix rows, then
+    # MagicPrefix rows, one-based, without MagicSuffix's blank first row.
+    # (Confirmed in game: id 922 gave prefix row 137 and suffix id 257 was row 257.)
+    suffix_rows = read_table(excel / "magicsuffix.txt")
+    codex_prefix = 0
+    for index, row in enumerate(read_table(excel / "magicprefix.txt")):
+        itypes = {row.get(f"itype{n}", "") for n in range(1, 8)}
+        if row.get("Name") == "Stout" and "scha" in itypes and row.get("levelreq") == "1":
+            codex_prefix = len(suffix_rows) - 1 + index
+            break
+    assert codex_prefix, "no level-1 Stout prefix for small charms"
+
+    # The Codex is a unique small charm appended to UniqueItems after the last row.
+    codex_unique = len(read_table(excel / "uniqueitems.txt"))
 
     uniques = quality_rows("uniqueitems.txt", "code")
     sets = quality_rows("setitems.txt", "item")
@@ -146,10 +164,14 @@ def main() -> None:
         h += [f"	{{ {rid}, {cstr(code)}, {min(ilvl, 99)}, {req}, {kinds[kind]}, {cstr(name)} }}," for rid, code, ilvl, req, kind, name in rows]
     h += ["};", "", "inline constexpr Base SocketBases[] = {"]
     h += [f"	{{ {cstr(code)}, {req}, {sockets}, {kinds[kind]}, {cstr(name)} }}," for code, req, sockets, kind, name in bases]
-    h += ["};", "", f"inline constexpr uint8_t GoalQuest = {GOAL_QUEST};", "", "} // namespace ap::data", ""]
+    h += ["};", "", "// Combined affix id of the Codex charm's fixed prefix (Stout, +1 Defense).",
+          f"inline constexpr uint32_t CodexPrefix = {codex_prefix};",
+          "// UniqueItems record d2r-ap-setup adds for the Codex charm (the RotW bank).",
+          f"inline constexpr uint32_t CodexUnique = {codex_unique};", ""]
+    h += [f"inline constexpr uint8_t GoalQuest = {GOAL_QUEST};", "", "} // namespace ap::data", ""]
     (ROOT / "plugin" / "src" / "game_data.h").write_text("\n".join(h), encoding="utf-8")
     print(f"{len(skills)} skills, {len(areas)} areas, {len(QUESTS)} quests, {len(uniques)} uniques, "
-          f"{len(sets)} set items, {len(bases)} socket bases")
+          f"{len(sets)} set items, {len(bases)} socket bases, codex prefix {codex_prefix}")
 
 
 if __name__ == "__main__":

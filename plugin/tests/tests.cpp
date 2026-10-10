@@ -37,7 +37,7 @@ void TestConfigRoundTrip() {
 	config.slot = "Snrn \"the\" Sorc";
 	config.password = R"(p\w)";
 	config.autoConnect = false;
-	config.codexQuality = D2RL::Items::Quality::Rare;
+	config.codexUnique = 500;
 	config.oskillProperty = 300;
 	const ap::Config parsed = ap::ParseConfig(ap::FormatConfig(config));
 	EXPECT(parsed.server == config.server);
@@ -45,7 +45,7 @@ void TestConfigRoundTrip() {
 	EXPECT(parsed.password == config.password);
 	EXPECT(!parsed.autoConnect);
 	EXPECT(parsed.codexItem == "cm1");
-	EXPECT(parsed.codexQuality == D2RL::Items::Quality::Rare);
+	EXPECT(parsed.codexUnique == 500);
 	EXPECT(parsed.oskillProperty == 300);
 }
 
@@ -54,7 +54,8 @@ void TestConfigDefaults() {
 	EXPECT(parsed.server.empty());
 	EXPECT(parsed.autoConnect);
 	EXPECT(parsed.oskillProperty == 265);
-	EXPECT(parsed.codexQuality == D2RL::Items::Quality::Magic);
+	EXPECT(parsed.codexUnique == ap::data::CodexUnique);
+	EXPECT(parsed.codexPrefix == ap::data::CodexPrefix);
 }
 
 void TestSaveStateRoundTrip() {
@@ -248,9 +249,12 @@ void TestRunewordShuffle() {
 }
 
 void TestTableEdits() {
-	auto skills = ap::Table::Parse("skill\tcharclass\treqlevel\r\nAttack\t\t1\r\nFire Bolt\tsor\t1\r\nAbyss\twar\t30\r\n");
+	auto skills = ap::Table::Parse("skill\tcharclass\treqlevel\treqskill1\treqskill2\treqskill3\r\nAttack\t\t1\t\t\t\r\n"
+	                               "Fire Bolt\tsor\t1\t\t\t\r\nAbyss\twar\t30\tSigil Death\tApocalypse\t\r\n");
 	EXPECT(ap::randomizer::BlockClassSkills(skills) == 2);
-	EXPECT(skills.Cell(0, 2) == "1" && skills.Cell(1, 2) == "100" && skills.Cell(2, 2) == "100");
+	EXPECT(skills.Cell(0, 3).empty());
+	EXPECT(skills.Cell(1, 2) == "0" && skills.Cell(1, 3) == "Fire Bolt");
+	EXPECT(skills.Cell(2, 2) == "0" && skills.Cell(2, 3) == "Abyss" && skills.Cell(2, 4).empty());
 
 	auto monlvl = ap::Table::Parse("Level\tXP\tXP(N)\tXP(H)\r\n1\t1\t100\t1000\r\n");
 	ap::randomizer::ScaleExperience(monlvl, 250);
@@ -261,6 +265,13 @@ void TestTableEdits() {
 	EXPECT(armor.Cell(1, 1) == "156" && armor.Cell(1, 3) == "0");
 	ap::randomizer::ClearRequirements(armor, false, true);
 	EXPECT(armor.Cell(1, 1) == "0" && armor.Cell(1, 2).empty());
+
+	auto uniques = ap::Table::Parse("index\t*ID\tversion\tspawnable\tlvl\tlvl req\tcode\tprop1\tmin1\tmax1\t*eol\r\nThe Gnasher\t0\t0\t1\t7\t5\thax\t\t\t\t0\r\n");
+	ap::randomizer::AddCodexUnique(uniques, 1);
+	ap::randomizer::AddCodexUnique(uniques, 1);
+	EXPECT(uniques.Rows().size() == 2);
+	EXPECT(uniques.Cell(1, 0) == "Archipelago Codex" && uniques.Cell(1, 1) == "1" && uniques.Cell(1, 3) == "0" && uniques.Cell(1, 5) == "1");
+	EXPECT(uniques.Cell(1, 6) == "cm1" && uniques.Rows()[1].size() == 11);
 
 	ap::randomizer::Settings settings;
 	EXPECT(!settings.Any());

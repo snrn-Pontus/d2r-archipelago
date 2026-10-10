@@ -40,15 +40,6 @@ auto Quote(const std::string& text) -> std::string {
 	return quoted + "\"";
 }
 
-auto QualityName(D2RL::Items::Quality quality) -> const char* {
-	switch (quality) {
-		case D2RL::Items::Quality::Normal: return "normal";
-		case D2RL::Items::Quality::Rare:   return "rare";
-		case D2RL::Items::Quality::Unique: return "unique";
-		default:                           return "magic";
-	}
-}
-
 } // namespace
 
 auto ParseConfig(const std::string& text) -> Config {
@@ -73,11 +64,10 @@ auto ParseConfig(const std::string& text) -> Config {
 			config.autoConnect = value == "true";
 		} else if (key == "codex_item" && !value.empty()) {
 			config.codexItem = value;
-		} else if (key == "codex_quality") {
-			config.codexQuality = value == "normal" ? D2RL::Items::Quality::Normal
-			                    : value == "rare"   ? D2RL::Items::Quality::Rare
-			                    : value == "unique" ? D2RL::Items::Quality::Unique
-			                                        : D2RL::Items::Quality::Magic;
+		} else if (key == "codex_unique" && !value.empty()) {
+			config.codexUnique = static_cast<uint32_t>(std::stoul(value));
+		} else if (key == "codex_prefix" && !value.empty()) {
+			config.codexPrefix = static_cast<uint32_t>(std::stoul(value));
 		} else if (key == "oskill_property" && !value.empty()) {
 			config.oskillProperty = static_cast<uint32_t>(std::stoul(value));
 		}
@@ -95,7 +85,10 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "auto_connect = " << (config.autoConnect ? "true" : "false") << "\n\n"
 	    << "# The Codex charm that carries your received skills.\n"
 	    << "codex_item = " << Quote(config.codexItem) << "\n"
-	    << "codex_quality = " << Quote(QualityName(config.codexQuality)) << "\n"
+	    << "# UniqueItems record of the Archipelago Codex, added by d2r-ap-setup.\n"
+	    << "codex_unique = " << config.codexUnique << "\n"
+	    << "# Affix forced onto the fallback Magic Codex (combined affix id); 0 lets D2R roll one.\n"
+	    << "codex_prefix = " << config.codexPrefix << "\n"
 	    << "# Properties.txt *Id of oskill.\n"
 	    << "oskill_property = " << config.oskillProperty << "\n";
 	return out.str();

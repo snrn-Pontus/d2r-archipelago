@@ -7,6 +7,9 @@ auto_connect = true
 
 # The Codex charm that carries your received skills.
 codex_item = "cm1"
-codex_quality = "magic"
+# UniqueItems record of the Archipelago Codex, added by d2r-ap-setup.
+codex_unique = 439
+# Affix forced onto the fallback Magic Codex (combined affix id); 0 lets D2R roll one.
+codex_prefix = 920
 # Properties.txt *Id of oskill.
 oskill_property = 265

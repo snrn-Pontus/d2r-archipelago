@@ -30,8 +30,12 @@ struct Settings {
 	auto Stamp() const -> std::string;
 };
 
-// Raises every class skill's level requirement past 99, so skill points can't
-// go into the trees. Returns how many skills it blocked.
+// Locks the class skill trees: each class skill becomes its own prerequisite,
+// so no skill can take its first point (item skills don't count as points).
+// Level requirements drop to 0, because an item granting a skill inherits
+// that skill's requirement (plus 6 for another class's skill), so the Codex
+// works from level 6 whatever it holds.
+// Returns how many skills it locked.
 auto BlockClassSkills(Table& skills) -> int;
 
 // Swaps whole monster line-ups (normal, nightmare/hell and unique lists move
@@ -47,6 +51,11 @@ auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mod
 // Rewrites each runeword's recipe with runes of a similar tier. Returns the new
 // recipes, one "Name: Rune Rune ..." line each.
 auto ShuffleRunewords(Table& runes, std::mt19937& random) -> std::vector<std::string>;
+
+// Appends the "Archipelago Codex" unique small charm (level 1, never drops) as
+// record `record`, unless the table already has it. The plugin adds the
+// received skills to it when it creates the charm.
+void AddCodexUnique(Table& uniques, uint32_t record);
 
 // Multiplies monster experience on every difficulty.
 void ScaleExperience(Table& monlvl, int percent);

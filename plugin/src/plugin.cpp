@@ -19,8 +19,11 @@
 #include <atomic>
 #include <chrono>
 #include <deque>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <unordered_map>
 #include <memory>
 #include <mutex>
 #include <random>
@@ -45,7 +48,8 @@ constexpr D2RL::PluginInfo Info {
 
 // The Codex charm's item seed carries this marker in its top byte, then the
 // chunk number, the skill level (1 + Codex Empowerments) and the skill count.
-constexpr uint32_t CodexMarker     = 0xA9000000U;
+// Bump the marker whenever the Codex recipe changes, so old charms get rebuilt.
+constexpr uint32_t CodexMarker     = 0xAC000000U;
 constexpr uint32_t CodexMarkerMask = 0xFF000000U;
 constexpr uint32_t CodexMaxSkills  = 60;
 constexpr auto     FeedLifetime    = std::chrono::seconds(12);
@@ -56,6 +60,8 @@ const D2RL::LifecycleService* gLifecycle;
 const D2RL::InventoryService* gInventory;
 const D2RL::ItemService*      gItems;
 const D2RL::ThreadService*    gThreads;
+// Optional: lets the plugin find unique and set rows by name in the live tables.
+const D2RL::DataTableService* gTables;
 const D2RL::OverlayService*   gOverlay;
 
 std::unique_ptr<ap::Client> gClient;
@@ -83,6 +89,8 @@ int                   gPlayerLevel  = 0;
 int                   gDifficulty   = 0;
 int                   gAct          = 0;
 Clock::time_point     gLastRoomWarning;
+// After a failed item update, wait before trying again instead of every frame.
+Clock::time_point     gRetryAt;
 
 void Log(const std::string& text) {
 	if (gContext != nullptr) {
@@ -90,8 +98,25 @@ void Log(const std::string& text) {
 	}
 }
 
+// Messages waiting to be echoed to the D2RLoader console on the UI thread.
+std::vector<std::string> gConsoleQueue;
+std::atomic<bool>        gConsoleQueued;
+
+void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
+	gConsoleQueued = false;
+	std::vector<std::string> lines;
+	{
+		std::lock_guard lock(gMutex);
+		lines.swap(gConsoleQueue);
+	}
+	for (const auto& line : lines) {
+		gContext->WriteConsoleMessage(line.c_str());
+	}
+}
+
 void Feed(const std::string& text) {
 	std::lock_guard lock(gMutex);
+	gConsoleQueue.push_back(text);
 	gFeed.push_back({ text, Clock::now() });
 	while (gFeed.size() > FeedLines) {
 		gFeed.pop_front();
@@ -253,6 +278,80 @@ auto MakeSpec(uint32_t code, D2RL::Items::Quality quality, D2RL::Items::ItemCont
 	};
 }
 
+// ---- Live table lookup (game thread) ---------------------------------------
+//
+// D2R's record numbers are positions in its compiled UniqueItems/SetItems
+// tables, which don't always line up with the excel files (divider rows,
+// mods). Compiled rows hold the item's name, so the plugin finds rows by name:
+// the name's offset is learned from the first row, whose name is known.
+
+struct NamedRows {
+	uint64_t revision = UINT64_MAX;
+	std::unordered_map<std::string, uint32_t> byName;
+};
+
+std::map<std::pair<uint32_t, uint32_t>, NamedRows> gNamedRows;
+
+auto IndexRows(D2RL::DataTables::Bank bank, D2RL::DataTables::TableId table, const char* firstName) -> const NamedRows* {
+	if (gTables == nullptr) {
+		return nullptr;
+	}
+	D2RL::DataTables::TableView view { .structSize = D2RL::DataTables::TableViewSize };
+	if (gTables->getTable(gContext, bank, table, &view) != D2RL::DataTables::Result::Success || view.rows == nullptr || view.rowCount == 0) {
+		return nullptr;
+	}
+	auto& cache = gNamedRows[{ static_cast<uint32_t>(bank), static_cast<uint32_t>(table) }];
+	if (cache.revision == view.revision) {
+		return &cache;
+	}
+	cache = { view.revision, {} };
+	const auto* rows = static_cast<const uint8_t*>(view.rows);
+	const size_t nameLength = std::strlen(firstName);
+	size_t offset = SIZE_MAX;
+	for (size_t at = 0; at + nameLength < view.rowSize; ++at) {
+		if (std::memcmp(rows + at, firstName, nameLength + 1) == 0) {
+			offset = at;
+			break;
+		}
+	}
+	if (offset == SIZE_MAX) {
+		Log("Archipelago: couldn't find \"" + std::string(firstName) + "\" in table " + std::to_string(static_cast<uint32_t>(table)) + ", bank "
+			+ std::to_string(static_cast<uint32_t>(bank)) + ".");
+		return &cache;
+	}
+	for (uint32_t row = 0; row < view.rowCount; ++row) {
+		const auto* name = reinterpret_cast<const char*>(rows + static_cast<size_t>(row) * view.rowSize + offset);
+		cache.byName.emplace(std::string(name, strnlen(name, std::min<size_t>(64, view.rowSize - offset))), row);
+	}
+	Log("Archipelago: table " + std::to_string(static_cast<uint32_t>(table)) + " bank " + std::to_string(static_cast<uint32_t>(bank)) + ": "
+		+ std::to_string(view.rowCount) + " rows of " + std::to_string(view.rowSize) + " bytes, names at +" + std::to_string(offset) + ".");
+	return &cache;
+}
+
+// Every record number the name has in the RotW and LoD banks, RotW first.
+auto RecordsNamed(D2RL::DataTables::TableId table, const char* firstName, const std::string& name) -> std::vector<uint32_t> {
+	std::vector<uint32_t> records;
+	for (const auto bank : { D2RL::DataTables::Bank::Rotw, D2RL::DataTables::Bank::Lod }) {
+		const NamedRows* rows = IndexRows(bank, table, firstName);
+		if (rows == nullptr) {
+			continue;
+		}
+		const auto found = rows->byName.find(name);
+		if (found != rows->byName.end() && std::ranges::find(records, found->second) == records.end()) {
+			records.push_back(found->second);
+		}
+	}
+	return records;
+}
+
+auto UniqueRecords(const std::string& name) -> std::vector<uint32_t> {
+	return RecordsNamed(D2RL::DataTables::TableId::UniqueItems, ap::data::Uniques[0].name, name);
+}
+
+auto SetRecords(const std::string& name) -> std::vector<uint32_t> {
+	return RecordsNamed(D2RL::DataTables::TableId::SetItems, ap::data::SetItems[0].name, name);
+}
+
 auto CreateIn(D2RL::PlayerHandle player, const ap::loot::Pick& pick, uint32_t record, D2RL::Items::ItemContainer container) -> D2RL::Items::Result {
 	auto spec = MakeSpec(pick.code, pick.quality, container);
 	spec.qualityRecordId = record;
@@ -274,9 +373,22 @@ auto CreateIn(D2RL::PlayerHandle player, const ap::loot::Pick& pick, uint32_t re
 // ground. If D2R rejects a forced unique or set record, it retries with any
 // record that fits the base. Returns false only when nothing could be placed.
 bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick) {
+	std::vector<uint32_t> records;
+	if (pick.quality == D2RL::Items::Quality::Unique) {
+		records = UniqueRecords(pick.name);
+	} else if (pick.quality == D2RL::Items::Quality::Set) {
+		records = SetRecords(pick.name);
+	}
 	for (const auto container : { D2RL::Items::ItemContainer::Inventory, D2RL::Items::ItemContainer::Cube, D2RL::Items::ItemContainer::PersonalStash,
 		     D2RL::Items::ItemContainer::Ground }) {
-		auto result = CreateIn(player, pick, pick.record, container);
+		auto result = D2RL::Items::Result::NotFound;
+		for (const uint32_t record : records) {
+			result = CreateIn(player, pick, record, container);
+			if (result == D2RL::Items::Result::Success) {
+				return true;
+			}
+		}
+		result = CreateIn(player, pick, pick.record, container);
 		if (result != D2RL::Items::Result::Success && pick.record != D2RL::Items::RandomQualityRecord) {
 			Log("Archipelago: record " + std::to_string(pick.record) + " (" + pick.name + ") was rejected; letting D2R pick one for the base.");
 			result = CreateIn(player, pick, D2RL::Items::RandomQualityRecord, container);
@@ -310,13 +422,82 @@ struct CodexScan {
 	std::vector<D2RL::Items::ItemInfo> found;
 };
 
+// Markers 0xA9-0xAB were earlier recipes (Magic charms with random affixes).
+auto IsCodexSeed(uint32_t seed) -> bool {
+	const uint32_t marker = seed & CodexMarkerMask;
+	return marker == CodexMarker || (marker >= 0xA9000000U && marker <= 0xAB000000U);
+}
+
+// The Codex seed, from whichever seed field kept it (0 if neither did).
+auto CodexSeedOf(const D2RL::Items::ItemInfo& item) -> uint32_t {
+	return IsCodexSeed(item.itemSeed) ? item.itemSeed : IsCodexSeed(item.generationSeed) ? item.generationSeed : 0;
+}
+
+auto DescribeItem(const D2RL::Items::ItemInfo& item) -> std::string {
+	char text[200] {};
+	std::snprintf(text, sizeof(text), "container=%u quality=%u itemSeed=%08X generationSeed=%08X prefix=%u suffix=%u", static_cast<uint32_t>(item.container),
+		static_cast<uint32_t>(item.quality), item.itemSeed, item.generationSeed, item.prefixIds[0], item.suffixIds[0]);
+	return text;
+}
+
 auto __cdecl CollectCodex(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
 	auto* scan = static_cast<CodexScan*>(userData);
-	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->code == scan->code
-		&& (item->itemSeed & CodexMarkerMask) == CodexMarker) {
+	if (item == nullptr || item->structSize < D2RL::Items::ItemInfoRequiredSize || item->code != scan->code) {
+		return D2RL::Inventory::IterationAction::Continue;
+	}
+	// Log every charm of the Codex type a few times per run, to diagnose matching.
+	static int logged = 0;
+	if (logged < 12) {
+		++logged;
+		Log("Archipelago: scan found " + DescribeItem(*item) + (CodexSeedOf(*item) != 0 ? " (Codex)" : "") + ".");
+	}
+	if (CodexSeedOf(*item) != 0) {
 		scan->found.push_back(*item);
 	}
 	return D2RL::Inventory::IterationAction::Continue;
+}
+
+// Once per session, after a failed Codex create: tries variations of the spec
+// and logs which ones D2R accepts, then removes the test items.
+void DiagnoseCodex(D2RL::PlayerHandle player, const D2RL::Items::ItemCreateSpec& codex) {
+	static bool diagnosed = false;
+	if (diagnosed) {
+		return;
+	}
+	diagnosed = true;
+	struct Variant {
+		const char* name;
+		D2RL::Items::Quality quality;
+		bool deterministic;
+		bool properties;
+	};
+	static constexpr Variant Variants[] = {
+		{ "magic, fixed seed, oskills", D2RL::Items::Quality::Magic, true, true },
+		{ "magic, random seed, oskills", D2RL::Items::Quality::Magic, false, true },
+		{ "magic, fixed seed, no properties", D2RL::Items::Quality::Magic, true, false },
+		{ "magic, random seed, no properties", D2RL::Items::Quality::Magic, false, false },
+		{ "normal, fixed seed, oskills", D2RL::Items::Quality::Normal, true, true },
+		{ "normal, random seed, oskills", D2RL::Items::Quality::Normal, false, true },
+		{ "normal, random seed, no properties", D2RL::Items::Quality::Normal, false, false },
+	};
+	const D2RL::Items::PropertySpec single = codex.propertyCount > 0 ? codex.properties[0] : D2RL::Items::PropertySpec {};
+	for (const auto& variant : Variants) {
+		auto spec = codex;
+		spec.quality = variant.quality;
+		if (!variant.deterministic) {
+			spec.seedMode = D2RL::Items::SeedMode::Random;
+			spec.generationSeed = 0;
+			spec.itemSeed = 0;
+		}
+		spec.propertyCount = variant.properties ? 1 : 0;
+		spec.properties = variant.properties ? &single : nullptr;
+		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
+		const auto result = gItems->createItem(gContext, player, &spec, &item);
+		Log(std::string("Archipelago: Codex test (") + variant.name + "): result " + std::to_string(static_cast<uint32_t>(result)) + ".");
+		if (result == D2RL::Items::Result::Success) {
+			gItems->destroyItem(gContext, player, item, D2RL::Items::SocketedItemPolicy::DestroyContents);
+		}
+	}
 }
 
 auto CodexSeed(uint32_t chunk, uint32_t level, uint32_t count) -> uint32_t {
@@ -343,10 +524,11 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<uint32_t>& skills, u
 		bool current = false;
 		std::vector<D2RL::Items::TransactionInput> stale;
 		for (const auto& item : scan.found) {
-			if (((item.itemSeed >> 16) & 0xFF) != chunk) {
+			const uint32_t seed = CodexSeedOf(item);
+			if (((seed >> 16) & 0xFF) != chunk && (seed & CodexMarkerMask) == CodexMarker) {
 				continue;
 			}
-			if (!current && item.itemSeed == wanted && item.container == D2RL::Items::ItemContainer::Inventory) {
+			if (!current && seed == wanted && item.container == D2RL::Items::ItemContainer::Inventory) {
 				current = true;
 			} else {
 				stale.push_back({ item.handle, 1, D2RL::Items::SocketedItemPolicy::RejectIfNotEmpty });
@@ -361,7 +543,10 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<uint32_t>& skills, u
 		}
 		std::vector<D2RL::Items::ItemCreateSpec> outputs;
 		if (!current && count > 0) {
-			auto spec = MakeSpec(scan.code, config.codexQuality, D2RL::Items::ItemContainer::Inventory);
+			auto spec = MakeSpec(scan.code, D2RL::Items::Quality::Unique, D2RL::Items::ItemContainer::Inventory);
+			spec.qualityRecordId = config.codexUnique;
+			// Each replacement Codex is the same unique row.
+			spec.flags = D2RL::Items::ItemCreateFlagBit(D2RL::Items::ItemCreateFlag::AllowDuplicateUnique);
 			spec.seedMode = D2RL::Items::SeedMode::Deterministic;
 			spec.generationSeed = wanted;
 			spec.itemSeed = wanted;
@@ -372,24 +557,73 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<uint32_t>& skills, u
 		if (outputs.empty() && stale.empty()) {
 			continue;
 		}
-		std::vector<D2RL::ItemHandle> created(outputs.size(), D2RL::InvalidItemHandle);
-		const D2RL::Items::Transaction transaction {
-			.structSize     = D2RL::Items::TransactionSize,
-			.player         = player,
-			.inputCount     = static_cast<uint32_t>(stale.size()),
-			.outputCount    = static_cast<uint32_t>(outputs.size()),
-			.inputs         = stale.data(),
-			.outputs        = outputs.data(),
-			.outputItems    = created.data(),
-			.outputCapacity = static_cast<uint32_t>(created.size()),
+		D2RL::ItemHandle createdCodex = D2RL::InvalidItemHandle;
+		auto apply = [&]() {
+			if (stale.empty()) {
+				// Nothing to swap out: a plain create (transactions need an input).
+				return gItems->createItem(gContext, player, &outputs[0], &createdCodex);
+			}
+			std::vector<D2RL::ItemHandle> created(outputs.size(), D2RL::InvalidItemHandle);
+			const D2RL::Items::Transaction transaction {
+				.structSize     = D2RL::Items::TransactionSize,
+				.player         = player,
+				.inputCount     = static_cast<uint32_t>(stale.size()),
+				.outputCount    = static_cast<uint32_t>(outputs.size()),
+				.inputs         = stale.data(),
+				.outputs        = outputs.empty() ? nullptr : outputs.data(),
+				.outputItems    = created.empty() ? nullptr : created.data(),
+				.outputCapacity = static_cast<uint32_t>(created.size()),
+			};
+			D2RL::Items::TransactionResult result { .structSize = D2RL::Items::TransactionResultSize };
+			const auto status = gItems->executeTransaction(gContext, &transaction, &result);
+			createdCodex = created.empty() ? D2RL::InvalidItemHandle : created[0];
+			return status;
 		};
-		D2RL::Items::TransactionResult result { .structSize = D2RL::Items::TransactionResultSize };
-		const auto status = gItems->executeTransaction(gContext, &transaction, &result);
+		auto status = D2RL::Items::Result::NotFound;
+		if (!outputs.empty()) {
+			for (const uint32_t record : UniqueRecords("Archipelago Codex")) {
+				outputs[0].qualityRecordId = record;
+				status = apply();
+				Log("Archipelago: Codex unique at row " + std::to_string(record) + ": result " + std::to_string(static_cast<uint32_t>(status)) + ".");
+				if (status == D2RL::Items::Result::Success) {
+					break;
+				}
+			}
+			if (status != D2RL::Items::Result::Success) {
+				outputs[0].qualityRecordId = config.codexUnique;
+				status = apply();
+			}
+		} else {
+			status = apply();
+		}
+		if (status != D2RL::Items::Result::Success && !outputs.empty()) {
+			// No Codex unique (the mod wasn't set up, or a Classic/LoD character):
+			// a Magic charm with a fixed affix that has no level requirement.
+			Log("Archipelago: the Codex unique " + std::to_string(config.codexUnique) + " was refused (result " + std::to_string(static_cast<uint32_t>(status))
+				+ "); making a Magic charm instead.");
+			outputs[0].quality = D2RL::Items::Quality::Magic;
+			outputs[0].qualityRecordId = D2RL::Items::RandomQualityRecord;
+			outputs[0].flags = 0;
+			outputs[0].prefixIds[0] = config.codexPrefix;
+			status = apply();
+		}
+		if (status != D2RL::Items::Result::Success && !outputs.empty() && outputs[0].prefixIds[0] != 0) {
+			Log("Archipelago: the Codex affix " + std::to_string(outputs[0].prefixIds[0]) + " was refused; letting D2R pick one.");
+			outputs[0].prefixIds[0] = 0;
+			status = apply();
+		}
 		if (status != D2RL::Items::Result::Success) {
 			Log("Archipelago: Codex update failed with result " + std::to_string(static_cast<uint32_t>(status)) + ".");
+			if (!outputs.empty()) {
+				DiagnoseCodex(player, outputs[0]);
+			}
 			ok = false;
 		} else if (!outputs.empty()) {
 			Log("Archipelago: Codex " + std::to_string(chunk + 1) + " now holds " + std::to_string(count) + " skills.");
+			D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
+			if (createdCodex != D2RL::InvalidItemHandle && gItems->getItemInfo(gContext, createdCodex, &info) == D2RL::Items::Result::Success) {
+				Log("Archipelago: created Codex " + DescribeItem(info) + ".");
+			}
 		}
 	}
 	return ok;
@@ -458,13 +692,48 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	if (codexOk && next == items.size()) {
 		gCodexItems = generation;
 		gCodexDirty = false;
-	} else if (!codexOk && Clock::now() - gLastRoomWarning > std::chrono::seconds(30)) {
+	} else {
+		gRetryAt = Clock::now() + std::chrono::seconds(30);
+	}
+	if (!codexOk && Clock::now() - gLastRoomWarning > std::chrono::seconds(30)) {
 		gLastRoomWarning = Clock::now();
-		gFeed.push_back({ "Archipelago: make room in your inventory for the Codex charm.", Clock::now() });
+		gFeed.push_back({ "Archipelago: couldn't place the Codex charm; make room in your inventory (details in the log).", Clock::now() });
 	}
 }
 
 // ---- Overlay --------------------------------------------------------------
+
+// Text height for this screen: the loader default is tiny at 4K, so scale
+// with the screen height (about 24 px at 1080p, 45 px at 2160p).
+auto TextSize(const D2RL::Overlay::Frame* frame) -> float {
+	return std::max(frame->defaultTextSize, frame->screenHeight / 48.0F);
+}
+
+auto MeasureText(const D2RL::Overlay::Frame* frame, const std::string& text, float size) -> float {
+	const D2RL::Overlay::MeasureTextRequest request {
+		.structSize = D2RL::Overlay::MeasureTextRequestSize,
+		.canvas     = frame->canvas,
+		.textSize   = size,
+		.text       = text.data(),
+		.textLength = static_cast<uint32_t>(std::min<size_t>(text.size(), D2RL::Overlay::MaxTextBytes)),
+	};
+	D2RL::Overlay::TextMetrics metrics { .structSize = D2RL::Overlay::TextMetricsSize };
+	return gOverlay->measureText(gContext, &request, &metrics) == D2RL::Overlay::Result::Success ? metrics.width : size * 0.55F * text.size();
+}
+
+uint32_t gLastRectResult = UINT32_MAX;
+uint32_t gLastTextResult = UINT32_MAX;
+
+void FillRect(const D2RL::Overlay::Frame* frame, D2RL::Overlay::Rect rect, D2RL::Overlay::Color color) {
+	const D2RL::Overlay::FilledRectangleRequest request {
+		.structSize = D2RL::Overlay::FilledRectangleRequestSize,
+		.canvas     = frame->canvas,
+		.rect       = rect,
+		.color      = color,
+		.rounding   = 4.0F,
+	};
+	gLastRectResult = static_cast<uint32_t>(gOverlay->drawFilledRectangle(gContext, &request));
+}
 
 void DrawText(const D2RL::Overlay::Frame* frame, float x, float y, const std::string& text, D2RL::Overlay::Color color) {
 	const D2RL::Overlay::TextRequest request {
@@ -472,10 +741,26 @@ void DrawText(const D2RL::Overlay::Frame* frame, float x, float y, const std::st
 		.canvas     = frame->canvas,
 		.position   = { x, y },
 		.color      = color,
+		.textSize   = TextSize(frame),
 		.text       = text.data(),
 		.textLength = static_cast<uint32_t>(std::min<size_t>(text.size(), D2RL::Overlay::MaxTextBytes)),
 	};
-	gOverlay->drawText(gContext, &request);
+	gLastTextResult = static_cast<uint32_t>(gOverlay->drawText(gContext, &request));
+}
+
+// Logs the overlay's state every ten seconds for the first minute.
+void ReportOverlay(const D2RL::Overlay::Frame* frame) {
+	static auto next = Clock::now();
+	static int reports = 0;
+	if (reports >= 6 || Clock::now() < next) {
+		return;
+	}
+	++reports;
+	next = Clock::now() + std::chrono::seconds(10);
+	char message[200] {};
+	std::snprintf(message, sizeof(message), "Archipelago: overlay frame %llu, screen %.0fx%.0f, text size %.1f, last box result %u, last text result %u.",
+		static_cast<unsigned long long>(frame->frameNumber), frame->screenWidth, frame->screenHeight, TextSize(frame), gLastRectResult, gLastTextResult);
+	Log(message);
 }
 
 void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* frame, void*) noexcept {
@@ -499,12 +784,20 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	std::vector<FeedLine> feed;
 	{
 		std::lock_guard lock(gMutex);
-		work = gInGame && gBoundSession != 0 && (gCodexDirty || gCodexItems != gClient->ItemsGeneration());
+		work = gInGame && gBoundSession != 0 && (gCodexDirty || gCodexItems != gClient->ItemsGeneration()) && Clock::now() >= gRetryAt;
 		const auto now = Clock::now();
 		while (!gFeed.empty() && now - gFeed.front().shown > FeedLifetime) {
 			gFeed.pop_front();
 		}
 		feed.assign(gFeed.begin(), gFeed.end());
+	}
+	bool console = false;
+	{
+		std::lock_guard lock(gMutex);
+		console = !gConsoleQueue.empty();
+	}
+	if (console && !gConsoleQueued.exchange(true) && gThreads->runOnUiThread(gContext, FlushConsole, nullptr) != D2RL::Threads::Result::Success) {
+		gConsoleQueued = false;
 	}
 	if (work && !gWorkQueued.exchange(true)) {
 		if (gThreads->runOnGameThread(gContext, GameWork, nullptr) != D2RL::Threads::Result::Success) {
@@ -512,16 +805,33 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		}
 	}
 
-	const float size = frame->defaultTextSize > 0 ? frame->defaultTextSize : 16.0F;
+	const float size = TextSize(frame);
+	const float pad = size * 0.3F;
 	std::string status = "AP: " + gClient->StatusText();
 	if (gClient->State() == ap::ConnectionState::Connected) {
 		status = "AP: " + gClient->Slot() + " - " + std::to_string(gClient->CheckedCount()) + "/" + std::to_string(gClient->LocationCount()) + " checks";
 	}
-	DrawText(frame, 12.0F, 8.0F, status, { 0.85F, 0.75F, 0.45F, 0.9F });
-	float y = 8.0F + size * 1.4F;
-	for (const auto& line : feed) {
-		DrawText(frame, 12.0F, y, line.text, { 1.0F, 1.0F, 1.0F, 0.95F });
-		y += size * 1.25F;
+	// Status in the top-left corner.
+	const float statusX = size * 0.5F, statusY = size * 0.4F;
+	FillRect(frame, { statusX - pad, statusY - pad, statusX + MeasureText(frame, status, size) + pad, statusY + size + pad }, { 0.0F, 0.0F, 0.0F, 0.55F });
+	DrawText(frame, statusX, statusY, status, { 0.85F, 0.75F, 0.45F, 1.0F });
+
+	ReportOverlay(frame);
+
+	// Messages in the bottom-left, above the skill bar, like D2's chat.
+	if (!feed.empty()) {
+		const float lineHeight = size * 1.25F;
+		const float x = size * 0.5F;
+		float width = 0.0F;
+		for (const auto& line : feed) {
+			width = std::max(width, MeasureText(frame, line.text, size));
+		}
+		float y = frame->screenHeight * 0.72F - lineHeight * static_cast<float>(feed.size());
+		FillRect(frame, { x - pad, y - pad, x + width + pad, y + lineHeight * static_cast<float>(feed.size()) + pad }, { 0.0F, 0.0F, 0.0F, 0.55F });
+		for (const auto& line : feed) {
+			DrawText(frame, x, y, line.text, { 1.0F, 1.0F, 1.0F, 1.0F });
+			y += lineHeight;
+		}
 	}
 }
 
@@ -697,6 +1007,10 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		|| !Query(gOverlay, D2RL::HasOverlayServiceField, D2RL::OverlayServiceRequiredSize)) {
 		context->LogError("Archipelago: a required D2RLoader service is missing; update D2RLoader.");
 		return false;
+	}
+	if (context->QueryService(&gTables) != D2RL::ServiceQueryResult::Success || !D2RL::HasDataTableServiceField(gTables, D2RL::DataTableServiceRequiredSize)) {
+		gTables = nullptr;
+		context->LogWarn("Archipelago: no data table service; unique and set rows come from the generated numbers.");
 	}
 	gConfig = ap::ParseConfig(ConfigText());
 	gClient = std::make_unique<ap::Client>(Log);

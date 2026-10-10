@@ -57,19 +57,25 @@ auto Settings::Stamp() const -> std::string {
 }
 
 auto BlockClassSkills(Table& skills) -> int {
+	const int name = skills.Column("skill");
 	const int charclass = skills.Column("charclass");
 	const int reqlevel = skills.Column("reqlevel");
-	if (charclass < 0 || reqlevel < 0) {
+	const int reqskill[] = { skills.Column("reqskill1"), skills.Column("reqskill2"), skills.Column("reqskill3") };
+	if (name < 0 || charclass < 0 || reqlevel < 0 || reqskill[0] < 0) {
 		return 0;
 	}
-	int blocked = 0;
+	int locked = 0;
 	for (size_t row = 0; row < skills.Rows().size(); ++row) {
-		if (ClassCodes.contains(skills.Cell(row, charclass))) {
-			skills.Set(row, reqlevel, "100");
-			++blocked;
+		if (!ClassCodes.contains(skills.Cell(row, charclass))) {
+			continue;
 		}
+		skills.Set(row, reqlevel, "0");
+		skills.Set(row, reqskill[0], skills.Cell(row, name));
+		skills.Set(row, reqskill[1], "");
+		skills.Set(row, reqskill[2], "");
+		++locked;
 	}
-	return blocked;
+	return locked;
 }
 
 auto ShuffleMonsters(Table& levels, Shuffle mode, std::mt19937& random) -> int {
@@ -199,6 +205,34 @@ auto ShuffleRunewords(Table& runes, std::mt19937& random) -> std::vector<std::st
 		recipes.push_back(recipe);
 	}
 	return recipes;
+}
+
+void AddCodexUnique(Table& uniques, uint32_t record) {
+	const int index = uniques.Column("index");
+	if (index < 0) {
+		return;
+	}
+	for (size_t row = 0; row < uniques.Rows().size(); ++row) {
+		if (uniques.Cell(row, index) == "Archipelago Codex") {
+			return;
+		}
+	}
+	const std::pair<const char*, std::string> values[] = {
+		{ "index", "Archipelago Codex" }, { "*ID", std::to_string(record) }, { "version", "100" }, { "spawnable", "0" }, { "rarity", "1" },
+		{ "lvl", "1" }, { "lvl req", "1" }, { "code", "cm1" }, { "*ItemName", "charm" }, { "cost mult", "1" }, { "cost add", "0" },
+		{ "dropsound", "item_gem" }, { "dropsfxframe", "12" }, { "usesound", "item_gem" }, { "prop1", "light" }, { "min1", "1" }, { "max1", "1" },
+		{ "*eol", "0" },
+	};
+	uniques.Rows().emplace_back();
+	const size_t row = uniques.Rows().size() - 1;
+	for (const auto& [name, value] : values) {
+		uniques.Set(row, uniques.Column(name), value);
+	}
+	// Pad the row to the header width so every column is present.
+	const int last = uniques.Column("*eol");
+	if (last >= 0 && uniques.Rows()[row].size() < static_cast<size_t>(last) + 1) {
+		uniques.Rows()[row].resize(static_cast<size_t>(last) + 1);
+	}
 }
 
 void ScaleExperience(Table& monlvl, int percent) {

@@ -11,10 +11,12 @@
 
 #include "ap_client.h"
 #include "config.h"
+#include "game_data.h"
 #include "randomizer.h"
 #include "table.h"
 
 #include <CascLib.h>
+#include <nlohmann/json.hpp>
 
 #include <windows.h>
 
@@ -36,7 +38,7 @@ namespace rnd = ap::randomizer;
 
 // The tables tools/gen_data.py reads, from the RotW bank.
 const char* const ExtractTables[] = { "skills.txt", "levels.txt", "uniqueitems.txt", "setitems.txt", "weapons.txt", "armor.txt", "misc.txt",
-	"superuniques.txt", "runes.txt", "monlvl.txt", "monstats.txt" };
+	"superuniques.txt", "runes.txt", "monlvl.txt", "monstats.txt", "magicprefix.txt", "magicsuffix.txt", "automagic.txt" };
 
 // RotW tables live in excel/, the Classic and LoD tables in excel/base/.
 const char* const Banks[] = { "", "base\\" };
@@ -170,6 +172,40 @@ auto PatchTable(HANDLE storage, const fs::path& excel, const std::string& bank, 
 	return true;
 }
 
+// Gives the Codex unique a name: D2R shows "An Evil Force" for a unique whose
+// name has no string. Appends an "Archipelago Codex" entry, in every
+// language, to the game's own item-names.json.
+auto AddCodexName(HANDLE storage, const fs::path& mpq) -> bool {
+	constexpr const char* Path = "data\\local\\lng\\strings\\item-names.json";
+	std::string text;
+	if (!ReadCascFile(storage, Path, text)) {
+		return false;
+	}
+	const bool bom = text.rfind("\xEF\xBB\xBF", 0) == 0;
+	auto strings = nlohmann::json::parse(bom ? text.substr(3) : text, nullptr, false);
+	if (!strings.is_array() || strings.empty()) {
+		return false;
+	}
+	int maxId = 0;
+	for (const auto& entry : strings) {
+		maxId = std::max(maxId, entry.value("id", 0));
+		if (entry.value("Key", "") == "Archipelago Codex") {
+			return true;
+		}
+	}
+	nlohmann::json codex = { { "id", maxId + 1 }, { "Key", "Archipelago Codex" } };
+	for (const auto& [key, value] : strings.front().items()) {
+		if (key != "id" && key != "Key" && value.is_string()) {
+			codex[key] = "Archipelago Codex";
+		}
+	}
+	strings.push_back(codex);
+	const fs::path target = mpq / "data" / "local" / "lng" / "strings" / "item-names.json";
+	fs::create_directories(target.parent_path());
+	std::ofstream(target, std::ios::binary | std::ios::trunc) << (bom ? "\xEF\xBB\xBF" : "") << strings.dump(2);
+	return true;
+}
+
 // A generator per table, so each table's shuffle depends only on the seed and
 // the table (FNV-1a of its name), never on which other tables were edited.
 auto TableRandom(uint32_t seed, const std::string& table) -> std::mt19937 {
@@ -191,6 +227,9 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	}
 	std::error_code error;
 	fs::remove_all(excel, error);
+	if (!AddCodexName(storage, mpq)) {
+		std::printf("  couldn't add the Codex's name; it will show as \"An Evil Force\"\n");
+	}
 
 	const rnd::Settings settings = seed != nullptr ? seed->settings : rnd::Settings {};
 	std::vector<std::string> recipes;
@@ -198,7 +237,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 		const char* label = bank.empty() ? "RotW" : "Classic/LoD";
 		int blocked = 0;
 		PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) { blocked = rnd::BlockClassSkills(t); });
-		std::printf("  %s: blocked %d class skills\n", label, blocked);
+		std::printf("  %s: locked %d class skills\n", label, blocked);
 
 		if (settings.monsters != rnd::Shuffle::Off) {
 			int changed = 0;
@@ -228,12 +267,20 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			PatchTable(storage, excel, bank, "monlvl.txt", [&](Table& t) { rnd::ScaleExperience(t, settings.xpPercent); });
 			std::printf("  %s: monster experience at %d%%\n", label, settings.xpPercent);
 		}
-		if (!settings.itemLevelRequirements || !settings.itemStatRequirements) {
-			for (const char* table : { "weapons.txt", "armor.txt", "misc.txt", "uniqueitems.txt", "setitems.txt" }) {
+		const bool clearRequirements = !settings.itemLevelRequirements || !settings.itemStatRequirements;
+		if (clearRequirements) {
+			for (const char* table : { "weapons.txt", "armor.txt", "misc.txt", "setitems.txt" }) {
 				PatchTable(storage, excel, bank, table, [&](Table& t) { rnd::ClearRequirements(t, !settings.itemLevelRequirements, !settings.itemStatRequirements); });
 			}
 			std::printf("  %s: item requirements cleared\n", label);
 		}
+		// UniqueItems gets the Codex charm, plus cleared requirements if asked.
+		PatchTable(storage, excel, bank, "uniqueitems.txt", [&](Table& t) {
+			if (clearRequirements) {
+				rnd::ClearRequirements(t, !settings.itemLevelRequirements, !settings.itemStatRequirements);
+			}
+			rnd::AddCodexUnique(t, ap::data::CodexUnique);
+		});
 	}
 
 	if (!recipes.empty()) {
