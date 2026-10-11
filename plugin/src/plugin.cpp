@@ -57,8 +57,6 @@ constexpr D2RL::PluginInfo Info {
 constexpr uint32_t CodexMarker     = 0xAF000000U;
 constexpr uint32_t CodexMarkerMask = 0xFF000000U;
 constexpr uint32_t CodexMaxSkills  = 60;
-constexpr auto     FeedLifetime    = std::chrono::seconds(12);
-constexpr size_t   FeedLines       = 6;
 
 const D2RL::PluginContext*    gContext;
 const D2RL::LifecycleService* gLifecycle;
@@ -75,11 +73,6 @@ const D2RL::OverlayService*   gOverlay;
 std::unique_ptr<ap::Client> gClient;
 std::atomic<bool>           gWorkQueued;
 
-struct FeedLine {
-	std::string       text;
-	Clock::time_point shown;
-};
-
 std::mutex            gMutex;
 ap::Config            gConfig;
 ap::SaveState         gSave;
@@ -87,7 +80,6 @@ std::filesystem::path gSavePath;
 uint64_t              gBoundSession = 0;
 // Checks found before the first connection, waiting for a seed to bind to.
 std::set<int64_t>     gUnbound;
-std::deque<FeedLine>  gFeed;
 bool                  gInGame       = false;
 bool                  gCodexDirty   = true;
 uint64_t              gCodexItems   = UINT64_MAX;
@@ -132,15 +124,49 @@ void Log(const std::string& text) {
 std::vector<std::string> gConsoleQueue;
 std::atomic<bool>        gConsoleQueued;
 
+// The overlay doesn't render, so messages also go to D2R's chat through
+// D2RCore's DisplayServerChatMessage export. It isn't part of the plugin SDK:
+// it takes a raw chat packet (0x26), and for type 1 from a player D2RCore
+// shows "<name>: <message>" itself. Call it on the UI thread only.
+using DisplayServerChatMessageFn = void*(__fastcall*)(const uint8_t* packet) noexcept;
+
+auto ChatFunction() -> DisplayServerChatMessageFn {
+	static const auto function = [] {
+		const HMODULE core = GetModuleHandleW(L"D2RCore.dll");
+		return core != nullptr ? reinterpret_cast<DisplayServerChatMessageFn>(GetProcAddress(core, "DisplayServerChatMessage")) : nullptr;
+	}();
+	return function;
+}
+
+void ShowInChat(const std::string& text) {
+	const auto display = ChatFunction();
+	if (display == nullptr || text.empty()) {
+		return;
+	}
+	constexpr size_t NameOffset = 0x0A, TextOffset = 0x47, TextBytes = 0xFF;
+	constexpr char   Sender[]   = "Archipelago";
+	uint8_t packet[TextOffset + TextBytes + 1] = {};
+	packet[0] = 0x26; // game chat
+	packet[1] = 0x01; // normal chat; packet[3] = 0 means the sender is a player
+	std::memcpy(packet + NameOffset, Sender, sizeof(Sender) - 1);
+	std::memcpy(packet + TextOffset, text.data(), std::min(text.size(), TextBytes));
+	display(packet);
+}
+
 void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 	gConsoleQueued = false;
 	std::vector<std::string> lines;
+	bool inGame = false;
 	{
 		std::lock_guard lock(gMutex);
 		lines.swap(gConsoleQueue);
+		inGame = gInGame;
 	}
 	for (const auto& line : lines) {
 		gContext->WriteConsoleMessage(line.c_str());
+		if (inGame) {
+			ShowInChat(line);
+		}
 	}
 }
 
@@ -182,10 +208,6 @@ void Feed(const std::string& text) {
 		gHistory.pop_front();
 	}
 	gConsoleQueue.push_back(text);
-	gFeed.push_back({ text, Clock::now() });
-	while (gFeed.size() > FeedLines) {
-		gFeed.pop_front();
-	}
 }
 
 auto ConfigText() -> std::string {
@@ -974,11 +996,11 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 	if (!codexOk && Clock::now() - gLastRoomWarning > std::chrono::seconds(30)) {
 		gLastRoomWarning = Clock::now();
-		gFeed.push_back({ "Archipelago: couldn't place the Codex charm; make room in your inventory (details in the log).", Clock::now() });
+		gConsoleQueue.push_back("Archipelago: couldn't place the Codex charm; make room in your inventory (details in the log).");
 	}
 	if (roomFull && Clock::now() - gLastRoomWarning > std::chrono::seconds(30)) {
 		gLastRoomWarning = Clock::now();
-		gFeed.push_back({ "Archipelago: rewards are waiting; make room in your inventory, cube or stash.", Clock::now() });
+		gConsoleQueue.push_back("Archipelago: rewards are waiting; make room in your inventory, cube or stash.");
 	}
 }
 
@@ -1059,7 +1081,6 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	}
 
 	bool work = false;
-	std::vector<FeedLine> feed;
 	{
 		std::lock_guard lock(gMutex);
 		const bool scanDue = Clock::now() >= gNextQuestScan;
@@ -1067,11 +1088,6 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 			gNextQuestScan = Clock::now() + std::chrono::seconds(5);
 		}
 		work = gInGame && gBoundSession != 0 && (scanDue || ((gCodexDirty || gCodexItems != gClient->ItemsGeneration()) && Clock::now() >= gRetryAt));
-		const auto now = Clock::now();
-		while (!gFeed.empty() && now - gFeed.front().shown > FeedLifetime) {
-			gFeed.pop_front();
-		}
-		feed.assign(gFeed.begin(), gFeed.end());
 	}
 	bool console = false;
 	{
@@ -1097,22 +1113,6 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	const float statusX = size * 0.5F, statusY = size * 0.4F;
 	FillRect(frame, { statusX - pad, statusY - pad, statusX + MeasureText(frame, status, size) + pad, statusY + size + pad }, { 0.0F, 0.0F, 0.0F, 0.55F });
 	DrawText(frame, statusX, statusY, status, { 0.85F, 0.75F, 0.45F, 1.0F });
-
-	// Messages in the bottom-left, above the skill bar, like D2's chat.
-	if (!feed.empty()) {
-		const float lineHeight = size * 1.25F;
-		const float x = size * 0.5F;
-		float width = 0.0F;
-		for (const auto& line : feed) {
-			width = std::max(width, MeasureText(frame, line.text, size));
-		}
-		float y = frame->screenHeight * 0.72F - lineHeight * static_cast<float>(feed.size());
-		FillRect(frame, { x - pad, y - pad, x + width + pad, y + lineHeight * static_cast<float>(feed.size()) + pad }, { 0.0F, 0.0F, 0.0F, 0.55F });
-		for (const auto& line : feed) {
-			DrawText(frame, x, y, line.text, { 1.0F, 1.0F, 1.0F, 1.0F });
-			y += lineHeight;
-		}
-	}
 }
 
 // ---- Gameplay events (UI thread) --------------------------------------------
@@ -1372,6 +1372,20 @@ auto CommandUi(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, v
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
+// ap-chat <text>: show a line in D2R's chat, to test the chat output.
+auto CommandChat(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
+	const std::string text(command->args != nullptr ? command->args : "", command->argsLength);
+	if (text.empty()) {
+		return D2RL::ConsoleCommandResult::InvalidArguments;
+	}
+	if (ChatFunction() == nullptr) {
+		gContext->WriteConsoleMessage("ap-chat: D2RCore has no DisplayServerChatMessage export.");
+		return D2RL::ConsoleCommandResult::Failed;
+	}
+	ShowInChat(text);
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
 auto CommandCodex(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
 	std::lock_guard lock(gMutex);
 	gCodexDirty = true;
@@ -1470,6 +1484,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-disconnect", CommandDisconnect, "Disconnect from the Archipelago server.")
 	                   && context->RegisterConsoleCommand("ap-status", CommandStatus, "Show the Archipelago connection and progress.")
 	                   && context->RegisterConsoleCommand("ap-say", CommandSay, "Send a chat message to the Archipelago server.")
+	                   && context->RegisterConsoleCommand("ap-chat", CommandChat, "Show a line in the game chat: ap-chat <text>.")
 	                   && context->RegisterConsoleCommand("ap-codex", CommandCodex, "Rebuild the Archipelago Codex charm.")
 	                   && context->RegisterConsoleCommand("ap-ui", CommandUi, "Send a D2R UI message: ap-ui <target> <command> [text].");
 	if (!commands) {
