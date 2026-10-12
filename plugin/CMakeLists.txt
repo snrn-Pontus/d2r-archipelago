@@ -46,7 +46,7 @@ FetchContent_Declare(casclib
 FetchContent_MakeAvailable(casclib)
 
 add_executable(d2r_ap_setup tools/setup.cpp)
-target_link_libraries(d2r_ap_setup PRIVATE ap_core casc_static mfplat mfreadwrite mfuuid ole32 version)
+target_link_libraries(d2r_ap_setup PRIVATE ap_core casc_static mfplat mfreadwrite mfuuid ole32 shell32 version)
 target_include_directories(d2r_ap_setup PRIVATE "${casclib_SOURCE_DIR}/src")
 target_compile_definitions(d2r_ap_setup PRIVATE CASCLIB_NO_AUTO_LINK_LIBRARY)
 set_target_properties(d2r_ap_setup PROPERTIES OUTPUT_NAME "d2r-ap-setup")

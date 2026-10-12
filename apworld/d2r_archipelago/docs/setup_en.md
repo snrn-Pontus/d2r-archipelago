@@ -5,9 +5,13 @@
 - Diablo II: Resurrected 3.x (Reign of the Warlock), installed through Battle.net.
 - [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases) 0.6.4 or newer, with
   `d2r_archipelago.apworld` installed (double-click it, or put it in Archipelago's `custom_worlds` folder).
+- [D2RLoader](https://d2rloader.net/download.html), extracted into your Diablo II: Resurrected folder. If you
+  don't have it yet, the setup opens its download page for you. Windows Defender often flags D2RLoader, which
+  patches the game while it runs, as a trojan; if it blocks or removes it, allow it under Windows Security,
+  Virus & threat protection, Protection history.
 
-That's all. D2RLoader, the plugin and the mod are installed for you. The game runs offline through
-D2RLoader; don't use Battle.net characters.
+The plugin and the mod are installed for you. The game runs offline through D2RLoader; don't use
+Battle.net characters.
 
 ## Playing
 
@@ -24,9 +28,9 @@ each new seed.
 
 The setup:
 
-- installs [D2RLoader](https://d2rloader.net) if it isn't in your game folder. Windows Defender often flags
-  D2RLoader, which patches the game while it runs, as a trojan; if the download is quarantined, the window
-  tells you which folder to exclude. When a newer D2RLoader is out, it says so (see below to install it).
+- checks for D2RLoader in your game folder. If it's missing, it opens D2RLoader's download page and stops;
+  extract D2RLoader into the game folder and start again. When a newer D2RLoader is out, it says so; update
+  when it suits you, since a D2RLoader update can need a new plugin.
 - installs the plugin in the mod, at `<D2R folder>/mods/Archipelago/d2rloader/plugins/`, so it only loads
   with the `Archipelago` mod. A copy in `<D2R folder>/d2rloader/plugins/` from an older setup is moved
   there, with its server and slot.
@@ -48,8 +52,7 @@ d2r-ap-setup.exe --connect <server> <slot> [--password <pw>] --play
 ```
 
 Without `--play` it only sets up, and you start D2RLoader with the `Archipelago` mod yourself. Without
-`--connect` it reuses the last server and slot. `d2r-ap-setup.exe --update-loader` installs the newest
-D2RLoader; your D2RLoader settings and other plugins are kept. (The Launcher keeps its copy of the tool in
+`--connect` it reuses the last server and slot. (The Launcher keeps its copy of the tool in
 `%LOCALAPPDATA%\d2r-archipelago\tools`.)
 
 ## Connecting

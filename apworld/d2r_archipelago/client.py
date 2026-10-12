@@ -1,7 +1,7 @@
 """The Archipelago Launcher's "Diablo II Resurrected" button. It also opens when a player clicks their name on a
 room page (an archipelago://slot:password@host:port link).
 
-It runs d2r-ap-setup.exe, which ships inside the .apworld with the plugin: the tool installs D2RLoader and the
+It runs d2r-ap-setup.exe, which ships inside the .apworld with the plugin: the tool checks for D2RLoader, installs the
 plugin, writes the seed's mod, saves the server and slot so the plugin connects on its own, and starts the game.
 Without a link it reuses the last server and slot.
 """
@@ -63,7 +63,7 @@ def launch_client(*args: str) -> None:
         command += ["--game", str(game_folder)]
     for arg in args:
         command += connect_args(arg)
-    # Its own window, so the player sees the download and setup, and any error.
+    # Its own window, so the player sees the setup, and any error.
     subprocess.Popen(command, cwd=setup.parent, creationflags=subprocess.CREATE_NEW_CONSOLE)
 
 

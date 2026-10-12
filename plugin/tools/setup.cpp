@@ -9,10 +9,9 @@
 //   d2r-ap-setup --dump <game path> <file>         copy one game file, e.g. data\hd\items\items.json
 //   d2r-ap-setup --sounds                          only write the banner sounds
 //   d2r-ap-setup --find <text>                     list the game files whose names contain the text
-//   d2r-ap-setup --update-loader                   install the latest D2RLoader
 //
 // Options for all of them: --game <D2R folder>, --mod <name>, --out <mods folder>.
-// Writing the mod also installs D2RLoader if it's missing, and the plugin
+// Writing the mod needs D2RLoader in the game folder; it installs the plugin
 // (d2rl-archipelago.dll next to this tool, or --plugin <file>) into the mod,
 // and saves the server and slot so the plugin connects on its own. --play then
 // starts the game with the mod (the Archipelago Launcher's button uses it).
@@ -29,6 +28,7 @@
 #include <nlohmann/json.hpp>
 
 #include <windows.h>
+#include <shellapi.h>
 #include <winhttp.h>
 #include <mfapi.h>
 #include <mferror.h>
@@ -82,7 +82,6 @@ struct Options {
 	std::string plugin;
 	bool offline = false;
 	bool soundsOnly = false;
-	bool updateLoader = false;
 	bool play = false;
 };
 
@@ -264,7 +263,7 @@ void InstallPlugin(const Options& options) {
 	}
 }
 
-// A GET from d2rloader.net over HTTPS. WinHTTP follows the download's redirect.
+// A GET from d2rloader.net over HTTPS.
 auto LoaderGet(const wchar_t* path, std::string& body) -> bool {
 	HINTERNET session = WinHttpOpen(L"d2r-ap-setup", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
 	HINTERNET connection = session != nullptr ? WinHttpConnect(session, LoaderHost, INTERNET_DEFAULT_HTTPS_PORT, 0) : nullptr;
@@ -335,88 +334,30 @@ auto ProductVersion(const fs::path& exe) -> std::string {
 	return fs::path(value).string();
 }
 
-// Windows' own tar unpacks zip files.
-auto Unzip(const fs::path& archive, const fs::path& folder) -> bool {
-	wchar_t system[MAX_PATH] {};
-	GetSystemDirectoryW(system, MAX_PATH);
-	std::wstring command = L"\"" + (fs::path(system) / L"tar.exe").wstring() + L"\" -xf \"" + archive.wstring() + L"\" -C \"" + folder.wstring() + L"\"";
-	STARTUPINFOW startup { .cb = sizeof(startup) };
-	PROCESS_INFORMATION process {};
-	if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
-		return false;
-	}
-	WaitForSingleObject(process.hProcess, INFINITE);
-	DWORD code = 1;
-	GetExitCodeProcess(process.hProcess, &code);
-	CloseHandle(process.hThread);
-	CloseHandle(process.hProcess);
-	return code == 0;
-}
+// D2RLoader comes from its own site, not from this tool: Defender flags it as a
+// trojan, and a program that downloads and unpacks it gets flagged as well.
+constexpr const char* LoaderPage = "https://d2rloader.net/download.html";
 
-// Downloads the latest D2RLoader and copies it into the game folder, leaving the
-// player's d2rloader config, plugins and patches alone. Windows Defender often
-// flags D2RLoader, which patches the game, as a trojan, so it's unpacked in one
-// folder the player can exclude.
-auto InstallLoader(const fs::path& game) -> bool {
-	wchar_t local[MAX_PATH] {};
-	GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
-	const fs::path folder = fs::path(local) / "d2r-archipelago" / "d2rloader";
-	const fs::path files = folder / "files";
-	std::error_code error;
-	fs::remove_all(files, error);
-	fs::create_directories(files, error);
-	std::printf("Downloading D2RLoader from d2rloader.net...\n");
-	std::string zip;
-	if (!LoaderGet(L"/downloads/latest", zip)) {
-		std::printf("Couldn't download D2RLoader. Get it from https://d2rloader.net instead.\n");
-		return false;
-	}
-	const fs::path archive = folder / "D2RLoader.zip";
-	std::ofstream(archive, std::ios::binary | std::ios::trunc) << zip;
-	if (!Unzip(archive, files) || !fs::exists(files / LoaderFile)) {
-		std::printf("D2RLoader didn't unpack. Windows Defender often quarantines it: allow it under Windows Security,\n"
-		            "Virus & threat protection, or add an exclusion for %s, then run this again.\n",
-			folder.string().c_str());
-		return false;
-	}
-	std::vector<fs::path> copies;
-	for (const auto& entry : fs::recursive_directory_iterator(files)) {
-		const fs::path relative = fs::relative(entry.path(), files);
-		const std::string name = relative.generic_string();
-		const bool playerFile = name.starts_with("d2rloader/config/") || name.starts_with("d2rloader/plugins/") || name.starts_with("d2rloader/patches/");
-		if (entry.is_regular_file() && !(playerFile && fs::exists(game / relative))) {
-			copies.push_back(relative);
-		}
-	}
-	// D2RLoader.exe last, so a failed copy doesn't leave a new exe with old files.
-	std::ranges::stable_partition(copies, [](const fs::path& file) { return file != LoaderFile; });
-	for (const fs::path& file : copies) {
-		fs::create_directories((game / file).parent_path(), error);
-		fs::copy_file(files / file, game / file, fs::copy_options::overwrite_existing, error);
-		if (error) {
-			std::printf("Couldn't write %s (%s). Close the game and try again.\n", (game / file).string().c_str(), error.message().c_str());
-			return false;
-		}
-	}
-	fs::remove_all(files, error);
-	fs::remove(archive, error);
-	std::printf("Installed D2RLoader %s in %s\n", ProductVersion(game / LoaderFile).c_str(), game.string().c_str());
-	return true;
-}
-
-// Installs D2RLoader if it's missing. A newer one isn't installed on its own:
-// D2RLoader updates can break the plugin, so the player picks the moment.
-void CheckLoader(const Options& options) {
+// When D2RLoader is missing, opens its download page and says what to do. A
+// newer one is only mentioned: D2RLoader updates can break the plugin.
+auto CheckLoader(const Options& options) -> bool {
 	const fs::path game = options.game;
 	if (!fs::exists(game / LoaderFile)) {
-		InstallLoader(game);
-		return;
+		ShellExecuteA(nullptr, "open", LoaderPage, nullptr, nullptr, SW_SHOWNORMAL);
+		std::printf("\nD2RLoader isn't installed. Its download page is opening in your browser (%s):\n"
+		            "  1. Download D2RLoader and extract the zip into %s\n"
+		            "  2. If Windows Defender blocks or removes it (it often flags D2RLoader, which patches the game\n"
+		            "     while it runs), allow it under Windows Security, Virus & threat protection, Protection history.\n"
+		            "  3. Then do this again.\n",
+			LoaderPage, game.string().c_str());
+		return false;
 	}
 	const std::string installed = ProductVersion(game / LoaderFile);
 	const std::string latest = LatestLoaderVersion();
 	if (!latest.empty() && latest != installed) {
-		std::printf("D2RLoader %s is out (you have %s). d2r-ap-setup --update-loader installs it.\n", latest.c_str(), installed.c_str());
+		std::printf("D2RLoader %s is out (you have %s). Get it from %s when you want it.\n", latest.c_str(), installed.c_str(), LoaderPage);
 	}
+	return true;
 }
 
 auto ParseArgs(int argc, char** argv) -> Options {
@@ -449,8 +390,6 @@ auto ParseArgs(int argc, char** argv) -> Options {
 			options.soundsOnly = true;
 		} else if (arg == "--plugin") {
 			options.plugin = next();
-		} else if (arg == "--update-loader") {
-			options.updateLoader = true;
 		} else if (arg == "--play") {
 			options.play = true;
 		}
@@ -934,13 +873,12 @@ int Run(Options options) {
 		return 0;
 	}
 
-	if (options.updateLoader) {
-		CascCloseStorage(storage);
-		return InstallLoader(options.game) ? 0 : 1;
-	}
 	// A mod written elsewhere (--out) is only for testing; leave the game alone.
 	if (options.out.empty()) {
-		CheckLoader(options);
+		if (!CheckLoader(options)) {
+			CascCloseStorage(storage);
+			return 1;
+		}
 		InstallPlugin(options);
 	}
 

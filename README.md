@@ -68,10 +68,11 @@ apworld and options template (`tools/build_apworld.py`), and packs `dist/D2R-Arc
 with the setup tool and the plugin side by side, the apworld, the template and the setup guide. The
 plugin's version must match the world's.
 
-The `.apworld` is all a player needs. It carries `d2r-ap-setup.exe` and the plugin in `bin/` and adds a
+The `.apworld` and D2RLoader are all a player needs. It carries `d2r-ap-setup.exe` and the plugin in `bin/` and adds a
 **Diablo II Resurrected** button to the Archipelago Launcher (`client.py`), which also opens from the
 `archipelago://` link on a room page: it unpacks the tool to `%LOCALAPPDATA%\d2r-archipelago\tools` and runs
-`d2r-ap-setup --play`, which installs D2RLoader and the plugin, writes the seed's mod, saves the connection
+`d2r-ap-setup --play`, which checks for D2RLoader (opening its download page if it's missing; Defender flags a
+tool that downloads it), installs the plugin, writes the seed's mod, saves the connection
 for the plugin and starts the game. Custom worlds can't be generated on archipelago.gg, so the host
 generates locally with the `.apworld` and can upload the seed there to host it.
 
