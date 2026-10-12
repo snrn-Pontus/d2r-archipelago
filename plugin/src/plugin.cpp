@@ -16,6 +16,7 @@
 #include "quest_triggers.h"
 #include "randomizer.h"
 #include "save_state.h"
+#include "sounds.h"
 
 #include <D2RLPlugin/api.h>
 #include <D2RLPlugin/core_exports.h>
@@ -3233,6 +3234,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	}
 	RegisterPanels(context);
 	gConfig = ap::ParseConfig(ConfigText());
+	ap::notify::SetSounds((std::filesystem::path(context->scopeRootDirectory) / ap::sounds::Folder).wstring(), gConfig.bannerSounds);
 	gClient = std::make_unique<ap::Client>(Log);
 
 	using Kind = D2RL::Lifecycle::GameplayEventKind;

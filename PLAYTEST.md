@@ -109,6 +109,9 @@ config turns them off.
 - [x] Traps show in red; ordinary rewards in white. (Still to see: "from <player>" for another slot's item.)
 - [ ] A check shows a grey "Check: ..." line, naming another player's item it held, and "(held)" in a
       locked act. More than four at once become one "Checks sent: n" line.
+- [x] Sounds (converted from the game's own by d2r-ap-setup into `d2rloader\archipelago\sounds`; `--sounds`
+      writes only those): gold banners play the quest-done chime, red the hostile warning, white the gem
+      sound; checks are silent. `banner_sounds = false` turns them off.
 - [x] Alt-Tab away and back, and minimizing: the banner stays with the game and doesn't float over
       other windows.
 

@@ -123,6 +123,9 @@ void TestConfigRoundTrip() {
 	const ap::Config parsed = ap::ParseConfig(ap::FormatConfig(config));
 	EXPECT(parsed.debugTools);
 	EXPECT(ap::ParseConfig("").notifications);
+	EXPECT(ap::ParseConfig("").bannerSounds);
+	config.bannerSounds = false;
+	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).bannerSounds);
 	config.notifications = false;
 	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).notifications);
 	EXPECT(parsed.server == config.server);

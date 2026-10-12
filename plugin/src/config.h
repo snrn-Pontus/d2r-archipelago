@@ -18,6 +18,8 @@ struct Config {
 	bool debugTools = false;
 	// On-screen banners for items received and checks sent.
 	bool notifications = true;
+	// Game sounds with the gold, red and white banners.
+	bool bannerSounds = true;
 	// The Codex is the "Archipelago Codex" unique small charm that d2r-ap-setup
 	// adds to UniqueItems. If D2R refuses it, the plugin makes a Magic small
 	// charm with a fixed, level-1 affix instead ("Stout", +1 Defense).

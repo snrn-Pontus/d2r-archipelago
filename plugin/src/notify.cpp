@@ -1,6 +1,8 @@
 #include "notify.h"
+#include "sounds.h"
 
 #include <windows.h>
+#include <mmsystem.h>
 
 #include <algorithm>
 #include <atomic>
@@ -33,6 +35,26 @@ std::mutex        gMutex;
 std::deque<Line>  gWaiting; // queued, not on screen yet
 std::vector<Line> gShowing; // on screen (UI thread only)
 std::atomic<bool> gBusy;
+
+std::wstring gSoundFolder;
+bool         gSoundsOn = false;
+
+// The sound for the most important of the lines just shown.
+void PlayFor(const std::vector<Style>& shown) {
+	if (!gSoundsOn || gSoundFolder.empty()) {
+		return;
+	}
+	const ap::sounds::Sound* sound = nullptr;
+	for (const Style style : { Style::Important, Style::Trap, Style::Info }) {
+		if (sound == nullptr && std::ranges::find(shown, style) != shown.end()) {
+			sound = style == Style::Important ? &ap::sounds::Important : style == Style::Trap ? &ap::sounds::Trap : &ap::sounds::Item;
+		}
+	}
+	if (sound != nullptr) {
+		const std::wstring path = gSoundFolder + L"\\" + sound->file;
+		PlaySoundW(path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+	}
+}
 
 HWND  gHost   = nullptr;
 HWND  gWindow = nullptr;
@@ -196,6 +218,11 @@ auto CreateBanner() -> bool {
 
 } // namespace
 
+void SetSounds(const std::wstring& folder, bool enabled) {
+	gSoundFolder = folder;
+	gSoundsOn = enabled;
+}
+
 void Show(const std::string& text, Style style) {
 	std::lock_guard lock(gMutex);
 	gWaiting.push_back({ Widen(text), style, {}, {} });
@@ -213,6 +240,7 @@ void Tick() {
 	const size_t before = gShowing.size();
 	std::erase_if(gShowing, [&](const Line& line) { return now >= line.endsAt; });
 	changed = gShowing.size() != before;
+	std::vector<Style> shown;
 	{
 		std::lock_guard lock(gMutex);
 		while (gShowing.size() < MaxLines && !gWaiting.empty()) {
@@ -220,6 +248,7 @@ void Tick() {
 			gWaiting.pop_front();
 			line.shownAt = now;
 			line.endsAt = now + Lifetime(line.style);
+			shown.push_back(line.style);
 			gShowing.push_back(std::move(line));
 			changed = true;
 		}
@@ -227,6 +256,7 @@ void Tick() {
 			gBusy = false;
 		}
 	}
+	PlayFor(shown);
 	if (gShowing.empty()) {
 		if (gWindow != nullptr && IsWindowVisible(gWindow)) {
 			ShowWindow(gWindow, SW_HIDE);

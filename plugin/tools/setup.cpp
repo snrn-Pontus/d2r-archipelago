@@ -7,6 +7,7 @@
 //   d2r-ap-setup --offline                         skill lock only, no seed
 //   d2r-ap-setup --extract <folder>                copy the raw tables for tools/gen_data.py
 //   d2r-ap-setup --dump <game path> <file>         copy one game file, e.g. data\hd\items\items.json
+//   d2r-ap-setup --sounds                          only write the banner sounds
 //   d2r-ap-setup --find <text>                     list the game files whose names contain the text
 //
 // Options for all of them: --game <D2R folder>, --mod <name>, --out <mods folder>.
@@ -15,6 +16,7 @@
 #include "config.h"
 #include "game_data.h"
 #include "randomizer.h"
+#include "sounds.h"
 #include "sprite.h"
 #include "table.h"
 
@@ -22,8 +24,14 @@
 #include <nlohmann/json.hpp>
 
 #include <windows.h>
+#include <mfapi.h>
+#include <mferror.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
+#include <wrl/client.h>
 
 #include <chrono>
+#include <cstring>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -61,6 +69,7 @@ struct Options {
 	std::string dumpPath, dumpFile;
 	std::string server, slot, password;
 	bool offline = false;
+	bool soundsOnly = false;
 };
 
 auto FindGameFolder() -> std::string {
@@ -86,6 +95,95 @@ auto ReadCascFile(HANDLE storage, const std::string& name, std::string& contents
 	}
 	CascCloseFile(file);
 	return !contents.empty();
+}
+
+// Decodes a FLAC file with Windows' Media Foundation and writes it as a 16-bit
+// PCM WAV, scaled by volume.
+auto FlacToWav(const std::string& flac, const fs::path& wav, float volume) -> bool {
+	using Microsoft::WRL::ComPtr;
+	const fs::path temp = fs::path(wav).replace_extension(".flac");
+	std::ofstream(temp, std::ios::binary | std::ios::trunc) << flac;
+	std::string pcm;
+	std::vector<uint8_t> format;
+	{
+		ComPtr<IMFSourceReader> reader;
+		ComPtr<IMFMediaType>    wanted, actual;
+		if (FAILED(MFCreateSourceReaderFromURL(temp.c_str(), nullptr, &reader)) || FAILED(MFCreateMediaType(&wanted))) {
+			fs::remove(temp);
+			return false;
+		}
+		wanted->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+		wanted->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
+		wanted->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+		WAVEFORMATEX* wave = nullptr;
+		UINT32        waveSize = 0;
+		if (FAILED(reader->SetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), nullptr, wanted.Get()))
+			|| FAILED(reader->GetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), &actual))
+			|| FAILED(MFCreateWaveFormatExFromMFMediaType(actual.Get(), &wave, &waveSize))) {
+			fs::remove(temp);
+			return false;
+		}
+		format.assign(reinterpret_cast<uint8_t*>(wave), reinterpret_cast<uint8_t*>(wave) + waveSize);
+		CoTaskMemFree(wave);
+		for (;;) {
+			DWORD             flags = 0;
+			ComPtr<IMFSample> sample;
+			if (FAILED(reader->ReadSample(static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), 0, nullptr, &flags, nullptr, &sample))
+				|| (flags & MF_SOURCE_READERF_ENDOFSTREAM) != 0) {
+				break;
+			}
+			ComPtr<IMFMediaBuffer> buffer;
+			BYTE*                  data = nullptr;
+			DWORD                  length = 0;
+			if (sample && SUCCEEDED(sample->ConvertToContiguousBuffer(&buffer)) && SUCCEEDED(buffer->Lock(&data, nullptr, &length))) {
+				pcm.append(reinterpret_cast<const char*>(data), length);
+				buffer->Unlock();
+			}
+		}
+	}
+	fs::remove(temp);
+	if (pcm.empty()) {
+		return false;
+	}
+	for (size_t i = 0; i + 1 < pcm.size(); i += 2) {
+		int16_t sample = 0;
+		std::memcpy(&sample, pcm.data() + i, 2);
+		sample = static_cast<int16_t>(sample * volume);
+		std::memcpy(pcm.data() + i, &sample, 2);
+	}
+	std::ofstream out(wav, std::ios::binary | std::ios::trunc);
+	auto u32 = [&](uint32_t value) { out.write(reinterpret_cast<const char*>(&value), 4); };
+	out.write("RIFF", 4);
+	u32(static_cast<uint32_t>(4 + 8 + format.size() + 8 + pcm.size()));
+	out.write("WAVEfmt ", 8);
+	u32(static_cast<uint32_t>(format.size()));
+	out.write(reinterpret_cast<const char*>(format.data()), static_cast<std::streamsize>(format.size()));
+	out.write("data", 4);
+	u32(static_cast<uint32_t>(pcm.size()));
+	out << pcm;
+	return static_cast<bool>(out);
+}
+
+// The banner sounds, converted from the game's own.
+void WriteSounds(HANDLE storage, const Options& options) {
+	const fs::path folder = fs::path(options.game) / ap::sounds::Folder;
+	std::error_code error;
+	fs::create_directories(folder, error);
+	if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED)) || FAILED(MFStartup(MF_VERSION))) {
+		std::printf("  couldn't start Media Foundation; the banners stay silent\n");
+		return;
+	}
+	int written = 0;
+	for (const auto& sound : ap::sounds::All) {
+		std::string flac;
+		if (ReadCascFile(storage, sound.source, flac) && FlacToWav(flac, folder / sound.file, ap::sounds::Volume)) {
+			++written;
+		} else {
+			std::printf("  couldn't convert %s for the banners\n", sound.source);
+		}
+	}
+	MFShutdown();
+	std::printf("  %d banner sounds written to %s\n", written, folder.string().c_str());
 }
 
 auto ReadFile(const fs::path& path) -> std::string {
@@ -121,6 +219,8 @@ auto ParseArgs(int argc, char** argv) -> Options {
 			options.password = next();
 		} else if (arg == "--offline") {
 			options.offline = true;
+		} else if (arg == "--sounds") {
+			options.soundsOnly = true;
 		}
 	}
 	return options;
@@ -552,6 +652,11 @@ int main(int argc, char** argv) {
 		std::printf("%d files\n", found);
 		return 0;
 	}
+	if (options.soundsOnly) {
+		WriteSounds(storage, options);
+		CascCloseStorage(storage);
+		return 0;
+	}
 	if (!options.extract.empty()) {
 		const int result = Extract(storage, options);
 		CascCloseStorage(storage);
@@ -591,6 +696,7 @@ int main(int argc, char** argv) {
 		std::printf("No server given, so only the skill lock is written. Use --connect <server> <slot> for a seed's randomization.\n");
 	}
 	const int result = WriteMod(storage, options, haveSeed ? &seed : nullptr);
+	WriteSounds(storage, options);
 	CascCloseStorage(storage);
 	return result;
 }

@@ -66,6 +66,8 @@ auto ParseConfig(const std::string& text) -> Config {
 			config.debugTools = value == "true";
 		} else if (key == "notifications") {
 			config.notifications = value != "false";
+		} else if (key == "banner_sounds") {
+			config.bannerSounds = value != "false";
 		} else if (key == "codex_item" && !value.empty()) {
 			config.codexItem = value;
 		} else if (key == "codex_unique" && !value.empty()) {
@@ -90,7 +92,9 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "# Set by ap-debug on/off: the debug panel (F10) for testing.\n"
 	    << "debug_tools = " << (config.debugTools ? "true" : "false") << "\n"
 	    << "# On-screen banners for items received and checks sent.\n"
-	    << "notifications = " << (config.notifications ? "true" : "false") << "\n\n"
+	    << "notifications = " << (config.notifications ? "true" : "false") << "\n"
+	    << "# Game sounds with the gold, red and white banners.\n"
+	    << "banner_sounds = " << (config.bannerSounds ? "true" : "false") << "\n\n"
 	    << "# The Codex charm that carries your received skills.\n"
 	    << "codex_item = " << Quote(config.codexItem) << "\n"
 	    << "# UniqueItems record of the Archipelago Codex, added by d2r-ap-setup.\n"

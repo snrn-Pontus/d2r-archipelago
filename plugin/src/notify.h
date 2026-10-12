@@ -16,6 +16,11 @@ enum class Style {
 	Check,     // a check you sent
 };
 
+// Where d2r-ap-setup put the banner sounds (sounds.h), and whether to play
+// them: gold banners play the quest-done chime, traps the hostile warning,
+// other items the gem sound; checks are silent. Call before the first Show.
+void SetSounds(const std::wstring& folder, bool enabled);
+
 // Queues a banner line. Thread-safe.
 void Show(const std::string& text, Style style);
 
