@@ -897,7 +897,9 @@ int Run(Options options) {
 		haveSeed = FetchSeed(options, seed);
 		if (!haveSeed) {
 			CascCloseStorage(storage);
-			std::printf("Couldn't read the seed. Check the server and slot, or use --offline for the skill lock alone.\n");
+			std::printf("Couldn't read the seed from %s as %s. Check that the server is running (an archipelago.gg room\n"
+			            "starts again when you open its page) and that the slot name is right.\n",
+				options.server.c_str(), options.slot.c_str());
 			return 1;
 		}
 		std::printf("Seed %s, slot %s: %s\n", seed.name.c_str(), seed.slot.c_str(), seed.settings.Stamp().c_str());
