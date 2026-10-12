@@ -20,15 +20,17 @@ from the server console: `/send <slot> <item name>` (for example `/send Snrn Act
 
 ## 00. Mod-scoped plugin
 
-- [ ] After `d2r-ap-setup.exe`, the plugin is in `mods\Archipelago\d2rloader\plugins\` and the global copy
+- [x] After `d2r-ap-setup.exe`, the plugin is in `mods\Archipelago\d2rloader\plugins\` and the global copy
       is gone. D2RLoader's plugin list shows Archipelago as `[mod]`, not `[global]`.
-- [ ] Without `ap-connect`, it reconnects to the same server and slot (the config moved into the mod).
-- [ ] A character from before the move keeps its checks (save state stays in `d2rloader\archipelago\`),
-      and the banners still play sounds.
+- [x] Without `ap-connect`, it reconnects to the same server and slot (the config moved into the mod).
+- [x] A character from before the move keeps its checks (save state stays in `d2rloader\archipelago\`).
+- [ ] The banners still play sounds after the move.
 - [ ] TCP/IP with a second player: joining works when both ran the new setup tool.
-- [ ] With the built `.apworld` installed in a release Archipelago: clicking your name on a room page opens
+- [x] With the built `.apworld` installed in a release Archipelago: clicking your name on a room page opens
       the Launcher, **Diablo II Resurrected** sets up in its own window and starts the game, and the plugin
-      connects without `ap-connect`. The Launcher's button alone does the same with the last server and slot.
+      connects without `ap-connect`. (The Launcher leaves its "Connect to Multiworld" popup open afterwards;
+      that's Archipelago's.)
+- [ ] The Launcher's button alone, without a link, does the same with the last server and slot.
 - [ ] With the game still running, the setup window says to close it and waits for Enter.
 
 ## 0. Codex charms
