@@ -6,8 +6,8 @@ from worlds.AutoWorld import WebWorld, World
 from worlds.generic.Rules import add_rule
 
 from . import client  # noqa: F401  (adds the Launcher button)
-from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SKILL_SLOTS, SKILLS, SPECIAL_ITEMS,
-                   STARTER_SKILLS, SUPERUNIQUES, UBERS)
+from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SKILL_FORMS, SKILL_SLOTS, SKILL_USERS, SKILLS,
+                   SPECIAL_ITEMS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
 from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, KILL_COUNTS, LEVEL_CAPS,
                   LEVEL_STEP, LOCKS, MERCHANT_ACCESS, SET_FINDS, SKILL_POINT, TRAPS, UNIQUE_FINDS, UNIQUE_LOOT, act_key_name, area_location_name,
                   cow_location_name, find_count_location_name, find_location_name, item_name_to_id, kill_location_name,
@@ -32,18 +32,42 @@ GRIND_LEVEL = 70
 WAYPOINT_LOCK_ACTS = 3
 
 
+def can_use(skill_id: int, cls: str) -> bool:
+    """Whether a class (code) can use a skill: claw skills need the Assassin, the traps an S2 animation
+    only the Barbarian and Assassin have, and so on (SKILL_USERS)."""
+    return cls in SKILL_USERS.get(skill_id, (cls,))
+
+
 def deal_skill_trees(random) -> dict[int, int]:
     """The skill tree shuffle: every unpinned class skill takes the tree slot of a random skill from the
-    same row (so the same level) of any class. Returns skill id -> id of the skill whose slot it takes."""
+    same row (so the same level) of any class whose tree it can be used in. Returns skill id -> id of the
+    skill whose slot it takes."""
+    slot_class = {skill_id: cls for skill_id, _name, cls in SKILLS}
     rows: dict[int, list[int]] = {}
     for skill_id, _page, row, _column, pinned in SKILL_SLOTS:
         if not pinned:
             rows.setdefault(row, []).append(skill_id)
     dealt = {}
     for row in sorted(rows):
-        slots = list(rows[row])
+        skills, slots = list(rows[row]), list(rows[row])
+        random.shuffle(skills)
         random.shuffle(slots)
-        dealt.update(zip(rows[row], slots))
+        # A matching of skills to slots their class can use. Every skill fits its own slot, so each one
+        # finds a place, moving earlier skills along when it has to.
+        holder: dict[int, int] = {}
+
+        def place(skill: int, seen: set[int]) -> bool:
+            for slot in slots:
+                if slot not in seen and can_use(skill, slot_class[slot]):
+                    seen.add(slot)
+                    if slot not in holder or place(holder[slot], seen):
+                        holder[slot] = skill
+                        return True
+            return False
+
+        for skill in skills:
+            place(skill, set())
+        dealt.update({skill: slot for slot, skill in holder.items()})
     return dealt
 
 
@@ -273,7 +297,10 @@ class D2RWorld(World):
         if not self.options.include_warlock:
             # Warlock skills need the Reign of the Warlock expansion.
             allowed = (allowed - {"Warlock"}) or set(CLASSES.values()) - {"Warlock"}
-        candidates = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if CLASSES[cls] in allowed]
+        # Skills the class can't use stay out; with no class chosen, every skill that needs one does.
+        own = self.class_code()
+        candidates = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS
+                      if CLASSES[cls] in allowed and (sid not in SKILL_USERS or (own and can_use(sid, own)))]
         if self.tree_mode:
             candidates = self.tree_skills()
         keys = [self.create_item(act_key_name(index)) for index in range(1, self.act_count)] if self.options.act_keys else []
@@ -303,6 +330,8 @@ class D2RWorld(World):
                          else self.pick_starting_skills(starting, candidates))
         rest = [name for name in candidates if name not in self.starting]
         self.skill_pool = self.pick_skill_pool(rest, distinct)
+        if not self.tree_mode:
+            self.drop_formless_attacks(candidates)
         for name in self.starting:
             self.multiworld.push_precollected(self.create_item(name))
         # Logic never asks for more skills than the seed holds.
@@ -354,6 +383,27 @@ class D2RWorld(World):
         if self.class_choice == 0:
             return ""
         return list(CLASSES.values())[self.class_choice - 1]
+
+    def class_code(self) -> str:
+        """The chosen class's code ("bar"), or "" for any."""
+        return next((code for code, name in CLASSES.items() if name == self.class_name()), "")
+
+    def drop_formless_attacks(self, candidates: list[str]) -> None:
+        """Wolf and bear attacks (Feral Rage, Maul...) only work in their form, so they only go in when the
+        skills hold a form they can use, and a starting attack only with a starting form. Otherwise another
+        skill takes the attack's place."""
+        id_of = {skill_item_name(sid, name, cls): sid for sid, name, cls in SKILLS}
+        held = self.starting + self.skill_pool
+        spare = [name for name in candidates if name not in held and id_of[name] not in SKILL_FORMS]
+        self.random.shuffle(spare)
+        for skills, forms_from in ((self.starting, self.starting), (self.skill_pool, self.starting + self.skill_pool)):
+            for name in list(skills):
+                need = SKILL_FORMS.get(id_of[name])
+                if need and not {id_of[form] for form in forms_from} & set(need):
+                    if spare:
+                        skills[skills.index(name)] = spare.pop()
+                    else:
+                        skills.remove(name)
 
     def tree_skills(self) -> list[str]:
         """The skills in the class's tree (after the tree shuffle), as item names."""
