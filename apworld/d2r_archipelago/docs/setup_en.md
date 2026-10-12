@@ -3,7 +3,8 @@
 ## Requirements
 
 - Diablo II: Resurrected 3.x (Reign of the Warlock), installed through Battle.net.
-- `d2r-ap-setup.exe` and the `d2rl-archipelago.dll` plugin from this project's release, in the same folder.
+- This project's release, `D2R-Archipelago-<version>.zip`, unpacked anywhere. Keep `d2r-ap-setup.exe` and
+  the `d2rl-archipelago.dll` plugin in the same folder.
 - [D2RLoader](https://d2rloader.net). The setup tool installs it if it's missing.
 
 The game runs offline through D2RLoader. Don't use Battle.net characters.

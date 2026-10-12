@@ -68,6 +68,11 @@ options template with `python -I tools/build_apworld.py <archipelago-checkout>`,
 `.apworld` and your YAML. Custom worlds can't be generated on archipelago.gg, so the host generates locally
 and can upload the seed there to host it. The other players need nothing extra.
 
+`python -I tools/package_release.py <archipelago-checkout>` builds and tests the plugin, builds the
+apworld and template, and packs the player download, `dist/D2R-Archipelago-<version>.zip`: the setup tool
+and the plugin side by side (the setup tool installs the plugin and D2RLoader), the apworld, the template
+and the setup guide. The plugin's version must match the world's.
+
 `tools/fuzz_apworld.py <archipelago-checkout> [rounds]` generates random option sets, solo and with up to
 three players, and checks every seed fills and can be beaten.
 
