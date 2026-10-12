@@ -55,6 +55,7 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 
 - [ ] Each is blocked with a chat message: opening the Cube, reading a Town Portal scroll or tome, drinking a
       potion, opening the stash, trading with a merchant, using an Act I waypoint.
+- [x] Potions stay locked from the belt hotkeys too.
 - [ ] Each opens after its item: `Horadric Cube Access`, `Town Portal Access`, `Potion Access`,
       `Stash Access`, `Merchant Access`, `Act I Waypoints`.
 - [ ] Shop parcels can't be bought before Merchant Access.
@@ -64,13 +65,21 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 
 Any seed. Send each with `/send`, standing outside town for the traps.
 
-- [ ] `Gold`, `Experience`, `Random Charm`, `Random Jewel`, `Socketed Base`, `Random Set Item`: arrive,
+- [ ] `Gold` (works), `Experience`, `Random Charm`, `Random Jewel`, `Socketed Base`, `Random Set Item`: arrive,
       scaled to your level.
-- [ ] `Random Shrine` appears at your feet and works.
+- [x] `Random Shrine` appears at your feet and works.
 - [ ] Traps wait while you're in town and fire when you leave: `Junk Backpack`, `Ambush Trap`,
       `Poison Cloud Trap`, `Firestorm Trap`, `Mana Drain Trap`, `Tax Collector Trap`,
-      `Mercenary Down Trap` (with a hired mercenary).
+      `Mercenary Down Trap` (with a hired mercenary). Ambush and Poison Cloud work.
 - [ ] `Codex Empowerment` raises every Codex skill by one.
+
+## Found in testing
+
+- D2RCore runs gold, experience, mspawn, pcloud, killme, skadd and the rest only as cheats
+  (`cheat gold 100`); the plugin adds the prefix. Typed by hand they need `debug_mode`, but the plugin's
+  calls work without it.
+- `cheat skadd <skill>,1` gives a locked skill its first point, and after that normal skill points can go
+  into it: the basis for a randomized skill tree mode.
 
 ## 6. Hints
 
