@@ -106,6 +106,18 @@ Any seed. Send each with `/send`, standing outside town for the traps.
       `Mercenary Down Trap` (with a hired mercenary). Ambush and Poison Cloud work.
 - [ ] `Codex Empowerment` raises every Codex skill by one.
 
+## 5b. Personalized rewards
+
+Uniques and sets found by another player carry their name, like Anya's reward. The item-data offsets are
+a guess checked against the item before writing, so test the command first.
+
+- [ ] Hold a junk unique on the cursor and run `ap-personalize` (no name). The console says the layout
+      matches; the log has the item data. If it says it doesn't match, send me the log lines.
+- [ ] `ap-personalize Bob` on the same item, then Save and Exit and rejoin: it reads "Bob's <item>", and
+      the game doesn't crash.
+- [ ] Multiworld seed with a second slot: a `Random Unique` that slot finds arrives named after it, and
+      chat says "you got <item> from <name>!". Your own finds and `/send` (from the server) stay unnamed.
+
 ## Found in testing
 
 - `ap-core <command>` runs any D2RCore command for testing, e.g. `ap-core skillpoints 3`.

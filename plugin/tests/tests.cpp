@@ -6,6 +6,7 @@
 #include "game_data.h"
 #include "ids.h"
 #include "loot.h"
+#include "personalize.h"
 #include "quest_triggers.h"
 #include "randomizer.h"
 #include "table.h"
@@ -626,6 +627,35 @@ void TestTableEdits() {
 
 } // namespace
 
+void TestPersonalization() {
+	using namespace ap::personal;
+	EXPECT(Name("Bob") == "Bob");
+	EXPECT(Name("  Sir Bob the 3rd!  ") == "Sir Bob the 3rd");
+	EXPECT(Name("Zoë_42") == "Zo_42");
+	EXPECT(Name("AVeryLongPlayerNameIndeed") == "AVeryLongPlayer");
+	EXPECT(Name("Bob  -  X") == "Bob X");
+	EXPECT(Name("日本").empty());
+
+	std::vector<uint8_t> data(DataSize, 0);
+	const auto put32 = [&](size_t offset, uint32_t value) { std::memcpy(data.data() + offset, &value, sizeof(value)); };
+	put32(DataQuality, 7);
+	put32(DataFlags, FlagIdentified | 0x00200000U);
+	EXPECT(CheckLayout(data, 7, true, false).empty());
+	EXPECT(!CheckLayout(data, 5, true, false).empty());
+	EXPECT(!CheckLayout(data, 7, false, false).empty());
+	EXPECT(!CheckLayout(data, 7, true, true).empty());
+	data[DataName + 3] = 0x41;
+	EXPECT(!CheckLayout(data, 7, true, false).empty());
+	std::memcpy(data.data() + DataName, "Bob", 4);
+	put32(DataFlags, FlagIdentified | FlagPersonalized);
+	EXPECT(CheckLayout(data, 7, true, false).empty());
+	std::memset(data.data() + DataName, 'x', NameSize);
+	EXPECT(!CheckLayout(data, 7, true, false).empty());
+	EXPECT(!CheckLayout(std::span(data).first(0x20), 7, true, false).empty());
+	EXPECT(HexDump(std::span(data).first(18)).starts_with("0000: 07 00 00 00"));
+	EXPECT(HexDump(std::span(data).first(18)).find("\n0010: ") != std::string::npos);
+}
+
 int main() {
 	TestQuestTriggers();
 	TestCodexLevels();
@@ -651,6 +681,7 @@ int main() {
 	TestSaveStateRoundTrip();
 	TestIdsMatchApworld();
 	TestGameData();
+	TestPersonalization();
 	std::printf(failures == 0 ? "all tests passed\n" : "%d failure(s)\n", failures);
 	return failures == 0 ? 0 : 1;
 }

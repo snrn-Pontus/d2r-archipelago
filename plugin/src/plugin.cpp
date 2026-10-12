@@ -10,6 +10,7 @@
 #include "game_data.h"
 #include "ids.h"
 #include "loot.h"
+#include "personalize.h"
 #include "quest_triggers.h"
 #include "randomizer.h"
 #include "save_state.h"
@@ -51,7 +52,8 @@ constexpr D2RL::PluginInfo Info {
 	.version     = PluginVersion,
 	.author      = "snrn",
 	.description = "Archipelago multiworld client: shuffled skills arrive as a Codex charm, loot scales to your level.",
-	.flags       = D2RL::PluginFlags::Shared,
+	// NativeHooks is for editNativeItem, which personalizes rewards.
+	.flags       = D2RL::PluginFlags::Shared | D2RL::PluginFlags::NativeHooks,
 };
 
 // The Codex charm's item seed carries this marker in its top byte, then the
@@ -669,7 +671,97 @@ auto IsReward(const D2RL::Items::ItemInfo& item) -> bool {
 	return (item.itemSeed & CodexMarkerMask) == RewardMarker || (item.generationSeed & CodexMarkerMask) == RewardMarker;
 }
 
-auto CreateIn(D2RL::PlayerHandle player, const ap::loot::Pick& pick, uint32_t record, D2RL::Items::ItemContainer container) -> D2RL::Items::Result {
+auto DescribeItem(const D2RL::Items::ItemInfo& item) -> std::string;
+
+// Copies memory that may not be readable, for the native item checks.
+bool SafeCopy(void* to, const void* from, size_t size) noexcept {
+	__try {
+		std::memcpy(to, from, size);
+		return true;
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		return false;
+	}
+}
+
+struct PersonalizeJob {
+	D2RL::Items::ItemInfo info;
+	char                  name[ap::personal::NameSize];
+	bool                  dumpOnly;
+	std::string           problem;
+	std::string           dump;
+};
+
+// Set once the item data doesn't match the expected layout, so after a game
+// update rewards stop writing instead of writing to the wrong place.
+std::atomic<bool> gPersonalizeOff;
+
+void __cdecl PersonalizeNative(const D2RL::PluginContext*, void* native, void* userData) noexcept {
+	namespace personal = ap::personal;
+	auto& job = *static_cast<PersonalizeJob*>(userData);
+	uint8_t unit[personal::UnitSize] {};
+	if (native == nullptr || !SafeCopy(unit, native, sizeof(unit))) {
+		job.problem = "the item unit isn't readable";
+		return;
+	}
+	uint32_t type = 0, classId = 0, unitId = 0;
+	void*    data = nullptr;
+	std::memcpy(&type, unit + personal::UnitType, sizeof(type));
+	std::memcpy(&classId, unit + personal::UnitClassId, sizeof(classId));
+	std::memcpy(&unitId, unit + personal::UnitId, sizeof(unitId));
+	std::memcpy(&data, unit + personal::UnitData, sizeof(data));
+	if (type != personal::ItemUnitType || classId != job.info.classId || unitId != job.info.runtimeId) {
+		job.problem = "the native pointer isn't the item unit";
+		job.dump = personal::HexDump(unit);
+		return;
+	}
+	uint8_t bytes[personal::DataSize] {};
+	if (data == nullptr || !SafeCopy(bytes, data, sizeof(bytes))) {
+		job.problem = "the item data isn't readable";
+		return;
+	}
+	job.dump = personal::HexDump(bytes);
+	job.problem = personal::CheckLayout(bytes, static_cast<uint32_t>(job.info.quality), (job.info.stateFlags & D2RL::Items::ItemStateIdentified) != 0,
+		(job.info.stateFlags & D2RL::Items::ItemStateEthereal) != 0);
+	if (!job.problem.empty() || job.dumpOnly) {
+		return;
+	}
+	uint32_t flags = 0;
+	std::memcpy(&flags, bytes + personal::DataFlags, sizeof(flags));
+	flags |= personal::FlagPersonalized;
+	auto* target = static_cast<uint8_t*>(data);
+	if (!SafeCopy(target + personal::DataName, job.name, sizeof(job.name)) || !SafeCopy(target + personal::DataFlags, &flags, sizeof(flags))) {
+		job.problem = "the item data isn't writable";
+	}
+}
+
+// Writes name into the item as D2's personalization (game thread). Returns why
+// it didn't, or an empty string. dumpOnly checks and logs the item data only.
+auto Personalize(D2RL::ItemHandle item, const std::string& name, bool dumpOnly) -> std::string {
+	if (!dumpOnly && gPersonalizeOff) {
+		return "personalization is off for this session (see the log)";
+	}
+	PersonalizeJob job { .info = { .structSize = D2RL::Items::ItemInfoSize }, .name = {}, .dumpOnly = dumpOnly };
+	if (gItems->getItemInfo(gContext, item, &job.info) != D2RL::Items::Result::Success) {
+		return "no item info";
+	}
+	std::memcpy(job.name, name.data(), std::min(name.size(), sizeof(job.name) - 1));
+	const auto result = gItems->editNativeItem(gContext, item, PersonalizeNative, &job);
+	if (result != D2RL::Items::Result::Success) {
+		return "editNativeItem failed (result " + std::to_string(static_cast<uint32_t>(result)) + ")";
+	}
+	if (dumpOnly || !job.problem.empty()) {
+		Log("Archipelago: item data of " + DescribeItem(job.info) + " level=" + std::to_string(job.info.itemLevel) + " record=" + std::to_string(job.info.qualityRecordId)
+			+ " state=" + std::to_string(job.info.stateFlags) + (job.problem.empty() ? "" : " (" + job.problem + ")") + ":\n" + job.dump);
+	}
+	if (!job.problem.empty() && !dumpOnly) {
+		gPersonalizeOff = true;
+	}
+	return job.problem;
+}
+
+// owner, when set, goes on a unique or set item as its personalization.
+auto CreateIn(D2RL::PlayerHandle player, const ap::loot::Pick& pick, uint32_t record, D2RL::Items::ItemContainer container, const std::string& owner = {})
+	-> D2RL::Items::Result {
 	static std::mt19937 seeds(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
 	auto spec = MakeSpec(pick.code, pick.quality, container);
 	spec.qualityRecordId = record;
@@ -687,13 +779,19 @@ auto CreateIn(D2RL::PlayerHandle player, const ap::loot::Pick& pick, uint32_t re
 			Log("Archipelago: created " + pick.name + " as record " + std::to_string(info.qualityRecordId) + " (asked for " + std::to_string(record) + ").");
 		}
 	}
+	if (result == D2RL::Items::Result::Success && !owner.empty() && (pick.quality == D2RL::Items::Quality::Unique || pick.quality == D2RL::Items::Quality::Set)) {
+		if (const auto problem = Personalize(item, owner, false); !problem.empty()) {
+			Log("Archipelago: couldn't put " + owner + "'s name on " + pick.name + ": " + problem + ".");
+		}
+	}
 	return result;
 }
 
 // Puts a loot item in the inventory, falling back to the cube, stash and
 // ground. If D2R rejects a forced unique or set record, it retries with any
 // record that fits the base. Returns false only when nothing could be placed.
-bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick) {
+// owner, when set, is the sender's name for a unique or set item.
+bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::string& owner = {}) {
 	std::vector<uint32_t> records;
 	if (pick.quality == D2RL::Items::Quality::Unique) {
 		records = UniqueRecords(pick.name);
@@ -705,15 +803,15 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick) {
 		     D2RL::Items::ItemContainer::Ground, D2RL::Items::ItemContainer::Cursor }) {
 		auto result = D2RL::Items::Result::NotFound;
 		for (const uint32_t record : records) {
-			result = CreateIn(player, pick, record, container);
+			result = CreateIn(player, pick, record, container, owner);
 			if (result == D2RL::Items::Result::Success) {
 				return true;
 			}
 		}
-		result = CreateIn(player, pick, pick.record, container);
+		result = CreateIn(player, pick, pick.record, container, owner);
 		if (result != D2RL::Items::Result::Success && pick.record != D2RL::Items::RandomQualityRecord) {
 			Log("Archipelago: record " + std::to_string(pick.record) + " (" + pick.name + ") was rejected; letting D2R pick one for the base.");
-			result = CreateIn(player, pick, D2RL::Items::RandomQualityRecord, container);
+			result = CreateIn(player, pick, D2RL::Items::RandomQualityRecord, container, owner);
 		}
 		if (result == D2RL::Items::Result::Success) {
 			if (container == D2RL::Items::ItemContainer::Ground || container == D2RL::Items::ItemContainer::Cursor) {
@@ -1372,6 +1470,9 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		// An item D2R refuses everywhere may not exist for this character, so roll
 		// others. If none fit, a mid rune stands in; if even that won't fit, the
 		// containers are full and we wait for the player to make room.
+		// Uniques and sets from another player carry that player's name.
+		const int         sender = items[next].player;
+		const std::string owner = sender > 0 && sender != gClient->MySlot() ? ap::personal::Name(gClient->PlayerName(sender)) : std::string {};
 		ap::loot::Pick pick {};
 		bool placed = false;
 		for (int attempt = 0; attempt < 5 && !placed; ++attempt) {
@@ -1379,7 +1480,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			if (pick.code == 0) {
 				break;
 			}
-			placed = GiveLoot(player, pick);
+			placed = GiveLoot(player, pick, owner);
 			if (!placed) {
 				Log("Archipelago: couldn't place " + pick.name + "; rolling another.");
 			}
@@ -1397,7 +1498,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			Log("Archipelago: gave " + pick.name + " in place of a reward that wouldn't fit.");
 		}
 		if (pick.quality == D2RL::Items::Quality::Unique || pick.quality == D2RL::Items::Quality::Set || loot == ap::loot::Loot::HighRune) {
-			Feed("Archipelago: you got " + pick.name + "!");
+			Feed("Archipelago: you got " + pick.name + (owner.empty() ? std::string {} : " from " + owner) + "!");
 		}
 	}
 
@@ -2318,6 +2419,50 @@ auto CommandCore(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command,
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
+// ap-personalize [name]: puts name on the item in your hand, the way rewards
+// from other players get the sender's; with no name it only logs the item data.
+std::string gPersonalizeName;
+
+void __cdecl PersonalizeCursorWork(const D2RL::PluginContext*, void*) noexcept {
+	std::string name;
+	{
+		std::lock_guard lock(gMutex);
+		name = gPersonalizeName;
+	}
+	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
+	D2RL::ItemHandle   item   = D2RL::InvalidItemHandle;
+	std::string        line;
+	if (gInventory->getLocalPlayer(gContext, &player) != D2RL::Inventory::Result::Success
+		|| gInventory->getCursorItem(gContext, player, &item) != D2RL::Inventory::Result::Success || item == D2RL::InvalidItemHandle) {
+		line = "ap-personalize: pick up an item first (hold it on the cursor).";
+	} else if (const auto problem = Personalize(item, name, name.empty()); !problem.empty()) {
+		line = "ap-personalize: " + problem + "; details in the log.";
+	} else {
+		line = name.empty() ? "ap-personalize: the item data matches the expected layout; it's in the log."
+		                    : "ap-personalize: wrote " + name + ". Save and Exit, then rejoin, to see it.";
+	}
+	std::lock_guard lock(gMutex);
+	gConsoleQueue.push_back(line);
+}
+
+auto CommandPersonalize(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
+	const std::string text(command->args != nullptr ? command->args : "", command->argsLength);
+	const std::string name = ap::personal::Name(text);
+	if (!text.empty() && name.empty()) {
+		gContext->WriteConsoleMessage("ap-personalize: that name has no characters D2 can show.");
+		return D2RL::ConsoleCommandResult::InvalidArguments;
+	}
+	{
+		std::lock_guard lock(gMutex);
+		gPersonalizeName = name;
+	}
+	if (gThreads->runOnGameThread(gContext, PersonalizeCursorWork, nullptr) != D2RL::Threads::Result::Success) {
+		gContext->WriteConsoleMessage("ap-personalize: join a game first.");
+		return D2RL::ConsoleCommandResult::Failed;
+	}
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
 // ap-chat <text>: show a line in D2R's chat, to test the chat output.
 auto CommandChat(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
 	const std::string text(command->args != nullptr ? command->args : "", command->argsLength);
@@ -2544,6 +2689,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-status", CommandStatus, "Show the Archipelago connection and progress.")
 	                   && context->RegisterConsoleCommand("ap-say", CommandSay, "Send a chat message to the Archipelago server.")
 	                   && context->RegisterConsoleCommand("ap-core", CommandCore, "Run a D2RCore console command: ap-core <command>.")
+	                   && context->RegisterConsoleCommand("ap-personalize", CommandPersonalize, "Put a name on the item in your hand: ap-personalize [name]; with no name it only logs the item.")
 	                   && context->RegisterConsoleCommand("ap-chat", CommandChat, "Show a line in the game chat: ap-chat <text>.")
 	                   && context->RegisterConsoleCommand("ap-codex", CommandCodex, "Rebuild the Archipelago Codex charm.")
 	                   && context->RegisterConsoleCommand("ap-hints", CommandHints, "List the hints you've found in game.")

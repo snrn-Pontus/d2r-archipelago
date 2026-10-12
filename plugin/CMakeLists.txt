@@ -14,6 +14,7 @@ add_library(ap_core STATIC
 	src/codex.cpp
 	src/config.cpp
 	src/loot.cpp
+	src/personalize.cpp
 	src/randomizer.cpp
 	src/save_state.cpp
 	src/sprite.cpp
