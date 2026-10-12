@@ -9,8 +9,11 @@
 //   d2r-ap-setup --dump <game path> <file>         copy one game file, e.g. data\hd\items\items.json
 //   d2r-ap-setup --sounds                          only write the banner sounds
 //   d2r-ap-setup --find <text>                     list the game files whose names contain the text
+//   d2r-ap-setup --update-loader                   install the latest D2RLoader
 //
 // Options for all of them: --game <D2R folder>, --mod <name>, --out <mods folder>.
+// Writing the mod also installs D2RLoader if it's missing, and the plugin
+// (d2rl-archipelago.dll next to this tool, or --plugin <file>) into the mod.
 
 #include "ap_client.h"
 #include "config.h"
@@ -24,6 +27,7 @@
 #include <nlohmann/json.hpp>
 
 #include <windows.h>
+#include <winhttp.h>
 #include <mfapi.h>
 #include <mferror.h>
 #include <mfidl.h>
@@ -60,6 +64,11 @@ const char* const Banks[] = { "", "base\\" };
 // Written next to the mod; the plugin compares it with the connected seed.
 constexpr const char* StampFile = "archipelago.txt";
 
+constexpr const char* PluginFile = "d2rl-archipelago.dll";
+constexpr const char* ConfigFile = "archipelago.toml";
+constexpr const char* LoaderFile = "D2RLoader.exe";
+constexpr const wchar_t* LoaderHost = L"d2rloader.net";
+
 struct Options {
 	std::string game;
 	std::string mod = "Archipelago";
@@ -68,8 +77,10 @@ struct Options {
 	std::string find;
 	std::string dumpPath, dumpFile;
 	std::string server, slot, password;
+	std::string plugin;
 	bool offline = false;
 	bool soundsOnly = false;
+	bool updateLoader = false;
 };
 
 auto FindGameFolder() -> std::string {
@@ -193,6 +204,218 @@ auto ReadFile(const fs::path& path) -> std::string {
 	return text.str();
 }
 
+auto ModRoot(const Options& options) -> fs::path {
+	return (options.out.empty() ? fs::path(options.game) / "mods" : fs::path(options.out)) / options.mod;
+}
+
+auto ToolDirectory() -> fs::path {
+	wchar_t path[MAX_PATH] {};
+	GetModuleFileNameW(nullptr, path, MAX_PATH);
+	return fs::path(path).parent_path();
+}
+
+// The plugin goes in the mod's own d2rloader folder, so it only loads with the
+// mod. A global copy from an older setup moves there, with its config (server
+// and slot); save state and sounds stay in the game's d2rloader folder.
+void InstallPlugin(const Options& options) {
+	const fs::path game = options.game;
+	const fs::path loader = ModRoot(options) / "d2rloader";
+	const fs::path target = loader / "plugins" / PluginFile;
+	const fs::path global = game / "d2rloader" / "plugins" / PluginFile;
+	const fs::path bundled = options.plugin.empty() ? ToolDirectory() / PluginFile : fs::path(options.plugin);
+	std::error_code error;
+	fs::create_directories(target.parent_path(), error);
+	if (fs::exists(bundled)) {
+		if (!fs::exists(target) || ReadFile(bundled) != ReadFile(target)) {
+			fs::copy_file(bundled, target, fs::copy_options::overwrite_existing, error);
+			if (error) {
+				std::printf("Couldn't copy the plugin to %s (%s). Close the game and try again.\n", target.string().c_str(), error.message().c_str());
+				return;
+			}
+			std::printf("Installed the plugin in %s\n", target.parent_path().string().c_str());
+		}
+	} else if (fs::exists(global)) {
+		fs::copy_file(global, target, fs::copy_options::overwrite_existing, error);
+		if (error) {
+			std::printf("Couldn't move the plugin to %s (%s). Close the game and try again.\n", target.string().c_str(), error.message().c_str());
+			return;
+		}
+	}
+	if (!fs::exists(target)) {
+		std::printf("No %s next to d2r-ap-setup.exe, so the plugin isn't installed. Put it there, or pass --plugin <file>.\n", PluginFile);
+		return;
+	}
+	const fs::path globalConfig = game / "d2rloader" / "config" / ConfigFile;
+	const fs::path modConfig = loader / "config" / ConfigFile;
+	if (fs::exists(globalConfig) && !fs::exists(modConfig)) {
+		fs::create_directories(modConfig.parent_path(), error);
+		fs::copy_file(globalConfig, modConfig, error);
+	}
+	// A global copy would also load with every other mod.
+	if (fs::exists(global)) {
+		if (fs::remove(global, error)) {
+			std::printf("Moved the plugin from %s into the mod.\n", global.parent_path().string().c_str());
+		} else {
+			std::printf("Couldn't remove the old plugin %s (%s); delete it by hand.\n", global.string().c_str(), error.message().c_str());
+		}
+	}
+}
+
+// A GET from d2rloader.net over HTTPS. WinHTTP follows the download's redirect.
+auto LoaderGet(const wchar_t* path, std::string& body) -> bool {
+	HINTERNET session = WinHttpOpen(L"d2r-ap-setup", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+	HINTERNET connection = session != nullptr ? WinHttpConnect(session, LoaderHost, INTERNET_DEFAULT_HTTPS_PORT, 0) : nullptr;
+	HINTERNET request = connection != nullptr
+		? WinHttpOpenRequest(connection, L"GET", path, nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)
+		: nullptr;
+	bool ok = request != nullptr && WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0)
+	       && WinHttpReceiveResponse(request, nullptr);
+	if (ok) {
+		DWORD status = 0;
+		DWORD size = sizeof(status);
+		ok = WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status, &size,
+		         WINHTTP_NO_HEADER_INDEX)
+		  && status == 200;
+	}
+	while (ok) {
+		DWORD available = 0;
+		if (!WinHttpQueryDataAvailable(request, &available)) {
+			ok = false;
+		} else if (available == 0) {
+			break;
+		} else {
+			const size_t offset = body.size();
+			body.resize(offset + available);
+			DWORD read = 0;
+			ok = WinHttpReadData(request, body.data() + offset, available, &read);
+			body.resize(offset + read);
+		}
+	}
+	for (HINTERNET handle : { request, connection, session }) {
+		if (handle != nullptr) {
+			WinHttpCloseHandle(handle);
+		}
+	}
+	return ok;
+}
+
+auto LatestLoaderVersion() -> std::string {
+	std::string body;
+	if (!LoaderGet(L"/api/v1/version", body)) {
+		return {};
+	}
+	const auto json = nlohmann::json::parse(body, nullptr, false);
+	return json.is_object() && json.contains("version") && json["version"].is_string() ? json["version"].get<std::string>() : "";
+}
+
+// An exe's ProductVersion, e.g. "1.3.1-beta".
+auto ProductVersion(const fs::path& exe) -> std::string {
+	DWORD handle = 0;
+	const DWORD size = GetFileVersionInfoSizeW(exe.c_str(), &handle);
+	std::vector<char> data(size);
+	if (size == 0 || !GetFileVersionInfoW(exe.c_str(), 0, size, data.data())) {
+		return {};
+	}
+	struct Translation {
+		WORD language, codePage;
+	}* translation = nullptr;
+	UINT length = 0;
+	if (!VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&translation), &length) || length < sizeof(Translation)) {
+		return {};
+	}
+	wchar_t key[64] {};
+	swprintf_s(key, L"\\StringFileInfo\\%04x%04x\\ProductVersion", translation->language, translation->codePage);
+	wchar_t* value = nullptr;
+	if (!VerQueryValueW(data.data(), key, reinterpret_cast<void**>(&value), &length) || length == 0) {
+		return {};
+	}
+	return fs::path(value).string();
+}
+
+// Windows' own tar unpacks zip files.
+auto Unzip(const fs::path& archive, const fs::path& folder) -> bool {
+	wchar_t system[MAX_PATH] {};
+	GetSystemDirectoryW(system, MAX_PATH);
+	std::wstring command = L"\"" + (fs::path(system) / L"tar.exe").wstring() + L"\" -xf \"" + archive.wstring() + L"\" -C \"" + folder.wstring() + L"\"";
+	STARTUPINFOW startup { .cb = sizeof(startup) };
+	PROCESS_INFORMATION process {};
+	if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
+		return false;
+	}
+	WaitForSingleObject(process.hProcess, INFINITE);
+	DWORD code = 1;
+	GetExitCodeProcess(process.hProcess, &code);
+	CloseHandle(process.hThread);
+	CloseHandle(process.hProcess);
+	return code == 0;
+}
+
+// Downloads the latest D2RLoader and copies it into the game folder, leaving the
+// player's d2rloader config, plugins and patches alone. Windows Defender often
+// flags D2RLoader, which patches the game, as a trojan, so it's unpacked in one
+// folder the player can exclude.
+auto InstallLoader(const fs::path& game) -> bool {
+	wchar_t local[MAX_PATH] {};
+	GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
+	const fs::path folder = fs::path(local) / "d2r-archipelago" / "d2rloader";
+	const fs::path files = folder / "files";
+	std::error_code error;
+	fs::remove_all(files, error);
+	fs::create_directories(files, error);
+	std::printf("Downloading D2RLoader from d2rloader.net...\n");
+	std::string zip;
+	if (!LoaderGet(L"/downloads/latest", zip)) {
+		std::printf("Couldn't download D2RLoader. Get it from https://d2rloader.net instead.\n");
+		return false;
+	}
+	const fs::path archive = folder / "D2RLoader.zip";
+	std::ofstream(archive, std::ios::binary | std::ios::trunc) << zip;
+	if (!Unzip(archive, files) || !fs::exists(files / LoaderFile)) {
+		std::printf("D2RLoader didn't unpack. Windows Defender often quarantines it: allow it under Windows Security,\n"
+		            "Virus & threat protection, or add an exclusion for %s, then run this again.\n",
+			folder.string().c_str());
+		return false;
+	}
+	std::vector<fs::path> copies;
+	for (const auto& entry : fs::recursive_directory_iterator(files)) {
+		const fs::path relative = fs::relative(entry.path(), files);
+		const std::string name = relative.generic_string();
+		const bool playerFile = name.starts_with("d2rloader/config/") || name.starts_with("d2rloader/plugins/") || name.starts_with("d2rloader/patches/");
+		if (entry.is_regular_file() && !(playerFile && fs::exists(game / relative))) {
+			copies.push_back(relative);
+		}
+	}
+	// D2RLoader.exe last, so a failed copy doesn't leave a new exe with old files.
+	std::ranges::stable_partition(copies, [](const fs::path& file) { return file != LoaderFile; });
+	for (const fs::path& file : copies) {
+		fs::create_directories((game / file).parent_path(), error);
+		fs::copy_file(files / file, game / file, fs::copy_options::overwrite_existing, error);
+		if (error) {
+			std::printf("Couldn't write %s (%s). Close the game and try again.\n", (game / file).string().c_str(), error.message().c_str());
+			return false;
+		}
+	}
+	fs::remove_all(files, error);
+	fs::remove(archive, error);
+	std::printf("Installed D2RLoader %s in %s\n", ProductVersion(game / LoaderFile).c_str(), game.string().c_str());
+	return true;
+}
+
+// Installs D2RLoader if it's missing. A newer one isn't installed on its own:
+// D2RLoader updates can break the plugin, so the player picks the moment.
+void CheckLoader(const Options& options) {
+	const fs::path game = options.game;
+	if (!fs::exists(game / LoaderFile)) {
+		InstallLoader(game);
+		return;
+	}
+	const std::string installed = ProductVersion(game / LoaderFile);
+	const std::string latest = LatestLoaderVersion();
+	if (!latest.empty() && latest != installed) {
+		std::printf("D2RLoader %s is out (you have %s). d2r-ap-setup --update-loader installs it.\n", latest.c_str(), installed.c_str());
+	}
+}
+
 auto ParseArgs(int argc, char** argv) -> Options {
 	Options options;
 	options.game = FindGameFolder();
@@ -221,6 +444,10 @@ auto ParseArgs(int argc, char** argv) -> Options {
 			options.offline = true;
 		} else if (arg == "--sounds") {
 			options.soundsOnly = true;
+		} else if (arg == "--plugin") {
+			options.plugin = next();
+		} else if (arg == "--update-loader") {
+			options.updateLoader = true;
 		}
 	}
 	return options;
@@ -477,7 +704,7 @@ auto TableRandom(uint32_t seed, const std::string& table) -> std::mt19937 {
 }
 
 int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
-	const fs::path modRoot = (options.out.empty() ? fs::path(options.game) / "mods" : fs::path(options.out)) / options.mod;
+	const fs::path modRoot = ModRoot(options);
 	const fs::path mpq = modRoot / (options.mod + ".mpq");
 	const fs::path excel = mpq / "data" / "global" / "excel";
 	// Clear the previous seed's tables, but only in a mod this tool made.
@@ -675,9 +902,21 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 
-	// Without --connect, use what the plugin saved after ap-connect.
+	if (options.updateLoader) {
+		CascCloseStorage(storage);
+		return InstallLoader(options.game) ? 0 : 1;
+	}
+	// A mod written elsewhere (--out) is only for testing; leave the game alone.
+	if (options.out.empty()) {
+		CheckLoader(options);
+		InstallPlugin(options);
+	}
+
+	// Without --connect, use what the plugin saved after ap-connect: in the mod,
+	// or in the game's d2rloader folder before the plugin moved into the mod.
 	if (!options.offline && options.server.empty()) {
-		const auto config = ap::ParseConfig(ReadFile(fs::path(options.game) / "d2rloader" / "config" / "archipelago.toml"));
+		const fs::path modConfig = ModRoot(options) / "d2rloader" / "config" / ConfigFile;
+		const auto config = ap::ParseConfig(ReadFile(fs::exists(modConfig) ? modConfig : fs::path(options.game) / "d2rloader" / "config" / ConfigFile));
 		options.server = config.server;
 		options.slot = config.slot;
 		options.password = config.password;

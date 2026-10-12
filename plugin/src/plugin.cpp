@@ -307,8 +307,16 @@ auto ConfigText() -> std::string {
 	return text;
 }
 
+// The game folder, whichever scope the plugin loaded from. Save state and
+// sounds live under it, so moving the plugin into the mod keeps both.
+auto GameDirectory() -> std::filesystem::path {
+	wchar_t path[MAX_PATH] {};
+	GetModuleFileNameW(nullptr, path, MAX_PATH);
+	return std::filesystem::path(path).parent_path();
+}
+
 auto SaveDirectory() -> std::filesystem::path {
-	return std::filesystem::path(gContext->scopeRootDirectory) / L"d2rloader" / L"archipelago";
+	return GameDirectory() / L"d2rloader" / L"archipelago";
 }
 
 auto SanitizeFileName(std::string name) -> std::string {
@@ -3245,7 +3253,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	}
 	RegisterPanels(context);
 	gConfig = ap::ParseConfig(ConfigText());
-	ap::notify::SetSounds((std::filesystem::path(context->scopeRootDirectory) / ap::sounds::Folder).wstring(), gConfig.bannerSounds);
+	ap::notify::SetSounds((GameDirectory() / ap::sounds::Folder).wstring(), gConfig.bannerSounds);
 	gClient = std::make_unique<ap::Client>(Log);
 
 	using Kind = D2RL::Lifecycle::GameplayEventKind;

@@ -18,6 +18,15 @@ from the server console: `/send <slot> <item name>` (for example `/send Snrn Act
 - **From the Server:** `!getitem` for all the lock items, the Normal act keys, a bundle of rewards, Codex
   Empowerment, Skill Point and each trap, the same as `/send`. They stay in the seed's save.
 
+## 00. Mod-scoped plugin
+
+- [ ] After `d2r-ap-setup.exe`, the plugin is in `mods\Archipelago\d2rloader\plugins\` and the global copy
+      is gone. D2RLoader's plugin list shows Archipelago as `[mod]`, not `[global]`.
+- [ ] Without `ap-connect`, it reconnects to the same server and slot (the config moved into the mod).
+- [ ] A character from before the move keeps its checks (save state stays in `d2rloader\archipelago\`),
+      and the banners still play sounds.
+- [ ] TCP/IP with a second player: joining works when both ran the new setup tool.
+
 ## 0. Codex charms
 
 - [ ] Your class's skills are on one Codex and other classes' skills on a second one. Below level 6 the
