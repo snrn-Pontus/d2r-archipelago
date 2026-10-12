@@ -30,7 +30,7 @@ from the server console: `/send <slot> <item name>` (for example `/send Snrn Act
       the Launcher, **Diablo II Resurrected** sets up in its own window and starts the game, and the plugin
       connects without `ap-connect`. (The Launcher leaves its "Connect to Multiworld" popup open afterwards;
       that's Archipelago's.)
-- [ ] The Launcher's button alone, without a link, does the same with the last server and slot.
+- [x] The Launcher's button alone, without a link, does the same with the last server and slot.
 - [ ] With the game still running, the setup window says to close it and waits for Enter.
 
 ## 0. Codex charms
