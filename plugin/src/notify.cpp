@@ -9,6 +9,8 @@
 #include <chrono>
 #include <deque>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <mutex>
 #include <string_view>
 #include <vector>
@@ -54,8 +56,9 @@ bool              gStatusChanged = false;
 std::atomic<bool> gStatusOn;
 Clock::time_point gStatusPlaced;
 
-std::wstring gSoundFolder;
-bool         gSoundsOn = false;
+// The banner sounds at the player's volume, in ap::sounds::All order; empty
+// when off or missing. PlaySound reads them while they play, so they live on.
+std::string gSounds[std::size(ap::sounds::All)];
 
 HWND gHost = nullptr;
 Box  gBanner, gStatus;
@@ -86,18 +89,15 @@ auto TextColor(Style style) -> COLORREF {
 
 // The sound for the most important of the lines just shown.
 void PlayFor(const std::vector<Style>& shown) {
-	if (!gSoundsOn || gSoundFolder.empty()) {
-		return;
-	}
-	const ap::sounds::Sound* sound = nullptr;
-	for (const Style style : { Style::Important, Style::Trap, Style::Info }) {
-		if (sound == nullptr && std::ranges::find(shown, style) != shown.end()) {
-			sound = style == Style::Important ? &ap::sounds::Important : style == Style::Trap ? &ap::sounds::Trap : &ap::sounds::Item;
+	// Important, Trap and Info match ap::sounds::All's order.
+	const Style styles[] = { Style::Important, Style::Trap, Style::Info };
+	for (size_t i = 0; i < std::size(styles); ++i) {
+		if (std::ranges::find(shown, styles[i]) != shown.end()) {
+			if (!gSounds[i].empty()) {
+				PlaySoundW(reinterpret_cast<LPCWSTR>(gSounds[i].data()), nullptr, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+			}
+			return;
 		}
-	}
-	if (sound != nullptr) {
-		const std::wstring path = gSoundFolder + L"\\" + sound->file;
-		PlaySoundW(path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
 	}
 }
 
@@ -360,9 +360,19 @@ void TickStatus(const RECT& client, POINT origin, Clock::time_point now) {
 
 } // namespace
 
-void SetSounds(const std::wstring& folder, bool enabled) {
-	gSoundFolder = folder;
-	gSoundsOn = enabled;
+void SetSounds(const std::wstring& folder, bool enabled, int volume) {
+	PlaySoundW(nullptr, nullptr, 0); // stop one playing from a buffer about to change
+	for (size_t i = 0; i < std::size(ap::sounds::All); ++i) {
+		gSounds[i].clear();
+		if (!enabled || volume <= 0) {
+			continue;
+		}
+		std::ifstream in(std::filesystem::path(folder) / ap::sounds::All[i].file, std::ios::binary);
+		gSounds[i].assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+		if (volume != 100) {
+			ap::sounds::ScaleWav(gSounds[i], volume);
+		}
+	}
 }
 
 void Show(const std::string& text, Style style) {

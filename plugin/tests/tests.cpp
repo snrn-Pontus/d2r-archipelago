@@ -12,6 +12,7 @@
 #include "randomizer.h"
 #include "table.h"
 #include "save_state.h"
+#include "sounds.h"
 #include "sprite.h"
 
 #include <nlohmann/json.hpp>
@@ -130,6 +131,11 @@ void TestConfigRoundTrip() {
 	EXPECT(ap::ParseConfig("").bannerSounds);
 	config.bannerSounds = false;
 	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).bannerSounds);
+	EXPECT(ap::ParseConfig("").bannerVolume == 100);
+	config.bannerVolume = 40;
+	EXPECT(ap::ParseConfig(ap::FormatConfig(config)).bannerVolume == 40);
+	EXPECT(ap::ParseConfig("banner_volume = 500").bannerVolume == 200);
+	EXPECT(ap::ParseConfig("banner_volume = -5").bannerVolume == 0);
 	config.notifications = false;
 	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).notifications);
 	EXPECT(parsed.server == config.server);
@@ -148,6 +154,40 @@ void TestConfigDefaults() {
 	EXPECT(parsed.oskillProperty == 265);
 	EXPECT(parsed.codexUnique == ap::data::CodexUnique);
 	EXPECT(parsed.codexPrefix == ap::data::CodexPrefix);
+}
+
+void TestScaleWav() {
+	// A 16-bit mono WAV with an odd-sized chunk before the samples.
+	const auto u16 = [](std::string& out, uint16_t value) { out.append(reinterpret_cast<const char*>(&value), 2); };
+	const auto u32 = [](std::string& out, uint32_t value) { out.append(reinterpret_cast<const char*>(&value), 4); };
+	const int16_t samples[] = { 1000, -1000, 30000, -30000 };
+	std::string wav = "RIFF";
+	u32(wav, 0);
+	wav += "WAVEfmt ";
+	u32(wav, 16);
+	u16(wav, 1);
+	u16(wav, 1);
+	u32(wav, 44100);
+	u32(wav, 88200);
+	u16(wav, 2);
+	u16(wav, 16);
+	wav += "LIST";
+	u32(wav, 3);
+	wav += std::string("abc\0", 4);
+	wav += "data";
+	u32(wav, sizeof(samples));
+	wav.append(reinterpret_cast<const char*>(samples), sizeof(samples));
+	std::string scaled = wav;
+	EXPECT(ap::sounds::ScaleWav(scaled, 150));
+	int16_t out[4] = {};
+	std::memcpy(out, scaled.data() + scaled.size() - sizeof(out), sizeof(out));
+	EXPECT(out[0] == 1500 && out[1] == -1500 && out[2] == 32767 && out[3] == -32768);
+	EXPECT(scaled.compare(0, scaled.size() - sizeof(out), wav, 0, wav.size() - sizeof(out)) == 0);
+	std::string notWav = "not a wav file";
+	EXPECT(!ap::sounds::ScaleWav(notWav, 50) && notWav == "not a wav file");
+	std::string bits8 = wav;
+	bits8[34] = 8; // bits per sample
+	EXPECT(!ap::sounds::ScaleWav(bits8, 50));
 }
 
 void TestSaveStateRoundTrip() {
@@ -792,6 +832,7 @@ int main() {
 	TestClientDeathLink();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
+	TestScaleWav();
 	TestSaveStateRoundTrip();
 	TestIdsMatchApworld();
 	TestGameData();

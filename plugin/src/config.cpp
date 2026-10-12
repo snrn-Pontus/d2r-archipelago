@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <algorithm>
 #include <sstream>
 
 namespace ap {
@@ -68,6 +69,8 @@ auto ParseConfig(const std::string& text) -> Config {
 			config.notifications = value != "false";
 		} else if (key == "banner_sounds") {
 			config.bannerSounds = value != "false";
+		} else if (key == "banner_volume" && !value.empty()) {
+			config.bannerVolume = std::clamp(std::stoi(value), 0, 200);
 		} else if (key == "status_line") {
 			config.statusLine = value != "false";
 		} else if (key == "status_position" && !value.empty()) {
@@ -99,6 +102,8 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "notifications = " << (config.notifications ? "true" : "false") << "\n"
 	    << "# Game sounds with the gold, red and white banners.\n"
 	    << "banner_sounds = " << (config.bannerSounds ? "true" : "false") << "\n"
+	    << "# Their volume in percent: 100 is the default, 200 the game's own loudness.\n"
+	    << "banner_volume = " << config.bannerVolume << "\n"
 	    << "# The always-on checks line; status_position is top-left, top, top-right, bottom-left or bottom-right.\n"
 	    << "status_line = " << (config.statusLine ? "true" : "false") << "\n"
 	    << "status_position = " << Quote(config.statusPosition) << "\n\n"

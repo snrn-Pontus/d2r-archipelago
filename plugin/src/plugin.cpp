@@ -3345,7 +3345,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	}
 	RegisterPanels(context);
 	gConfig = ap::ParseConfig(ConfigText());
-	ap::notify::SetSounds((GameDirectory() / ap::sounds::Folder).wstring(), gConfig.bannerSounds);
+	ap::notify::SetSounds((GameDirectory() / ap::sounds::Folder).wstring(), gConfig.bannerSounds, gConfig.bannerVolume);
 	gClient = std::make_unique<ap::Client>(Log);
 
 	using Kind = D2RL::Lifecycle::GameplayEventKind;
