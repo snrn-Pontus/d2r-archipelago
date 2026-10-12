@@ -41,7 +41,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 // Must share major.minor with apworld/d2r_archipelago/archipelago.json.
-constexpr const char* PluginVersion = "0.3.0";
+constexpr const char* PluginVersion = "0.4.0";
 
 constexpr D2RL::PluginInfo Info {
 	.infoSize    = D2RL::PluginInfoSize,
@@ -826,9 +826,9 @@ auto CodexSeed(uint32_t chunk, int playerClass, uint32_t fingerprint) -> uint32_
 	return CodexMarker | ((static_cast<uint32_t>(playerClass + 1) & 0xF) << 20) | ((chunk & 0xF) << 16) | (fingerprint & 0xFFFF);
 }
 
-// Make sure each 60-skill chunk has exactly one up-to-date Codex charm in the
-// inventory. Returns false when an update couldn't be placed.
-bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& skills, int playerClass, const ap::Config& config) {
+// Make sure each chunk with skills has exactly one up-to-date Codex charm in the
+// inventory, and the rest have none. Returns false when an update couldn't be placed.
+bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& allSkills, int playerClass, const ap::Config& config) {
 	CodexScan scan { ap::loot::CodeFromText(config.codexItem.c_str()), {} };
 	const D2RL::Inventory::ItemFilter filter {
 		.structSize    = D2RL::Inventory::ItemFilterSize,
@@ -837,17 +837,24 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& s
 	if (gInventory->forEachInventoryItem(gContext, player, &filter, CollectCodex, &scan) != D2RL::Inventory::Result::Success) {
 		return false;
 	}
-	const uint32_t chunks = static_cast<uint32_t>((skills.size() + CodexMaxSkills - 1) / CodexMaxSkills);
+	const auto chunks = ap::codex::Chunks(allSkills, playerClass >= 0 && playerClass < static_cast<int>(std::size(ClassNames)) ? ClassNames[playerClass] : "",
+		CodexMaxSkills);
+	// Charms from older recipes count as chunk 0, so each is replaced once.
+	auto chunkOf = [](uint32_t seed) { return (seed & CodexMarkerMask) == CodexMarker ? (seed >> 16) & 0xF : 0U; };
 	bool ok = true;
-	for (uint32_t chunk = 0; chunk < std::max<uint32_t>(chunks, 1); ++chunk) {
-		const size_t first = chunk * CodexMaxSkills;
-		const size_t count = first < skills.size() ? std::min<size_t>(CodexMaxSkills, skills.size() - first) : 0;
+	for (uint32_t chunk = 0; chunk < ap::codex::ChunkCount; ++chunk) {
+		const auto& skills = chunks[chunk];
+		const size_t first = 0;
+		const size_t count = skills.size();
+		if (count == 0 && std::ranges::none_of(scan.found, [&](const auto& item) { return chunkOf(CodexSeedOf(item)) == chunk; })) {
+			continue;
+		}
 		const uint32_t wanted = CodexSeed(chunk, playerClass, ap::codex::Fingerprint(skills, first, count, playerClass));
 		bool current = false;
 		std::vector<D2RL::Items::TransactionInput> stale;
 		for (const auto& item : scan.found) {
 			const uint32_t seed = CodexSeedOf(item);
-			if (((seed >> 16) & 0xF) != chunk && (seed & CodexMarkerMask) == CodexMarker) {
+			if (chunkOf(seed) != chunk) {
 				continue;
 			}
 			if (!current && seed == wanted && item.container == D2RL::Items::ItemContainer::Inventory) {
@@ -950,7 +957,8 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& s
 			}
 			ok = false;
 		} else if (!outputs.empty()) {
-			Log("Archipelago: Codex " + std::to_string(chunk + 1) + " now holds " + std::to_string(count) + " skills.");
+			Log("Archipelago: Codex " + std::to_string(chunk + 1) + (chunk >= ap::codex::OtherClassChunk ? " (other classes)" : " (your class)") + " now holds "
+				+ std::to_string(count) + " skills.");
 			D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
 			if (createdCodex != D2RL::InvalidItemHandle && gItems->getItemInfo(gContext, createdCodex, &info) == D2RL::Items::Result::Success) {
 				Log("Archipelago: created Codex " + DescribeItem(info) + ".");
@@ -1252,7 +1260,8 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			return;
 		}
 	}
-	auto skills = ap::codex::Entries(items, EffectiveLevel(), gClient->Slots().skillScaling);
+	const ap::SlotData slots = gClient->Slots();
+	auto skills = ap::codex::Entries(items, EffectiveLevel(), slots.skillScaling, slots.skillScalingCap);
 	{
 		// Lord of Destruction characters have no Warlock skills (D2R asserts on them).
 		std::vector<std::string> dropped;

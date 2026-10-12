@@ -163,7 +163,8 @@ class TestClassWeighted(D2RTestBase):
     def test_half_from_class(self) -> None:
         sorceress = self.world.item_name_groups["Sorceress"]
         self.assertEqual(sum(1 for name in self.world.skill_pool if name in sorceress), 10)
-        self.assertEqual(self.world.fill_slot_data()["skill_scaling"], 3)
+        self.assertEqual(self.world.fill_slot_data()["skill_scaling"], 5)
+        self.assertEqual(self.world.fill_slot_data()["skill_scaling_cap"], 10)
 
 
 class TestShortGame(D2RTestBase):

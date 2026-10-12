@@ -87,7 +87,16 @@ class SkillLevelScaling(Range):
     display_name = "Skill Level Scaling"
     range_start = 0
     range_end = 10
-    default = 3
+    default = 5
+
+
+class SkillScalingCap(Range):
+    """The most levels Skill Level Scaling can add, so copies and Codex Empowerments still matter late
+    in the game. 0 means no cap."""
+    display_name = "Skill Scaling Cap"
+    range_start = 0
+    range_end = 30
+    default = 10
 
 
 class StartingSkills(Range):
@@ -529,6 +538,7 @@ class D2ROptions(PerGameCommonOptions):
     skill_copies: SkillCopies
     skill_focus: SkillFocus
     skill_level_scaling: SkillLevelScaling
+    skill_scaling_cap: SkillScalingCap
     scale_with_length: ScaleWithLength
     starting_skills: StartingSkills
     skill_classes: SkillClasses
@@ -594,7 +604,7 @@ class D2ROptions(PerGameCommonOptions):
 OPTION_GROUPS = [
     OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, SkillsPerAct]),
     OptionGroup("Skills and Codex", [CharacterClass, SkillPoolSize, SkillCopies, SkillFocus, ScaleWithLength, StartingSkills,
-                                     SkillClasses, IncludeWarlock, SkillLevelScaling, CodexEmpowerments]),
+                                     SkillClasses, IncludeWarlock, SkillLevelScaling, SkillScalingCap, CodexEmpowerments]),
     OptionGroup("Checks", [AreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, CowLevelChecks]),
     OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,
                                                FindCountChecks], start_collapsed=True),

@@ -5,11 +5,12 @@
 Every class skill, across all eight classes, is shuffled into the multiworld. Your character can't spend
 skill points on its own tree. Instead, each skill you receive is added to your **Archipelago Codex**, a
 small charm in your inventory that grants every skill you've found. Codex skills work for any class, so a
-Barbarian can end up casting Frozen Orb.
+Barbarian can end up casting Frozen Orb. Skills from other classes go on a second Codex: Diablo II needs
+character level 6 for those, and on a shared charm they would switch off your own class's skills too.
 
 A Codex skill's level is the number of copies of it you've found (`skill_copies`), plus your Codex
-Empowerments, plus one for every few character levels (`skill_level_scaling`, default every 3 levels), so
-skills found early keep up. `skill_focus` picks the pool: any skills, half from your class, or fewer skills
+Empowerments, plus one for every few character levels (`skill_level_scaling`, default every 5 levels, up to
+`skill_scaling_cap`, default +10), so skills found early keep up. `skill_focus` picks the pool: any skills, half from your class, or fewer skills
 with more copies each.
 
 ## What counts as a location?

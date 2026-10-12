@@ -53,6 +53,22 @@ void TestCodexLevels() {
 	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) != ap::codex::Fingerprint(flat, 0, 2, 4));
 	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) == ap::codex::Fingerprint(ap::codex::Entries(items, 14, 3), 0, 2, 4));
 	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) != ap::codex::Fingerprint(entries, 0, 2, 3));
+	// Scaling stops at its cap: level 60 at +1 per 5 levels would be +12.
+	EXPECT(ap::codex::Entries(items, 60, 5, 10)[1].level == 1 + 1 + 10);
+	EXPECT(ap::codex::Entries(items, 60, 5, 0)[1].level == 1 + 1 + 12);
+
+	// Your class's skills get their own charm; other classes' go on charms from OtherClassChunk.
+	const std::vector<ap::codex::Entry> mixed = { { 54, 3 }, { 126, 2 }, { 67, 1 }, { 132, 1 } };
+	const auto chunks = ap::codex::Chunks(mixed, "Barbarian", 60);
+	EXPECT(chunks.size() == ap::codex::ChunkCount);
+	EXPECT((chunks[0] == std::vector<ap::codex::Entry> { { 126, 2 }, { 132, 1 } }));
+	EXPECT((chunks[ap::codex::OtherClassChunk] == std::vector<ap::codex::Entry> { { 54, 3 }, { 67, 1 } }));
+	EXPECT(chunks[1].empty() && chunks[ap::codex::OtherClassChunk + 1].empty());
+	// Full chunks spill into the next; an unknown class puts everything with the other classes.
+	const auto small = ap::codex::Chunks(mixed, "Barbarian", 1);
+	EXPECT(small[0].size() == 1 && small[1].size() == 1 && small[ap::codex::OtherClassChunk + 1].size() == 1);
+	const auto unknown = ap::codex::Chunks(mixed, "", 60);
+	EXPECT(unknown[0].empty() && unknown[ap::codex::OtherClassChunk].size() == 4);
 }
 
 void TestQuestTriggers() {

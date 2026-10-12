@@ -8,6 +8,12 @@ console command and refused item).
 matches, then start a new Lord of Destruction character. Most sessions test faster with items handed out
 from the server console: `/send <slot> <item name>` (for example `/send Snrn Act I Waypoints`).
 
+## 0. Codex charms
+
+- [ ] Your class's skills are on one Codex and other classes' skills on a second one. Below level 6 the
+      second one's skills don't work, but your class's still do.
+- [ ] Codex skill levels: copies + Empowerments + 1 per 5 character levels, the last part stopping at +10.
+
 ## 1. Tracking: Ledger and ap-missing
 
 Any seed with the defaults.

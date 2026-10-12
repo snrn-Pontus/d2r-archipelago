@@ -33,8 +33,8 @@ own next time. `ap-status` shows the connection, and `ap-disconnect` drops it.
 Items you receive, checks you send and other server messages show in the game chat as
 `Archipelago: ...`, and in the console. The Codex charm's tooltip keeps the latest few.
 
-Use a fresh character for each seed. The Codex charm must stay in your inventory; if you lose it,
-`ap-codex` rebuilds it.
+Use a fresh character for each seed. The Codex charms (one for your class's skills, one for other
+classes') must stay in your inventory; if you lose one, `ap-codex` rebuilds it.
 
 Your character also gets an **Archipelago Ledger**. Hover over it to see how many checks you've done in
 each act, and outside any act, out of the total. `ap-missing` lists the checks left in the act you're in,

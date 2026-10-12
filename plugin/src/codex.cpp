@@ -1,5 +1,6 @@
 #include "codex.h"
 
+#include "game_data.h"
 #include "ids.h"
 
 #include <algorithm>
@@ -7,7 +8,7 @@
 
 namespace ap::codex {
 
-auto Entries(const std::vector<NetworkItem>& items, int characterLevel, int scaling) -> std::vector<Entry> {
+auto Entries(const std::vector<NetworkItem>& items, int characterLevel, int scaling, int cap) -> std::vector<Entry> {
 	std::vector<Entry> entries;
 	std::unordered_map<uint32_t, size_t> position;
 	int empowerments = 0;
@@ -23,7 +24,11 @@ auto Entries(const std::vector<NetworkItem>& items, int characterLevel, int scal
 			++entries[found->second].level;
 		}
 	}
-	const int bonus = empowerments + (scaling > 0 ? std::max(characterLevel, 0) / scaling : 0);
+	int scaled = scaling > 0 ? std::max(characterLevel, 0) / scaling : 0;
+	if (cap > 0) {
+		scaled = std::min(scaled, cap);
+	}
+	const int bonus = empowerments + scaled;
 	for (auto& entry : entries) {
 		// D2 shows skill levels up to 99; stay well inside that.
 		entry.level = std::min(entry.level + bonus, 60);
@@ -44,6 +49,24 @@ auto Fingerprint(const std::vector<Entry>& entries, size_t first, size_t count, 
 		mix(static_cast<uint32_t>(entries[i].level));
 	}
 	return (hash ^ (hash >> 16)) & 0xFFFF;
+}
+
+auto Chunks(const std::vector<Entry>& entries, std::string_view playerClass, size_t perChunk) -> std::vector<std::vector<Entry>> {
+	std::vector<std::vector<Entry>> chunks(ChunkCount);
+	uint32_t own = 0, other = OtherClassChunk;
+	for (const auto& entry : entries) {
+		const bool mine = !playerClass.empty() && std::ranges::any_of(data::Skills, [&](const data::Skill& skill) {
+			return skill.id == entry.skill && skill.cls == playerClass;
+		});
+		uint32_t& chunk = mine ? own : other;
+		if (chunks[chunk].size() == perChunk) {
+			++chunk;
+		}
+		if (chunk < (mine ? OtherClassChunk : ChunkCount)) {
+			chunks[chunk].push_back(entry);
+		}
+	}
+	return chunks;
 }
 
 } // namespace ap::codex

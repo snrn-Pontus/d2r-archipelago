@@ -383,6 +383,7 @@ class D2RWorld(World):
             "character_class": self.class_name(),
             "act_keys": bool(self.options.act_keys),
             "skill_scaling": self.options.skill_level_scaling.value,
+            "skill_scaling_cap": self.options.skill_scaling_cap.value,
             "goal_quest": BOSS_QUESTS[self.options.goal_act.value - 1],
             "area_checks": bool(self.options.area_checks),
             "level_checks": bool(self.options.level_checks),

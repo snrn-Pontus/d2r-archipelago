@@ -45,6 +45,8 @@ struct SlotData {
 	bool actKeys     = false;
 	// Codex skills gain +1 per this many character levels (0 = off).
 	int  skillScaling = 0;
+	// The most levels scaling adds (0 = no cap).
+	int  skillScalingCap = 0;
 	int  goalQuest   = 40;
 	bool areaChecks  = true;
 	bool levelChecks = true;
