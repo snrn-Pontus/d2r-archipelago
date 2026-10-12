@@ -528,7 +528,11 @@ void TestSuperUniqueMonsters() {
 	auto superUniques = ap::Table::Parse("Superunique\tName\tClass\r\nBishibosh\tBishibosh\tfallenshaman1\r\nRadament\tRadament\tradament\r\n"
 	                                     "Corpsefire\tCorpsefire\tzombie1\r\n");
 	const size_t before = monstats.Rows().size();
-	EXPECT(ap::randomizer::AddSuperUniqueMonsters(monstats, superUniques) == 2);
+	std::vector<std::pair<std::string, std::string>> copies;
+	EXPECT(ap::randomizer::AddSuperUniqueMonsters(monstats, superUniques, &copies) == 2);
+	// The linked copies and the monsters they copy, for their HD models.
+	EXPECT(copies.size() == 2 && copies[0].first == "ap_superunique_0" && copies[0].second == "fallenshaman1");
+	EXPECT(copies.size() == 2 && copies[1].first == "ap_superunique_40" && copies[1].second == "zombie1");
 	// One row per field superunique, in data::SuperUniques order, at the end.
 	EXPECT(monstats.Rows().size() == before + std::size(ap::data::SuperUniques));
 	auto rowOf = [&](std::string_view name) {

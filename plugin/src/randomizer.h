@@ -98,9 +98,11 @@ auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mod
 // Gives each field superunique (data::SuperUniques, in order) a monster row of
 // its own, a copy of its current monster appended to MonStats, so a kill tells
 // which superunique died: the copies are the last rows, in the same order.
-// Run it after ShuffleSuperUniques. Returns how many superuniques it linked.
+// Run it after ShuffleSuperUniques. Returns how many superuniques it linked;
+// `copies` gets each linked copy's Id and the monster it copies, which the HD
+// client needs to find the copy's model.
 inline constexpr const char* SuperUniqueMonsterPrefix = "ap_superunique_";
-auto AddSuperUniqueMonsters(Table& monstats, Table& superUniques) -> int;
+auto AddSuperUniqueMonsters(Table& monstats, Table& superUniques, std::vector<std::pair<std::string, std::string>>* copies = nullptr) -> int;
 
 // Rewrites each runeword's recipe with runes of a similar tier. Returns the new
 // recipes, one "Name: Rune Rune ..." line each.

@@ -284,6 +284,8 @@ on `death_link: true` in both.
       Normal).
 - [ ] Bishibosh is a different monster but still sends his check. (2026-10-12: he was a Flayer shaman, as
       the seed said; the check is still to confirm.)
+- [ ] With `superunique_checks` on too, the shuffled superuniques (Rakanishu in Stony Field) are visible,
+      with their new monster's model, and their minions are too.
 - [ ] `mods\Archipelago\runewords.txt` lists new recipes, and one made from low runes works in game.
 - [ ] More monsters, and faster levelling than usual.
 
