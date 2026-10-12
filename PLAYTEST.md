@@ -1,7 +1,7 @@
 # Playtest checklist
 
 The parts that still need checking in game, grouped so each session tests one area. Tick a box once it
-works; if it doesn't, note what happened and attach `d2rloader\logs\` (the plugin logs every check, reward,
+works; if it doesn't, note what happened and attach `mods\Archipelago\d2rloader\logs\` and `d2rloader\logs\` (the plugin logs every check, reward,
 console command and refused item).
 
 **Before every session:** after changing the plugin or the seed, rerun `d2r-ap-setup.exe` so the mod

@@ -56,9 +56,11 @@ def launch_client(*args: str) -> None:
                    "tools/package_release.py, or use the release zip.", True)
         return
     command = [str(setup), "--play"]
-    game_folder = str(D2RWorld.settings.game_folder or "")
-    if game_folder:
-        command += ["--game", game_folder]
+    # An empty setting comes back as Archipelago's own folder, so only a folder with the game counts;
+    # otherwise the tool finds the Battle.net install.
+    game_folder = Path(D2RWorld.settings.game_folder or "")
+    if (game_folder / "D2R.exe").is_file():
+        command += ["--game", str(game_folder)]
     for arg in args:
         command += connect_args(arg)
     # Its own window, so the player sees the download and setup, and any error.
