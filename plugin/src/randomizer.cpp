@@ -3,6 +3,9 @@
 #include "game_data.h"
 
 #include <algorithm>
+#include <climits>
+#include <cstdlib>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -82,6 +85,114 @@ auto BlockClassSkills(Table& skills) -> int {
 	return locked;
 }
 
+// A class skill's tree position, read from skills.txt and skilldesc.txt.
+struct Place {
+	std::string cls;
+	int         page = 0, row = 0, column = 0;
+	size_t      skillRow = 0, descRow = 0;
+	// The skill's name string key ("skillname36", "Skillname226"), for tooltips.
+	std::string nameKey;
+};
+
+auto ClassSkillPlaces(const Table& skills, const Table& skilldesc) -> std::map<std::string, Place> {
+	const int name = skills.Column("skill"), charclass = skills.Column("charclass"), descOf = skills.Column("skilldesc");
+	const int descName = skilldesc.Column("skilldesc"), page = skilldesc.Column("SkillPage"), row = skilldesc.Column("SkillRow");
+	const int column = skilldesc.Column("SkillColumn"), nameKey = skilldesc.Column("str name");
+	std::map<std::string, size_t> descRows;
+	for (size_t d = 0; d < skilldesc.Rows().size(); ++d) {
+		descRows.emplace(skilldesc.Cell(d, descName), d);
+	}
+	std::map<std::string, Place> places;
+	for (size_t s = 0; s < skills.Rows().size(); ++s) {
+		const auto desc = descRows.find(skills.Cell(s, descOf));
+		if (ClassCodes.contains(skills.Cell(s, charclass)) && desc != descRows.end()) {
+			const size_t d = desc->second;
+			places[skills.Cell(s, name)] = { skills.Cell(s, charclass), ParseInt(skilldesc.Cell(d, page)), ParseInt(skilldesc.Cell(d, row)),
+				ParseInt(skilldesc.Cell(d, column)), s, d, skilldesc.Cell(d, nameKey) };
+		}
+	}
+	return places;
+}
+
+// Calls `replace` with each name in a formula's skill('Name'.x) references and
+// puts back what it returns.
+auto RenameSkillReferences(const std::string& formula, const std::function<std::string(const std::string&)>& replace) -> std::string {
+	static const std::string Open = "skill('";
+	std::string out;
+	size_t at = 0;
+	for (size_t found = formula.find(Open); found != std::string::npos; found = formula.find(Open, at)) {
+		const size_t start = found + Open.size();
+		const size_t end = formula.find('\'', start);
+		if (end == std::string::npos) {
+			break;
+		}
+		out += formula.substr(at, start - at) + replace(formula.substr(start, end - start));
+		at = end;
+	}
+	return out + formula.substr(at);
+}
+
+// After a tree shuffle, points every synergy (and other skill('Name') reference
+// in a class skill's formulas and tooltip) at a skill in the skill's new tree:
+// a partner already in that class stays; any other becomes the skill nearest
+// its old place on the skill's new tab (row first, then column), each partner
+// a different skill. Tooltip lines name skills by their name string keys.
+void RemapSynergies(Table& skills, Table& skilldesc, const std::map<std::string, Place>& before) {
+	const auto after = ClassSkillPlaces(skills, skilldesc);
+	std::map<std::string, std::string> skillOfKey;
+	for (const auto& [skill, place] : after) {
+		if (!place.nameKey.empty()) {
+			skillOfKey[place.nameKey] = skill;
+		}
+	}
+	for (const auto& [skill, place] : after) {
+		std::map<std::string, std::string> partners;
+		std::set<std::string> taken { skill };
+		auto partner = [&](const std::string& other) -> std::string {
+			const auto old = before.find(other);
+			const auto now = after.find(other);
+			if (old == before.end() || now == after.end() || now->second.cls == place.cls) {
+				return other;
+			}
+			if (const auto known = partners.find(other); known != partners.end()) {
+				return known->second;
+			}
+			std::string best = other;
+			int bestCost = INT_MAX;
+			for (const auto& [candidate, there] : after) {
+				if (there.cls != place.cls || taken.contains(candidate)) {
+					continue;
+				}
+				const int cost = (there.page != place.page ? 100 : 0) + std::abs(there.row - old->second.row) * 3 + std::abs(there.column - old->second.column);
+				if (cost < bestCost) {
+					best = candidate;
+					bestCost = cost;
+				}
+			}
+			taken.insert(best);
+			partners[other] = best;
+			return best;
+		};
+		for (std::string& cell : skills.Rows()[place.skillRow]) {
+			if (cell.find("skill('") != std::string::npos) {
+				cell = RenameSkillReferences(cell, partner);
+			}
+		}
+		const auto& header = skilldesc.Rows();
+		for (size_t c = 0; c < header[place.descRow].size(); ++c) {
+			std::string& cell = skilldesc.Rows()[place.descRow][c];
+			if (cell.find("skill('") != std::string::npos) {
+				cell = RenameSkillReferences(cell, partner);
+			} else if (const auto named = skillOfKey.find(cell); named != skillOfKey.end() && c != static_cast<size_t>(skilldesc.Column("str name"))) {
+				const std::string renamed = partner(named->second);
+				if (const auto target = after.find(renamed); target != after.end() && !target->second.nameKey.empty()) {
+					cell = target->second.nameKey;
+				}
+			}
+		}
+	}
+}
+
 auto ShuffleSkillTrees(Table& skills, Table& skilldesc, std::mt19937& random) -> TreeShuffle {
 	const int name = skills.Column("skill");
 	const int charclass = skills.Column("charclass");
@@ -123,6 +234,7 @@ auto ShuffleSkillTrees(Table& skills, Table& skilldesc, std::mt19937& random) ->
 		movable[treeRow].emplace_back(row, d);
 		slots[treeRow].push_back({ cls, skilldesc.Cell(d, page), treeRow, skilldesc.Cell(d, column), skilldesc.Cell(d, listRow), skilldesc.Cell(d, iconCel) });
 	}
+	const auto before = ClassSkillPlaces(skills, skilldesc);
 	TreeShuffle result;
 	for (auto& [treeRow, entries] : movable) {
 		auto& rowSlots = slots[treeRow];
@@ -139,6 +251,7 @@ auto ShuffleSkillTrees(Table& skills, Table& skilldesc, std::mt19937& random) ->
 			skilldesc.Set(d, listRow, slot.listRow);
 		}
 	}
+	RemapSynergies(skills, skilldesc, before);
 	return result;
 }
 

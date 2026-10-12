@@ -275,6 +275,50 @@ auto WriteSkillIcons(HANDLE storage, const fs::path& mpq, const std::vector<rnd:
 	return written;
 }
 
+// The skill tree panels draw each class's prerequisite arrows from one sprite
+// per class: a frame per tree with the tab header, the skill boxes and the
+// arrows. After a shuffle the arrows point the wrong way (and the tree's own
+// prerequisites are gone), so they're cleared: the mouse panel and the
+// controller panel, HD and low-end. Sizes are fractions of a frame's width,
+// between an arrow's width and a level box's.
+struct TreeArt {
+	const char* folder;
+	double      kernel;
+	double      minSize;
+};
+constexpr TreeArt TreeArts[] = { { "data/hd/global/ui/spells/skill_trees/", 0.063, 0.06 },
+	{ "data/hd/global/ui/controller/panel/spells/v2/", 0.033, 0.035 } };
+
+auto WriteSkillTreeArt(HANDLE storage, const fs::path& mpq) -> int {
+	int written = 0;
+	for (const auto& art : TreeArts) {
+		for (const auto& [cls, sheet] : IconSheets) {
+			// "barbarian/baskillicon" -> "baskilltree"
+			const std::string name = sheet.substr(sheet.find('/') + 1, 2) + "skilltree";
+			for (const char* suffix : { ".sprite", ".lowend.sprite" }) {
+				std::string path = art.folder + name + suffix;
+				std::string casc = path;
+				std::ranges::replace(casc, '/', '\\');
+				std::string bytes;
+				if (!ReadCascFile(storage, casc, bytes)) {
+					continue;
+				}
+				auto parsed = ap::sprite::Parse(std::move(bytes));
+				if (!parsed) {
+					continue;
+				}
+				const double frame = parsed->FrameWidth();
+				ap::sprite::RemoveThinShapes(*parsed, static_cast<uint32_t>(frame * art.kernel) | 1U, static_cast<uint32_t>(frame * art.minSize));
+				const fs::path target = mpq / fs::path(path);
+				fs::create_directories(target.parent_path());
+				std::ofstream(target, std::ios::binary | std::ios::trunc) << parsed->bytes;
+				++written;
+			}
+		}
+	}
+	return written;
+}
+
 // Gives the shop parcel an HD picture: items.json maps each item code to a
 // sprite, and a code without one shows nothing. The parcel borrows the
 // Standard of Heroes' flag, like its misc.txt row.
@@ -345,6 +389,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	fs::remove_all(excel, error);
 	// And the previous seed's skill icon sheets, which only a tree shuffle writes.
 	fs::remove_all(mpq / "data" / "hd" / "global" / "ui" / "spells", error);
+	fs::remove_all(mpq / "data" / "hd" / "global" / "ui" / "controller" / "panel" / "spells", error);
 	if (!AddItemNames(storage, mpq, { "Archipelago Codex", rnd::ParcelName, rnd::ProphecyName, rnd::LedgerName })) {
 		std::printf("  couldn't add the Codex's name; it will show as \"An Evil Force\"\n");
 	}
@@ -453,6 +498,9 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 
 	if (!icons.empty()) {
 		const int sheets = WriteSkillIcons(storage, mpq, icons);
+		const int trees = WriteSkillTreeArt(storage, mpq);
+		std::printf("  %d skill tree panels redrawn without arrows", trees);
+		std::puts("");
 		std::printf("  %d skill icon sheets rebuilt for the new trees\n", sheets);
 	}
 	if (!recipes.empty()) {

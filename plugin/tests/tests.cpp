@@ -501,12 +501,39 @@ void TestSprite() {
 	EXPECT(target->bytes.substr(40, 16) == std::string(8, '\2') + std::string(8, '\b'));
 	EXPECT(target->bytes.substr(56, 16) == std::string(8, '\2') + std::string(8, '\b'));
 	EXPECT(!ap::sprite::CopyFrame(*source, 2, *target, 0) && !ap::sprite::Parse("SpA0"));
+
+	// A 40x40 sheet: a header line, a 10x10 box and a 2 pixel wide "arrow".
+	std::string art(40, '\0');
+	art.replace(0, 4, "SpA1");
+	const uint32_t size[] = { 40, 40, 0, 1 };
+	std::memcpy(art.data() + 8, size, sizeof(size));
+	art += std::string(40 * 40 * 4, '\0');
+	auto paint = [&](int x, int y) { art[40 + static_cast<size_t>(y * 40 + x) * 4 + 3] = '\x7f'; };
+	for (int x = 0; x < 30; ++x) {
+		paint(x, 1);
+	}
+	for (int y = 10; y < 20; ++y) {
+		for (int x = 5; x < 15; ++x) {
+			paint(x, y);
+		}
+	}
+	for (int y = 10; y < 35; ++y) {
+		paint(25, y);
+		paint(26, y);
+	}
+	auto sheet = ap::sprite::Parse(art);
+	ap::sprite::RemoveThinShapes(*sheet, 5, 6);
+	auto at = [&](int x, int y) { return sheet->bytes[40 + static_cast<size_t>(y * 40 + x) * 4 + 3]; };
+	EXPECT(at(3, 1) != 0 && at(5, 10) != 0 && at(14, 19) != 0 && at(10, 15) != 0);
+	EXPECT(at(25, 15) == 0 && at(26, 30) == 0);
 }
 
 void TestSkillTreeShuffle() {
-	auto skills = ap::Table::Parse("skill\tcharclass\tskilldesc\trestrict\r\nAttack\t\tattack\t\r\nFire Bolt\tsor\tfire bolt\t\r\nWarmth\tsor\twarmth\t\r\n"
-	                               "Inferno\tsor\tinferno\t\r\nBash\tbar\tbash\t\r\nHowl\tbar\thowl\t\r\nLeap\tbar\tleap\t\r\n"
-	                               "Wearwolf\tdru\twearwolf\t1\r\nFury\tdru\tfury\t2\r\n");
+	// Warmth has a synergy with Fire Bolt.
+	auto skills = ap::Table::Parse("skill\t*Id\tcharclass\tskilldesc\trestrict\tcalc1\r\nAttack\t0\t\tattack\t\t\r\n"
+	                               "Fire Bolt\t36\tsor\tfire bolt\t\t\r\nWarmth\t37\tsor\twarmth\t\tskill('Fire Bolt'.blvl)*par8\r\n"
+	                               "Inferno\t41\tsor\tinferno\t\t\r\nBash\t126\tbar\tbash\t\t\r\nHowl\t130\tbar\thowl\t\t\r\n"
+	                               "Leap\t132\tbar\tleap\t\t\r\nWearwolf\t223\tdru\twearwolf\t1\t\r\nFury\t248\tdru\tfury\t2\t\r\n");
 	auto desc = ap::Table::Parse("skilldesc\tSkillPage\tSkillRow\tSkillColumn\tListRow\tIconCel\r\nattack\t0\t0\t0\t0\t0\r\n"
 	                             "fire bolt\t1\t1\t2\t1\t0\r\nwarmth\t1\t1\t3\t1\t2\r\ninferno\t1\t2\t1\t1\t4\r\nbash\t1\t1\t2\t1\t0\r\n"
 	                             "howl\t3\t1\t1\t3\t2\r\nleap\t1\t2\t1\t1\t4\r\nwearwolf\t2\t1\t1\t2\t0\r\nfury\t2\t2\t1\t2\t2\r\n");
@@ -520,13 +547,18 @@ void TestSkillTreeShuffle() {
 		int sorceressRow1 = 0;
 		for (size_t row : { 1U, 2U, 4U, 5U }) {
 			EXPECT(d.Cell(row + 0, 2) == "1");
-			sorceressRow1 += s.Cell(row, 1) == "sor" ? 1 : 0;
+			sorceressRow1 += s.Cell(row, 2) == "sor" ? 1 : 0;
 		}
 		EXPECT(sorceressRow1 == 2);
 		// Inferno and Leap trade places or stay; the Druid's skills and Attack never move.
 		EXPECT(d.Cell(3, 2) == "2" && d.Cell(6, 2) == "2");
-		EXPECT(s.Cell(7, 1) == "dru" && s.Cell(8, 1) == "dru" && s.Cell(0, 1).empty() && d.Cell(7, 1) == "2");
+		EXPECT(s.Cell(7, 2) == "dru" && s.Cell(8, 2) == "dru" && s.Cell(0, 2).empty() && d.Cell(7, 1) == "2");
 		mixed = mixed || shuffle.moved > 0;
+		// Warmth's synergy names a skill in Warmth's new tree.
+		const std::string synergy = s.Cell(2, 5);
+		const size_t partner = synergy.find("Fire Bolt") != std::string::npos ? 1 : synergy.find("Bash") != std::string::npos ? 4
+		                     : synergy.find("Howl") != std::string::npos ? 5 : synergy.find("Inferno") != std::string::npos ? 3 : 6;
+		EXPECT(synergy.ends_with(".blvl)*par8") && partner != 2 && s.Cell(partner, 2) == s.Cell(2, 2));
 		// Each skill takes its slot's icon frame and brings its own icon: every class's
 		// frames are still used once, and each icon comes from the skill's old frame.
 		EXPECT(shuffle.icons.size() == 6);
@@ -538,9 +570,9 @@ void TestSkillTreeShuffle() {
 		for (size_t row = 1; row <= 6; ++row) {
 			// The skill's new frame and class, and the frame and class it had before.
 			const auto icon = std::ranges::find_if(shuffle.icons, [&](const auto& i) {
-				return d.Cell(row, 5) == std::to_string(i.toCel) && s.Cell(row, 1) == i.toClass;
+				return d.Cell(row, 5) == std::to_string(i.toCel) && s.Cell(row, 2) == i.toClass;
 			});
-			EXPECT(icon != shuffle.icons.end() && std::to_string(icon->fromCel) == desc.Cell(row, 5) && icon->fromClass == skills.Cell(row, 1));
+			EXPECT(icon != shuffle.icons.end() && std::to_string(icon->fromCel) == desc.Cell(row, 5) && icon->fromClass == skills.Cell(row, 2));
 		}
 	}
 	EXPECT(mixed);
