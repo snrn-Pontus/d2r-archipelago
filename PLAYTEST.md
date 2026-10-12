@@ -179,6 +179,8 @@ Defaults (`act_keys` and `enforce_act_keys` on).
       still move afterwards.
 - [ ] Opening the Cube is blocked (its panel name hasn't been seen yet; the log lists each panel opened).
 - [x] Potions stay locked from the belt hotkeys too.
+- [ ] D2RLoader doesn't report drinking from the inventory (only the belt), so within 5 seconds potions
+      in the inventory are set aside, with a chat message; Potion Access gives them back.
 - [x] Town Portal: D2RLoader doesn't report scroll use, so within 5 seconds every scroll and tome on the
       character crumbles, with a chat message (the starting scroll too).
 - [x] Town Portal Access brings a Tome of Town Portal, once.
@@ -227,7 +229,8 @@ a guess checked against the item before writing, so test the command first.
 `page_hint_chance: 100`, `prophecy_shop: true`, `cain_hints: true`.
 
 - [ ] The first Bishibosh kill drops a torn page hint; the second kill doesn't.
-- [ ] A Scroll of Prophecy from Akara (1,000 gold) gives a hint; a cheaper tier than the next one is refunded.
+- [x] A Scroll of Prophecy from Akara (1,000 gold) gives a hint (confirmed 2026-10-12, after the shop item type fix).
+- [ ] A cheaper tier than the next one is refunded.
 - [ ] After Andariel, Deckard Cain says "Stay awhile and listen..." and gives a hint.
 - [ ] `ap-hints` lists them; the hints show on the server (`!hint` in the text client) without costing
       hint points.

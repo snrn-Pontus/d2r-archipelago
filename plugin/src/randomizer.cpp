@@ -623,8 +623,8 @@ auto AddShopParcels(Table& misc) -> int {
 		const size_t row = misc.Rows().size() - 1;
 		const std::string vendor = ParcelVendors[act];
 		const std::pair<std::string, std::string> values[] = {
-			{ "name", ParcelName }, { "code", ParcelCodes[act] }, { "namestr", ParcelName }, { "cost", std::to_string(ParcelCosts[act]) },
-			{ "gamble cost", "0" }, { "level", "0" }, { "levelreq", "0" }, { "unique", "0" }, { "spawnable", "0" }, { "PermStoreItem", "1" },
+			{ "name", ParcelName }, { "code", ParcelCodes[act] }, { "type", ShopItemType }, { "namestr", ParcelName }, { "cost", std::to_string(ParcelCosts[act]) },
+			{ "gamble cost", "0" }, { "level", "0" }, { "levelreq", "0" }, { "unique", "0" }, { "spawnable", "1" }, { "PermStoreItem", "1" },
 			{ vendor + "Min", "1" }, { vendor + "Max", "1" }, { "multibuy", "0" },
 		};
 		for (const auto& [name, value] : values) {
@@ -636,16 +636,45 @@ auto AddShopParcels(Table& misc) -> int {
 	return static_cast<int>(std::size(ParcelCodes));
 }
 
-auto AddProphecyScrolls(Table& misc) -> int {
-	const int code = misc.Column("code");
-	if (code < 0) {
+auto AddShopItemType(Table& itemTypes) -> int {
+	const int code = itemTypes.Column("Code");
+	const int name = itemTypes.Column("ItemType");
+	const int page = itemTypes.Column("StorePage");
+	if (code < 0 || page < 0) {
 		return 0;
 	}
 	std::optional<size_t> templateRow;
-	for (size_t row = 0; row < misc.Rows().size(); ++row) {
-		if (misc.Cell(row, code) == ProphecyCodes[0]) {
+	for (size_t row = 0; row < itemTypes.Rows().size(); ++row) {
+		if (itemTypes.Cell(row, code) == ShopItemType) {
 			return 0;
 		}
+		if (itemTypes.Cell(row, code) == "ques") {
+			templateRow = row;
+		}
+	}
+	if (!templateRow) {
+		return 0;
+	}
+	itemTypes.Rows().push_back(itemTypes.Rows()[*templateRow]);
+	const size_t row = itemTypes.Rows().size() - 1;
+	itemTypes.Set(row, code, ShopItemType);
+	if (name >= 0) {
+		itemTypes.Set(row, name, "Archipelago Shop Item");
+	}
+	itemTypes.Set(row, page, "misc");
+	return 1;
+}
+
+auto PadMiscRows(Table& misc, const std::vector<std::string>& codes) -> int {
+	const int code = misc.Column("code");
+	const int spawnable = misc.Column("spawnable");
+	if (code < 0) {
+		return 0;
+	}
+	std::set<std::string> present;
+	std::optional<size_t> templateRow;
+	for (size_t row = 0; row < misc.Rows().size(); ++row) {
+		present.insert(misc.Cell(row, code));
 		if (misc.Cell(row, code) == "std") {
 			templateRow = row;
 		}
@@ -653,18 +682,66 @@ auto AddProphecyScrolls(Table& misc) -> int {
 	if (!templateRow) {
 		return 0;
 	}
+	int added = 0;
+	for (const std::string& missing : codes) {
+		if (missing.empty() || present.contains(missing)) {
+			continue;
+		}
+		// A copy of the Standard of Heroes sold nowhere, so it only holds the place.
+		misc.Rows().push_back(misc.Rows()[*templateRow]);
+		misc.Set(misc.Rows().size() - 1, code, missing);
+		if (spawnable >= 0) {
+			misc.Set(misc.Rows().size() - 1, spawnable, "0");
+		}
+		present.insert(missing);
+		++added;
+	}
+	return added;
+}
+
+auto AddProphecyScrolls(Table& misc) -> int {
+	const int code = misc.Column("code");
+	if (code < 0) {
+		return 0;
+	}
+	std::optional<size_t> templateRow, scrollRow;
+	for (size_t row = 0; row < misc.Rows().size(); ++row) {
+		if (misc.Cell(row, code) == ProphecyCodes[0]) {
+			return 0;
+		}
+		if (misc.Cell(row, code) == "std") {
+			templateRow = row;
+		}
+		if (misc.Cell(row, code) == "bks") {
+			scrollRow = row;
+		}
+	}
+	if (!templateRow) {
+		return 0;
+	}
+	// The HD picture is the Scroll of Inifuss (setup.cpp), so take its size and
+	// inventory picture too; a 1x1 item with a 2x2 picture spills over its cell.
+	std::vector<std::pair<std::string, std::string>> looks;
+	if (scrollRow) {
+		for (const char* column : { "invwidth", "invheight", "invfile" }) {
+			if (const int at = misc.Column(column); at >= 0) {
+				looks.emplace_back(column, misc.Cell(*scrollRow, at));
+			}
+		}
+	}
 	for (size_t tier = 0; tier < std::size(ProphecyCodes); ++tier) {
 		misc.Rows().push_back(misc.Rows()[*templateRow]);
 		const size_t row = misc.Rows().size() - 1;
 		std::vector<std::pair<std::string, std::string>> values = {
-			{ "name", ProphecyName }, { "code", ProphecyCodes[tier] }, { "namestr", ProphecyName }, { "cost", std::to_string(ProphecyCosts[tier]) },
-			{ "gamble cost", "0" }, { "level", "0" }, { "levelreq", "0" }, { "unique", "0" }, { "spawnable", "0" }, { "PermStoreItem", "1" },
+			{ "name", ProphecyName }, { "code", ProphecyCodes[tier] }, { "type", ShopItemType }, { "namestr", ProphecyName }, { "cost", std::to_string(ProphecyCosts[tier]) },
+			{ "gamble cost", "0" }, { "level", "0" }, { "levelreq", "0" }, { "unique", "0" }, { "spawnable", "1" }, { "PermStoreItem", "1" },
 			{ "multibuy", "0" },
 		};
 		for (const char* vendor : ParcelVendors) {
 			values.emplace_back(std::string(vendor) + "Min", "1");
 			values.emplace_back(std::string(vendor) + "Max", "1");
 		}
+		values.insert(values.end(), looks.begin(), looks.end());
 		for (const auto& [name, value] : values) {
 			if (const int column = misc.Column(name); column >= 0) {
 				misc.Set(row, column, value);

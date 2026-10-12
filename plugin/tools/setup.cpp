@@ -672,6 +672,18 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	std::vector<std::string> recipes;
 	// Both banks shuffle the trees alike, so either one's icon moves will do.
 	std::vector<rnd::IconMove> icons;
+	// RotW's misc codes in order, so Classic/LoD can hold the places of the ones it lacks.
+	std::vector<std::string> rotwMisc;
+	{
+		std::string text;
+		ReadCascFile(storage, "data\\global\\excel\\misc.txt", text);
+		const Table misc = Table::Parse(text);
+		if (const int code = misc.Column("code"); code >= 0) {
+			for (size_t row = 0; row < misc.Rows().size(); ++row) {
+				rotwMisc.push_back(misc.Cell(row, code));
+			}
+		}
+	}
 	for (const std::string bank : Banks) {
 		const char* label = bank.empty() ? "RotW" : "Classic/LoD";
 		int blocked = 0;
@@ -749,9 +761,13 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 		}
 		// Misc gets the shop parcel, plus cleared requirements if asked.
 		int parcels = 0;
+		PatchTable(storage, excel, bank, "itemtypes.txt", [&](Table& t) { rnd::AddShopItemType(t); });
 		PatchTable(storage, excel, bank, "misc.txt", [&](Table& t) {
 			if (clearRequirements) {
 				rnd::ClearRequirements(t, !settings.itemLevelRequirements, !settings.itemStatRequirements);
+			}
+			if (!bank.empty()) {
+				rnd::PadMiscRows(t, rotwMisc);
 			}
 			parcels = rnd::AddShopParcels(t) + rnd::AddProphecyScrolls(t);
 			rnd::AddLedger(t);

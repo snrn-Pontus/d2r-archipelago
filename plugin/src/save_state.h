@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <map>
 #include <set>
+#include <vector>
 
 namespace ap {
 
@@ -40,6 +41,9 @@ struct SaveState {
 	size_t notifiedItems = 0;
 	// Whether Town Portal Access has brought its Tome of Town Portal.
 	bool portalTomeGiven = false;
+	// Item codes of the potions put aside from the inventory while potions are
+	// locked (one entry each), handed back with Potion Access.
+	std::vector<uint32_t> heldPotions;
 
 	bool Load(const std::filesystem::path& path);
 	bool Save(const std::filesystem::path& path) const;

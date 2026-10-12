@@ -51,6 +51,8 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			notifiedItems = static_cast<size_t>(value);
 		} else if (key == "portaltome") {
 			portalTomeGiven = value != 0;
+		} else if (key == "heldpotion") {
+			heldPotions.push_back(static_cast<uint32_t>(value));
 		}
 	}
 	return true;
@@ -92,6 +94,9 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		file << "prophecies " << prophecies << "\nledger " << (ledgerGiven ? 1 : 0) << "\nskillpoints " << skillPointsGiven << "\nportaltome " << (portalTomeGiven ? 1 : 0) << "\nnotified " << notifiedItems << "\n";
 		for (const uint32_t skill : unlockedSkills) {
 			file << "unlocked " << skill << "\n";
+		}
+		for (const uint32_t code : heldPotions) {
+			file << "heldpotion " << code << "\n";
 		}
 		if (!file.flush()) {
 			return false;

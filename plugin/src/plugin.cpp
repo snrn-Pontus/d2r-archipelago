@@ -1399,6 +1399,94 @@ void EnforceTownPortalLock(D2RL::PlayerHandle player) {
 	}
 }
 
+// ---- Potion lock (game thread) ---------------------------------------------------
+//
+// D2RLoader reports drinking from the belt, which OnItemActivate blocks, but not
+// right-clicking a potion in the inventory. So while potions are locked, potions
+// in the inventory are set aside, and Potion Access hands them back.
+
+auto IsPotion(uint32_t code) -> bool {
+	static const std::set<uint32_t> potions = [] {
+		std::set<uint32_t> codes;
+		for (const char* text : { "hp1", "hp2", "hp3", "hp4", "hp5", "mp1", "mp2", "mp3", "mp4", "mp5", "rvs", "rvl", "yps", "vps", "wms" }) {
+			codes.insert(ap::loot::CodeFromText(text));
+		}
+		return codes;
+	}();
+	return potions.contains(code);
+}
+
+auto __cdecl CollectPotions(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
+	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->container == D2RL::Items::ItemContainer::Inventory
+		&& IsPotion(item->code)) {
+		static_cast<std::vector<std::pair<D2RL::ItemHandle, uint32_t>>*>(userData)->emplace_back(item->handle, item->code);
+	}
+	return D2RL::Inventory::IterationAction::Continue;
+}
+
+void EnforcePotionLock(D2RL::PlayerHandle player) {
+	bool locked = false;
+	std::vector<uint32_t> held;
+	{
+		std::lock_guard lock(gMutex);
+		locked = gLocks.potions;
+		held = gSave.heldPotions;
+	}
+	if (!locked) {
+		if (held.empty()) {
+			return;
+		}
+		std::vector<uint32_t> kept;
+		for (const uint32_t code : held) {
+			auto spec = MakeSpec(code, D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
+			D2RL::ItemHandle item = D2RL::InvalidItemHandle;
+			auto result = gItems->createItem(gContext, player, &spec, &item);
+			if (result != D2RL::Items::Result::Success) {
+				spec.destination.container = D2RL::Items::ItemContainer::Ground;
+				result = gItems->createItem(gContext, player, &spec, &item);
+			}
+			if (result != D2RL::Items::Result::Success) {
+				kept.push_back(code);
+			}
+		}
+		{
+			std::lock_guard lock(gMutex);
+			gSave.heldPotions = kept;
+			gSave.Save(gSavePath);
+		}
+		if (kept.size() < held.size()) {
+			Feed("Archipelago: Potion Access! Your " + std::to_string(held.size() - kept.size()) + " set-aside potions are back.");
+		}
+		if (!kept.empty()) {
+			Log("Archipelago: couldn't give back " + std::to_string(kept.size()) + " potions; trying again later.");
+		}
+		return;
+	}
+	std::vector<std::pair<D2RL::ItemHandle, uint32_t>> potions;
+	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize,
+		.containerMask = D2RL::Items::ContainerBit(D2RL::Items::ItemContainer::Inventory) };
+	if (gInventory->forEachInventoryItem(gContext, player, &filter, CollectPotions, &potions) != D2RL::Inventory::Result::Success) {
+		return;
+	}
+	std::vector<uint32_t> removed;
+	for (const auto& [item, code] : potions) {
+		if (gItems->destroyItem(gContext, player, item, D2RL::Items::SocketedItemPolicy::DestroyContents) == D2RL::Items::Result::Success) {
+			removed.push_back(code);
+		}
+	}
+	if (removed.empty()) {
+		return;
+	}
+	{
+		std::lock_guard lock(gMutex);
+		gSave.heldPotions.insert(gSave.heldPotions.end(), removed.begin(), removed.end());
+		gSave.Save(gSavePath);
+	}
+	Log("Archipelago: set aside " + std::to_string(removed.size()) + " potions from the inventory.");
+	Feed("Archipelago: potions are locked until you find Potion Access, so " + std::to_string(removed.size())
+		 + " potions from your inventory are set aside until then.");
+}
+
 // The superunique copies are the last MonStats rows of each bank.
 void FindSuperUniqueMonsters() {
 	int bases[2] = { -1, -1 };
@@ -1512,6 +1600,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	ScanItems(player);
 	ScanParcels(player);
 	EnforceTownPortalLock(player);
+	EnforcePotionLock(player);
 	GiveLedger(player);
 	{
 		auto records = UniqueRecords("Archipelago Codex");
@@ -1831,17 +1920,6 @@ auto LockedPanel(std::string panel) -> std::string {
 		return "merchants won't trade with you until you find Merchant Access.";
 	}
 	return {};
-}
-
-auto IsPotion(uint32_t code) -> bool {
-	static const std::set<uint32_t> potions = [] {
-		std::set<uint32_t> codes;
-		for (const char* text : { "hp1", "hp2", "hp3", "hp4", "hp5", "mp1", "mp2", "mp3", "mp4", "mp5", "rvs", "rvl", "yps", "vps", "wms" }) {
-			codes.insert(ap::loot::CodeFromText(text));
-		}
-		return codes;
-	}();
-	return potions.contains(code);
 }
 
 // Blocks reading Town Portal scrolls and tomes, and drinking potions, while locked.

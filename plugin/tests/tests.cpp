@@ -169,6 +169,7 @@ void TestSaveStateRoundTrip() {
 	state.skillPointsGiven = 3;
 	state.portalTomeGiven = true;
 	state.notifiedItems = 12;
+	state.heldPotions = { 0x20317068, 0x20317068, 0x206C7672 };
 	EXPECT(state.Save(path));
 	ap::SaveState loaded;
 	EXPECT(loaded.Load(path));
@@ -179,6 +180,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.kills == state.kills && loaded.cowKills == state.cowKills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12);
+	EXPECT(loaded.heldPotions == state.heldPotions);
 	std::filesystem::remove_all(path.parent_path());
 }
 
@@ -636,12 +638,25 @@ void TestShopParcels() {
 	EXPECT(ap::randomizer::AddShopParcels(misc) == 5);
 	EXPECT(ap::randomizer::AddShopParcels(misc) == 0);
 	EXPECT(misc.Rows().size() == 6);
-	EXPECT(misc.Cell(1, 1) == "ap1" && misc.Cell(1, 2) == "2500" && misc.Cell(1, 3) == "1" && misc.Cell(1, 5).empty() && misc.Cell(1, 7) == "0");
+	EXPECT(misc.Cell(1, 1) == "ap1" && misc.Cell(1, 2) == "2500" && misc.Cell(1, 3) == "1" && misc.Cell(1, 5).empty() && misc.Cell(1, 7) == "1");
 	EXPECT(misc.Cell(5, 1) == "ap5" && misc.Cell(5, 2) == "40000" && misc.Cell(5, 3).empty() && misc.Cell(5, 5) == "1");
 	EXPECT(ap::randomizer::AddProphecyScrolls(misc) == 8 && ap::randomizer::AddProphecyScrolls(misc) == 0);
 	// Every tier at every potion seller, the price rising.
 	EXPECT(misc.Cell(6, 0) == "Scroll of Prophecy" && misc.Cell(6, 1) == "aq1" && misc.Cell(6, 2) == "1000" && misc.Cell(6, 3) == "1" && misc.Cell(6, 5) == "1");
 	EXPECT(misc.Cell(13, 1) == "aq8" && misc.Cell(13, 2) == "100000");
+	// Scrolls of Prophecy take the Scroll of Inifuss' size and picture, to match its HD picture.
+	auto sized = ap::Table::Parse("name\tcode\tinvwidth\tinvheight\tinvfile\r\nStandard of Heroes\tstd\t1\t1\tinvflag\r\n"
+	                              "Scroll of Inifuss\tbks\t2\t2\tinvscb\r\n");
+	EXPECT(ap::randomizer::AddProphecyScrolls(sized) == 8);
+	EXPECT(sized.Cell(2, 1) == "aq1" && sized.Cell(2, 2) == "2" && sized.Cell(2, 3) == "2" && sized.Cell(2, 4) == "invscb");
+	// The shop items get a quest-like type that vendors stock on the Misc page.
+	auto types = ap::Table::Parse(std::string("ItemType\tCode\tStorePage\r\nQuest\tques\t\r\n"));
+	EXPECT(ap::randomizer::AddShopItemType(types) == 1 && ap::randomizer::AddShopItemType(types) == 0);
+	EXPECT(types.Cell(1, 1) == ap::randomizer::ShopItemType && types.Cell(1, 2) == "misc");
+	// Classic/LoD gets a placeholder for each RotW item it lacks, before the added items.
+	auto lod = ap::Table::Parse("name\tcode\tspawnable\r\nStandard of Heroes\tstd\t1\r\nScroll of Identify\tisc\t1\r\n");
+	EXPECT(ap::randomizer::PadMiscRows(lod, { "std", "isc", "cs2" }) == 1 && ap::randomizer::PadMiscRows(lod, { "std", "isc", "cs2" }) == 0);
+	EXPECT(lod.Rows().size() == 3 && lod.Cell(2, 1) == "cs2" && lod.Cell(2, 2) == "0");
 	// The Ledger is sold nowhere and worth nothing.
 	EXPECT(ap::randomizer::AddLedger(misc) == 1 && ap::randomizer::AddLedger(misc) == 0);
 	EXPECT(misc.Cell(14, 0) == "Archipelago Ledger" && misc.Cell(14, 1) == "apl" && misc.Cell(14, 2) == "0" && misc.Cell(14, 3).empty()

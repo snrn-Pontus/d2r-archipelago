@@ -124,6 +124,10 @@ inline constexpr const char* ProphecyCodes[] = { "aq1", "aq2", "aq3", "aq4", "aq
 inline constexpr int         ProphecyCosts[] = { 1000, 2500, 5000, 10000, 20000, 35000, 60000, 100000 };
 inline constexpr char        ProphecyName[] = "Scroll of Prophecy";
 
+// Vendors only stock item types with a StorePage, and the quest type has none,
+// so the shop items get their own: the quest type on the Misc page.
+inline constexpr char        ShopItemType[] = "apsh";
+
 // The Archipelago Ledger: every character gets one, and its tooltip counts the
 // checks done in each act. It's never sold and never drops.
 inline constexpr char        LedgerCode[] = "apl";
@@ -133,6 +137,15 @@ inline constexpr char        LedgerName[] = "Archipelago Ledger";
 // 1x1 item), each always in stock at its act's vendor, unless the table
 // already has them. Returns how many it added.
 auto AddShopParcels(Table& misc) -> int;
+
+// Appends ShopItemType to itemtypes.txt, unless it's there. Returns 1 if it added it.
+auto AddShopItemType(Table& itemTypes) -> int;
+
+// D2R picks an item's HD picture from items.json by its place in the item
+// tables, and both banks share one items.json. Appends a placeholder row for
+// each of the other bank's codes this misc.txt lacks (RotW's last items, in
+// Classic/LoD), so the items added after them line up in both banks.
+auto PadMiscRows(Table& misc, const std::vector<std::string>& codes) -> int;
 
 // Appends the Scrolls of Prophecy the same way, every tier at every potion seller.
 auto AddProphecyScrolls(Table& misc) -> int;
