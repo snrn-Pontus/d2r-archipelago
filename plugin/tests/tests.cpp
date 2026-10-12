@@ -480,6 +480,34 @@ void TestSuperUniqueMonsters() {
 	EXPECT(ap::randomizer::Settings {}.Stamp().find("superunique_checks") == std::string::npos);
 }
 
+void TestSkillTreeShuffle() {
+	auto skills = ap::Table::Parse("skill\tcharclass\tskilldesc\trestrict\r\nAttack\t\tattack\t\r\nFire Bolt\tsor\tfire bolt\t\r\nWarmth\tsor\twarmth\t\r\n"
+	                               "Inferno\tsor\tinferno\t\r\nBash\tbar\tbash\t\r\nHowl\tbar\thowl\t\r\nLeap\tbar\tleap\t\r\n"
+	                               "Wearwolf\tdru\twearwolf\t1\r\nFury\tdru\tfury\t2\r\n");
+	auto desc = ap::Table::Parse("skilldesc\tSkillPage\tSkillRow\tSkillColumn\tListRow\r\nattack\t0\t0\t0\t0\r\nfire bolt\t1\t1\t2\t1\r\n"
+	                             "warmth\t1\t1\t3\t1\r\ninferno\t1\t2\t1\t1\r\nbash\t1\t1\t2\t1\r\nhowl\t3\t1\t1\t3\r\nleap\t1\t2\t1\t1\r\n"
+	                             "wearwolf\t2\t1\t1\t2\r\nfury\t2\t2\t1\t2\r\n");
+	bool mixed = false;
+	for (uint32_t seed = 1; seed < 20; ++seed) {
+		auto s = skills;
+		auto d = desc;
+		std::mt19937 random(seed);
+		const int moved = ap::randomizer::ShuffleSkillTrees(s, d, random);
+		// Row 1 holds Fire Bolt, Warmth, Bash and Howl in some order: two Sorceress and two Barbarian slots.
+		int sorceressRow1 = 0;
+		for (size_t row : { 1U, 2U, 4U, 5U }) {
+			EXPECT(d.Cell(row + 0, 2) == "1");
+			sorceressRow1 += s.Cell(row, 1) == "sor" ? 1 : 0;
+		}
+		EXPECT(sorceressRow1 == 2);
+		// Inferno and Leap trade places or stay; the Druid's skills and Attack never move.
+		EXPECT(d.Cell(3, 2) == "2" && d.Cell(6, 2) == "2");
+		EXPECT(s.Cell(7, 1) == "dru" && s.Cell(8, 1) == "dru" && s.Cell(0, 1).empty() && d.Cell(7, 1) == "2");
+		mixed = mixed || moved > 0;
+	}
+	EXPECT(mixed);
+}
+
 void TestShopParcels() {
 	auto misc = ap::Table::Parse("name\tcode\tcost\tAkaraMin\tAkaraMax\tMalahMin\tMalahMax\tspawnable\r\nStandard of Heroes\tstd\t1\t\t\t\t\t1\r\n");
 	EXPECT(ap::randomizer::AddShopParcels(misc) == 5);
@@ -540,6 +568,7 @@ int main() {
 	TestSuperUniqueShuffle();
 	TestSuperUniqueMonsters();
 	TestShopParcels();
+	TestSkillTreeShuffle();
 	TestRunewordShuffle();
 	TestTableEdits();
 	TestLootScalesToLevel();

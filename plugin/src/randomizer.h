@@ -29,6 +29,8 @@ struct Settings {
 	int      betterDrops = 100;
 	// Field superuniques get monster rows of their own, so their kills are checks.
 	bool     superUniqueChecks = false;
+	// Every class's skill tree gets skills from all classes.
+	bool     skillTrees = false;
 
 	auto Any() const -> bool;
 	// One line describing the settings, stored with the mod so the plugin can
@@ -43,6 +45,13 @@ struct Settings {
 // works from level 6 whatever it holds.
 // Returns how many skills it locked.
 auto BlockClassSkills(Table& skills) -> int;
+
+// Deals the class skills out to every class's tree slots (tree, row, column),
+// a skill only moving to a row of its own level, so low-level skills stay at
+// the top. The Druid's shapeshifts and the skills that need a form stay put.
+// Moves the skill to the slot's class (skills.txt) and position (skilldesc.txt).
+// Returns how many skills changed class.
+auto ShuffleSkillTrees(Table& skills, Table& skilldesc, std::mt19937& random) -> int;
 
 // Swaps whole monster line-ups (normal, nightmare/hell and unique lists move
 // together) between areas: Nearby within each act, Anywhere across all of

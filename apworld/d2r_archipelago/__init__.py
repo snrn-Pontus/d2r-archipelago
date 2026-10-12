@@ -417,6 +417,7 @@ class D2RWorld(World):
                 "monster_shuffle": self.options.monster_shuffle.value,
                 "superunique_shuffle": self.options.superunique_shuffle.value,
                 "runeword_shuffle": bool(self.options.runeword_shuffle),
+                "skill_trees": bool(self.options.skill_tree_shuffle),
                 "xp_multiplier": self.options.experience_multiplier.value,
                 "item_level_requirements": bool(self.options.item_level_requirements),
                 "item_stat_requirements": bool(self.options.item_stat_requirements),

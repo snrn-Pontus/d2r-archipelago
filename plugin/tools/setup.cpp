@@ -40,7 +40,8 @@ namespace rnd = ap::randomizer;
 
 // The tables tools/gen_data.py reads, from the RotW bank.
 const char* const ExtractTables[] = { "skills.txt", "levels.txt", "uniqueitems.txt", "setitems.txt", "weapons.txt", "armor.txt", "misc.txt",
-	"superuniques.txt", "runes.txt", "monlvl.txt", "monstats.txt", "magicprefix.txt", "magicsuffix.txt", "automagic.txt", "experience.txt" };
+	"superuniques.txt", "runes.txt", "monlvl.txt", "monstats.txt", "magicprefix.txt", "magicsuffix.txt", "automagic.txt", "experience.txt",
+	"skilldesc.txt", "charstats.txt", "base/skills.txt", "base/skilldesc.txt", "base/charstats.txt" };
 
 // RotW tables live in excel/, the Classic and LoD tables in excel/base/.
 const char* const Banks[] = { "", "base\\" };
@@ -124,8 +125,12 @@ int Extract(HANDLE storage, const Options& options) {
 	int copied = 0;
 	for (const char* table : ExtractTables) {
 		std::string contents;
-		if (ReadCascFile(storage, std::string("data\\global\\excel\\") + table, contents)) {
-			std::ofstream(fs::path(options.extract) / table, std::ios::binary | std::ios::trunc) << contents;
+		std::string name = table;
+		std::ranges::replace(name, '/', '\\');
+		if (ReadCascFile(storage, "data\\global\\excel\\" + name, contents)) {
+			const fs::path target = fs::path(options.extract) / table;
+			fs::create_directories(target.parent_path());
+			std::ofstream(target, std::ios::binary | std::ios::trunc) << contents;
 			++copied;
 		} else {
 			std::printf("  %s: not found\n", table);
@@ -296,7 +301,22 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	for (const std::string bank : Banks) {
 		const char* label = bank.empty() ? "RotW" : "Classic/LoD";
 		int blocked = 0;
-		PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) { blocked = rnd::BlockClassSkills(t); });
+		if (settings.skillTrees) {
+			// The trees span two tables: skills.txt holds each skill's class, skilldesc.txt its place.
+			std::string descText;
+			ReadCascFile(storage, "data\\global\\excel\\" + bank + "skilldesc.txt", descText);
+			Table skilldesc = Table::Parse(descText);
+			int moved = 0;
+			auto random = TableRandom(settings.seed, "skilltrees");
+			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) {
+				moved = rnd::ShuffleSkillTrees(t, skilldesc, random);
+				blocked = rnd::BlockClassSkills(t);
+			});
+			PatchTable(storage, excel, bank, "skilldesc.txt", [&](Table& t) { t = skilldesc; });
+			std::printf("  %s: %d skills moved to another class's tree\n", label, moved);
+		} else {
+			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) { blocked = rnd::BlockClassSkills(t); });
+		}
 		std::printf("  %s: locked %d class skills\n", label, blocked);
 
 		if (settings.monsters != rnd::Shuffle::Off || settings.monsterDensity != 100 || settings.championPacks != 100) {

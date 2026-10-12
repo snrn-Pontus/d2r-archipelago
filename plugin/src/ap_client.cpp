@@ -278,6 +278,7 @@ void Client::Handle(const std::string& text) {
 			slotData_.randomizer.monsterDensity = randomizer.value("monster_density", 100);
 			slotData_.randomizer.championPacks = randomizer.value("champion_packs", 100);
 			slotData_.randomizer.betterDrops = randomizer.value("better_drops", 100);
+			slotData_.randomizer.skillTrees = randomizer.value("skill_trees", false);
 			slotData_.randomizer.superUniqueChecks = slotData_.superUniqueChecks;
 			state_ = ConnectionState::Connected;
 			status_ = "Connected as " + slot_ + ".";

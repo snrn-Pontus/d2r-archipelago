@@ -57,7 +57,7 @@ auto Settings::Stamp() const -> std::string {
 	     + std::to_string(static_cast<int>(superUniques)) + " runewords=" + (runewords ? "1" : "0") + " xp=" + std::to_string(xpPercent)
 	     + " levelreqs=" + (itemLevelRequirements ? "1" : "0") + " statreqs=" + (itemStatRequirements ? "1" : "0") + " density="
 	     + std::to_string(monsterDensity) + " packs=" + std::to_string(championPacks) + " drops=" + std::to_string(betterDrops)
-	     + (superUniqueChecks ? " superunique_checks=1" : "");
+	     + (superUniqueChecks ? " superunique_checks=1" : "") + (skillTrees ? " skill_trees=1" : "");
 }
 
 auto BlockClassSkills(Table& skills) -> int {
@@ -80,6 +80,63 @@ auto BlockClassSkills(Table& skills) -> int {
 		++locked;
 	}
 	return locked;
+}
+
+auto ShuffleSkillTrees(Table& skills, Table& skilldesc, std::mt19937& random) -> int {
+	const int name = skills.Column("skill");
+	const int charclass = skills.Column("charclass");
+	const int descOf = skills.Column("skilldesc");
+	const int restrict = skills.Column("restrict");
+	const int descName = skilldesc.Column("skilldesc");
+	const int page = skilldesc.Column("SkillPage");
+	const int rowColumn = skilldesc.Column("SkillRow");
+	const int column = skilldesc.Column("SkillColumn");
+	const int listRow = skilldesc.Column("ListRow");
+	if (name < 0 || charclass < 0 || descOf < 0 || descName < 0 || page < 0 || rowColumn < 0 || column < 0 || listRow < 0) {
+		return 0;
+	}
+	// The Druid's forms, and the attacks that only work in one (restrict 2), stay together.
+	const std::set<std::string> pinned = { "Wearwolf", "Wearbear", "Shape Shifting" };
+	std::map<std::string, size_t> descRows;
+	for (size_t row = 0; row < skilldesc.Rows().size(); ++row) {
+		descRows.emplace(skilldesc.Cell(row, descName), row);
+	}
+	struct Slot {
+		std::string cls, page, row, column, listRow;
+	};
+	// Per tree row: the skills that can move (skills.txt row, skilldesc row) and their slots.
+	std::map<std::string, std::vector<std::pair<size_t, size_t>>> movable;
+	std::map<std::string, std::vector<Slot>> slots;
+	for (size_t row = 0; row < skills.Rows().size(); ++row) {
+		const std::string cls = skills.Cell(row, charclass);
+		const auto desc = descRows.find(skills.Cell(row, descOf));
+		if (!ClassCodes.contains(cls) || desc == descRows.end() || pinned.contains(skills.Cell(row, name))
+		    || (restrict >= 0 && skills.Cell(row, restrict) == "2")) {
+			continue;
+		}
+		const size_t d = desc->second;
+		const std::string treeRow = skilldesc.Cell(d, rowColumn);
+		if (skilldesc.Cell(d, page).empty() || skilldesc.Cell(d, page) == "0" || treeRow.empty()) {
+			continue;
+		}
+		movable[treeRow].emplace_back(row, d);
+		slots[treeRow].push_back({ cls, skilldesc.Cell(d, page), treeRow, skilldesc.Cell(d, column), skilldesc.Cell(d, listRow) });
+	}
+	int moved = 0;
+	for (auto& [treeRow, entries] : movable) {
+		auto& rowSlots = slots[treeRow];
+		std::ranges::shuffle(rowSlots, random);
+		for (size_t i = 0; i < entries.size(); ++i) {
+			const auto [row, d] = entries[i];
+			const Slot& slot = rowSlots[i];
+			moved += skills.Cell(row, charclass) != slot.cls ? 1 : 0;
+			skills.Set(row, charclass, slot.cls);
+			skilldesc.Set(d, page, slot.page);
+			skilldesc.Set(d, column, slot.column);
+			skilldesc.Set(d, listRow, slot.listRow);
+		}
+	}
+	return moved;
 }
 
 // Picks the variant of a monster's family whose Normal level is closest to

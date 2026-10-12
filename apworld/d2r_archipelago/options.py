@@ -504,6 +504,12 @@ class BetterDrops(Range):
     default = 150
 
 
+class SkillTreeShuffle(Toggle):
+    """Every class's skill tree is dealt skills from all classes, each in a row of its own level. The Druid's
+    shapeshifts stay with the Druid. Skills still arrive on the Codex; the shuffled tree shows where they sit."""
+    display_name = "Skill Tree Shuffle"
+
+
 class RunewordShuffle(Toggle):
     """Gives every runeword a new recipe of similar-tier runes. The setup tool writes the new
     recipes to runewords.txt in the mod folder."""
@@ -591,6 +597,7 @@ class D2ROptions(PerGameCommonOptions):
     monster_shuffle: MonsterShuffle
     superunique_shuffle: SuperUniqueShuffle
     runeword_shuffle: RunewordShuffle
+    skill_tree_shuffle: SkillTreeShuffle
     monster_density: MonsterDensity
     champion_packs: ChampionPacks
     better_drops: BetterDrops
@@ -615,7 +622,7 @@ OPTION_GROUPS = [
                 start_collapsed=True),
     OptionGroup("Traps", [TrapPercentage, JunkBackpackWeight, AmbushWeight, PoisonCloudWeight, FirestormWeight, ManaDrainWeight,
                           TaxCollectorWeight, MercenaryDownWeight], start_collapsed=True),
-    OptionGroup("Game Changes", [MonsterShuffle, SuperUniqueShuffle, RunewordShuffle, MonsterDensity, ChampionPacks, BetterDrops,
+    OptionGroup("Game Changes", [MonsterShuffle, SuperUniqueShuffle, RunewordShuffle, SkillTreeShuffle, MonsterDensity, ChampionPacks, BetterDrops,
                                  ExperienceMultiplier, ItemLevelRequirements, ItemStatRequirements]),
     OptionGroup("Multiworld", [DeathLink]),
 ]
