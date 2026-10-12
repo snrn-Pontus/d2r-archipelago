@@ -853,23 +853,51 @@ auto CreateIn(D2RL::PlayerHandle player, const ap::loot::Pick& pick, uint32_t re
 }
 
 // Puts a loot item in the inventory, falling back to the cube, stash and
-// ground. If D2R rejects a forced unique or set record, it retries with any
-// record that fits the base. Returns false only when nothing could be placed.
-// owner, when set, is the sender's name for a unique or set item.
+// ground. A locked cube or stash is skipped, so the item can't be stored where
+// the player can't reach it. If D2R rejects a forced unique or set record, it
+// retries with any record that fits the base. Returns false only when nothing
+// could be placed. owner, when set, is the sender's name for a unique or set item.
 bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::string& owner = {}) {
+	bool cubeLocked = false, stashLocked = false;
+	{
+		std::lock_guard lock(gMutex);
+		cubeLocked = gLocks.cube;
+		stashLocked = gLocks.stash;
+	}
 	std::vector<uint32_t> records;
 	if (pick.quality == D2RL::Items::Quality::Unique) {
 		records = UniqueRecords(pick.name);
 	} else if (pick.quality == D2RL::Items::Quality::Set) {
 		records = SetRecords(pick.name);
 	}
+	// Logged with each placement, so the log shows a locked cube or stash was passed over.
+	std::string skipped;
+	if (cubeLocked) {
+		skipped += ", cube locked";
+	}
+	if (stashLocked) {
+		skipped += ", stash locked";
+	}
+	const auto placedIn = [&](D2RL::Items::ItemContainer container) {
+		using enum D2RL::Items::ItemContainer;
+		const char* name = container == Inventory ? "inventory"
+		                   : container == Cube    ? "cube"
+		                   : container == PersonalStash ? "stash"
+		                   : container == Ground  ? "ground"
+		                                          : "cursor";
+		Log("Archipelago: placed " + pick.name + " in the " + name + (skipped.empty() ? std::string {} : " (" + skipped.substr(2) + ")") + ".");
+	};
 	std::string results;
 	for (const auto container : { D2RL::Items::ItemContainer::Inventory, D2RL::Items::ItemContainer::Cube, D2RL::Items::ItemContainer::PersonalStash,
 		     D2RL::Items::ItemContainer::Ground, D2RL::Items::ItemContainer::Cursor }) {
+		if ((container == D2RL::Items::ItemContainer::Cube && cubeLocked) || (container == D2RL::Items::ItemContainer::PersonalStash && stashLocked)) {
+			continue;
+		}
 		auto result = D2RL::Items::Result::NotFound;
 		for (const uint32_t record : records) {
 			result = CreateIn(player, pick, record, container, owner);
 			if (result == D2RL::Items::Result::Success) {
+				placedIn(container);
 				return true;
 			}
 		}
@@ -879,6 +907,7 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 			result = CreateIn(player, pick, D2RL::Items::RandomQualityRecord, container, owner);
 		}
 		if (result == D2RL::Items::Result::Success) {
+			placedIn(container);
 			if (container == D2RL::Items::ItemContainer::Ground || container == D2RL::Items::ItemContainer::Cursor) {
 				Feed("Archipelago: your bags are full, so " + pick.name + (container == D2RL::Items::ItemContainer::Ground ? " dropped at your feet." : " is in your hand."));
 			}
@@ -886,7 +915,7 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 		}
 		results += " " + std::to_string(static_cast<uint32_t>(container)) + "=" + std::to_string(static_cast<uint32_t>(result));
 	}
-	Log("Archipelago: no room for " + pick.name + " (container=result:" + results + ").");
+	Log("Archipelago: no room for " + pick.name + " (container=result:" + results + skipped + ").");
 	return false;
 }
 
@@ -1750,7 +1779,12 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 	if (roomFull && Clock::now() - gLastRoomWarning > std::chrono::seconds(30)) {
 		gLastRoomWarning = Clock::now();
-		gConsoleQueue.push_back("Archipelago: rewards are waiting; make room in your inventory, cube or stash.");
+		// Only the containers rewards can go to: a locked cube or stash is skipped.
+		const std::string rooms = gLocks.cube && gLocks.stash ? "inventory"
+		                          : gLocks.cube               ? "inventory or stash"
+		                          : gLocks.stash              ? "inventory or cube"
+		                                                      : "inventory, cube or stash";
+		gConsoleQueue.push_back("Archipelago: rewards are waiting; make room in your " + rooms + ".");
 	}
 }
 
