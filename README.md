@@ -28,7 +28,7 @@ Other rewards are rolled when they arrive and scaled to the character's level: r
 items, runes up to Zod, socketed runeword bases, magic charms and jewels, gold, experience, Codex
 Empowerments (+1 to every Codex skill), shrines at your feet, and traps (Junk Backpack, Ambush, Poison Cloud,
 Firestorm, Mana Drain, Tax Collector, Mercenary Down). Gold, experience, shrines and traps go through
-D2RCore's console commands (`gold`, `experience`, `shrine`, `mspawn`, `pcloud`...). Skills and Empowerments
+D2RCore's console cheats (`cheat gold`, `cheat experience`, `cheat mspawn`, `cheat pcloud`...). Skills and Empowerments
 scale with the game's length. Act boss quests always give a unique.
 
 It's inspired by [Diablo II Archipelago](https://github.com/solida1987/Diablo-II-Archipelago) for LoD 1.10f,
@@ -98,7 +98,7 @@ What playing has shown about D2RLoader:
 - One character per seed: fillers are handed out once per seed, to whichever character is playing.
 - Superunique kills are told apart by giving each field superunique a monster row of its own (D2RLoader's
   monster-death event only names the monster). They need the seed's mod from `d2r-ap-setup`.
-- DeathLink kills you with D2RCore's `killme` command and spots your own deaths from D2R's death screen
+- DeathLink kills you with D2RCore's `cheat killme` and spots your own deaths from D2R's death screen
   (the `YouDiedModal` UI message), falling back to the resurrection event. Not yet tested in game.
 - No waypoint-object checks.
 - The WebSocket client doesn't support compression. Current servers accept that with a warning.

@@ -1391,8 +1391,19 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 
 // ---- DeathLink (UI thread) --------------------------------------------------
 
+// D2RCore's own top-level commands; everything else it runs (gold, experience,
+// mspawn, killme, skadd...) is a cheat, typed as "cheat <name> <args>".
+constexpr std::string_view BuiltinCommands[] = { "class", "clearcorpses", "corpseclear", "goto", "loc", "spawnloc", "clearitems", "cubeinputs", "god", "heal" };
+
+// Adds "cheat " in front of a command unless it's one of D2RCore's top-level ones.
+auto ConsoleCommandText(const std::string& command) -> std::string {
+	const std::string_view name = std::string_view(command).substr(0, command.find(' '));
+	return std::ranges::find(BuiltinCommands, name) != std::end(BuiltinCommands) || name == "cheat" ? command : "cheat " + command;
+}
+
 // Runs a D2RCore console command, cheat commands included (ExecuteConsoleCommand
-// allows them for the one call). UI thread only. True if D2RCore accepted it.
+// turns the cheat flag on for the one call). UI thread only. True if D2RCore
+// accepted it, which doesn't mean the command exists or worked.
 auto ExecuteCommand(const std::string& command) -> bool {
 	using ExecuteFn = D2RL::CoreExports::ExecuteConsoleCommandFn;
 	static const auto execute = [] {
@@ -1400,8 +1411,9 @@ auto ExecuteCommand(const std::string& command) -> bool {
 		return core != nullptr ? reinterpret_cast<ExecuteFn>(GetProcAddress(core, MAKEINTRESOURCEA(D2RL::CoreExports::ExecuteConsoleCommandInfo.ordinal)))
 		                       : nullptr;
 	}();
-	const bool accepted = execute != nullptr && execute(command.c_str());
-	Log("Archipelago: console command \"" + command + "\" " + (accepted ? "accepted." : "refused."));
+	const std::string text = ConsoleCommandText(command);
+	const bool accepted = execute != nullptr && execute(text.c_str());
+	Log("Archipelago: console command \"" + text + "\" " + (accepted ? "accepted." : "refused."));
 	return accepted;
 }
 
@@ -2260,6 +2272,19 @@ auto CommandUi(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, v
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
+// ap-core <command>: runs a D2RCore console command the way rewards do (on the
+// next frame in game), for trying commands such as skadd.
+auto CommandCore(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
+	const std::string text(command->args != nullptr ? command->args : "", command->argsLength);
+	if (text.empty()) {
+		gContext->WriteConsoleMessage("Usage: ap-core <D2RCore command>, for example ap-core skadd Leap,1");
+		return D2RL::ConsoleCommandResult::InvalidArguments;
+	}
+	std::lock_guard lock(gMutex);
+	gCommandQueue.push_back(text);
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
 // ap-chat <text>: show a line in D2R's chat, to test the chat output.
 auto CommandChat(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
 	const std::string text(command->args != nullptr ? command->args : "", command->argsLength);
@@ -2485,6 +2510,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-disconnect", CommandDisconnect, "Disconnect from the Archipelago server.")
 	                   && context->RegisterConsoleCommand("ap-status", CommandStatus, "Show the Archipelago connection and progress.")
 	                   && context->RegisterConsoleCommand("ap-say", CommandSay, "Send a chat message to the Archipelago server.")
+	                   && context->RegisterConsoleCommand("ap-core", CommandCore, "Run a D2RCore console command: ap-core <command>.")
 	                   && context->RegisterConsoleCommand("ap-chat", CommandChat, "Show a line in the game chat: ap-chat <text>.")
 	                   && context->RegisterConsoleCommand("ap-codex", CommandCodex, "Rebuild the Archipelago Codex charm.")
 	                   && context->RegisterConsoleCommand("ap-hints", CommandHints, "List the hints you've found in game.")
