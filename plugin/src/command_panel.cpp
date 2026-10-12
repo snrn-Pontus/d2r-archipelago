@@ -19,6 +19,7 @@ constexpr std::array MainLeft {
 	Button { "hints", "Hints Found", "ap-hints" },
 	Button { "ledger", "New Ledger", "ap-ledger" },
 	Button { "codex", "Rebuild Codex", "ap-codex" },
+	Button { "relearn", "Relearn Skills", "ap-relearn" },
 };
 
 constexpr std::array MainRight {
