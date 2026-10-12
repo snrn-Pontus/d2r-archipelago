@@ -292,6 +292,38 @@ void TestLootScalesToLevel() {
 	}
 }
 
+void TestLootFitsClass() {
+	std::mt19937 random(5);
+	const auto baseClass = [](uint32_t code) {
+		for (const auto& base : ap::data::SocketBases) {
+			if (ap::loot::CodeFromText(base.code) == code) {
+				return static_cast<int>(base.cls);
+			}
+		}
+		return -2;
+	};
+	// A Sorceress (1) never gets another class's uniques, sets or bases.
+	bool sawSorceressItem = false;
+	for (int level : { 10, 42, 60, 85 }) {
+		for (int i = 0; i < 300; ++i) {
+			const auto* unique = FindRecord(ap::data::Uniques, ap::loot::Roll(ap::loot::Loot::RandomUnique, level, random, 1).record);
+			const auto* set = FindRecord(ap::data::SetItems, ap::loot::Roll(ap::loot::Loot::SetItem, level, random, 1).record);
+			EXPECT(unique != nullptr && (unique->cls == -1 || unique->cls == 1));
+			EXPECT(set != nullptr && (set->cls == -1 || set->cls == 1));
+			sawSorceressItem = sawSorceressItem || unique->cls == 1 || set->cls == 1;
+			const int base = baseClass(ap::loot::Roll(ap::loot::Loot::SocketedBase, level, random, 1).code);
+			EXPECT(base == -1 || base == 1);
+		}
+	}
+	EXPECT(sawSorceressItem);
+	// With the class unknown, class items still turn up.
+	bool sawClassItem = false;
+	for (int i = 0; i < 500 && !sawClassItem; ++i) {
+		sawClassItem = FindRecord(ap::data::Uniques, ap::loot::Roll(ap::loot::Loot::RandomUnique, 42, random).record)->cls >= 0;
+	}
+	EXPECT(sawClassItem);
+}
+
 void TestGoldExperienceCharms() {
 	EXPECT(ap::loot::GoldAmount(1) == 1000 && ap::loot::GoldAmount(80) == 80000);
 	// Level 1 needs 500 experience to level up; 15% of that is 75.
@@ -672,6 +704,7 @@ int main() {
 	TestTableEdits();
 	TestLootScalesToLevel();
 	TestOtherLoot();
+	TestLootFitsClass();
 	TestGoldExperienceCharms();
 	TestShrinesAndTraps();
 	TestClientParsesServerPackets();

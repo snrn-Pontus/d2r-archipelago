@@ -58,8 +58,9 @@ struct Pick {
 auto CodeFromText(const char* text) -> uint32_t;
 
 // Rolls one item. For JunkBackpack it returns one piece of junk; the caller
-// repeats until the inventory is full.
-auto Roll(Loot loot, int level, std::mt19937& random) -> Pick;
+// repeats until the inventory is full. playerClass (ClassNames order, -1 for
+// unknown) leaves out uniques, sets and bases only another class can use.
+auto Roll(Loot loot, int level, std::mt19937& random, int playerClass = -1) -> Pick;
 
 // Gold for a Gold reward: 1,000 per character level.
 auto GoldAmount(int level) -> int;

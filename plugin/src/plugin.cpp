@@ -1476,7 +1476,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		ap::loot::Pick pick {};
 		bool placed = false;
 		for (int attempt = 0; attempt < 5 && !placed; ++attempt) {
-			pick = ap::loot::Roll(loot, characterLevel, random);
+			pick = ap::loot::Roll(loot, characterLevel, random, playerClass);
 			if (pick.code == 0) {
 				break;
 			}

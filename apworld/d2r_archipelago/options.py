@@ -348,7 +348,7 @@ class BasicLootWeight(Range):
 
 class UniqueWeight(Range):
     """Weight of Random Unique Weapon / Armor / Jewelry among the filler items. Uniques are rolled
-    when you receive them, from those your character level can use."""
+    when you receive them, from those your character level and class can use."""
     display_name = "Unique Weight"
     range_start = 0
     range_end = 100

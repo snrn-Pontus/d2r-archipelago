@@ -27,7 +27,7 @@ superuniques, runeword recipes, monster density, champion packs, drop quality, e
 requirements.
 
 Other rewards are rolled when they arrive and scaled to the character's level: random uniques and set
-items, runes up to Zod, socketed runeword bases, magic charms and jewels, gold, experience, Codex
+items (only ones your class can use), runes up to Zod, socketed runeword bases, magic charms and jewels, gold, experience, Codex
 Empowerments (+1 to every Codex skill), shrines at your feet, and traps (Junk Backpack, Ambush, Poison Cloud,
 Firestorm, Mana Drain, Tax Collector, Mercenary Down). Gold, experience, shrines and traps go through
 D2RCore's console cheats (`cheat gold`, `cheat experience`, `cheat mspawn`, `cheat pcloud`...). Skills and Empowerments

@@ -44,7 +44,7 @@ namespace rnd = ap::randomizer;
 // The tables tools/gen_data.py reads, from the RotW bank.
 const char* const ExtractTables[] = { "skills.txt", "levels.txt", "uniqueitems.txt", "setitems.txt", "weapons.txt", "armor.txt", "misc.txt",
 	"superuniques.txt", "runes.txt", "monlvl.txt", "monstats.txt", "magicprefix.txt", "magicsuffix.txt", "automagic.txt", "experience.txt",
-	"skilldesc.txt", "charstats.txt", "base/skills.txt", "base/skilldesc.txt", "base/charstats.txt" };
+	"skilldesc.txt", "charstats.txt", "itemtypes.txt", "base/skills.txt", "base/skilldesc.txt", "base/charstats.txt" };
 
 // RotW tables live in excel/, the Classic and LoD tables in excel/base/.
 const char* const Banks[] = { "", "base\\" };

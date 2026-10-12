@@ -19,6 +19,11 @@ using D2RL::Items::Quality;
 constexpr int LevelBelow = 12;
 constexpr int LevelAbove = 2;
 
+// Whether a character of this class can use the item (-1: class unknown).
+bool Usable(int8_t itemClass, int playerClass) {
+	return itemClass < 0 || playerClass < 0 || itemClass == playerClass;
+}
+
 constexpr const char* PerfectGems[] = { "gpv", "gpb", "gpg", "gpr", "gpw", "gpy", "skz" };
 // Cheap white gear for the Junk Backpack trap.
 constexpr const char* Junk[] = { "ssd", "clb", "hax", "cap", "buc", "lgl", "lbt", "sbw", "jav", "lbl" };
@@ -33,10 +38,11 @@ auto Rune(uint32_t number) -> Pick {
 
 // Picks a level-appropriate unique or set item, widening the search when the
 // window is empty (a level 1 character still gets the lowest items).
-auto PickQualityItem(std::span<const data::QualityItem> items, Quality quality, int level, bool anyKind, data::Kind kind, std::mt19937& random) -> Pick {
+auto PickQualityItem(std::span<const data::QualityItem> items, Quality quality, int level, bool anyKind, data::Kind kind, int playerClass,
+                     std::mt19937& random) -> Pick {
 	std::vector<const data::QualityItem*> matching;
 	for (const auto& item : items) {
-		if (anyKind || item.kind == kind) {
+		if ((anyKind || item.kind == kind) && Usable(item.cls, playerClass)) {
 			matching.push_back(&item);
 		}
 	}
@@ -64,16 +70,16 @@ auto PickQualityItem(std::span<const data::QualityItem> items, Quality quality, 
 	};
 }
 
-auto PickBase(int level, std::mt19937& random) -> Pick {
+auto PickBase(int level, int playerClass, std::mt19937& random) -> Pick {
 	std::vector<const data::Base*> window;
 	for (const auto& base : data::SocketBases) {
-		if (base.reqLevel <= level + LevelAbove && base.reqLevel + 20 >= level) {
+		if (Usable(base.cls, playerClass) && base.reqLevel <= level + LevelAbove && base.reqLevel + 20 >= level) {
 			window.push_back(&base);
 		}
 	}
 	if (window.empty()) {
 		for (const auto& base : data::SocketBases) {
-			if (base.reqLevel <= std::max(level, 1) + LevelAbove) {
+			if (Usable(base.cls, playerClass) && base.reqLevel <= std::max(level, 1) + LevelAbove) {
 				window.push_back(&base);
 			}
 		}
@@ -97,7 +103,7 @@ auto CodeFromText(const char* text) -> uint32_t {
 	return D2RL::Items::MakeItemCode(padded[0], padded[1], padded[2], padded[3]);
 }
 
-auto Roll(Loot loot, int level, std::mt19937& random) -> Pick {
+auto Roll(Loot loot, int level, std::mt19937& random, int playerClass) -> Pick {
 	level = std::clamp(level, 1, 99);
 	switch (loot) {
 		case Loot::FullRejuvenation: return { .code = CodeFromText("rvl"), .name = "Full Rejuvenation Potion" };
@@ -113,12 +119,12 @@ auto Roll(Loot loot, int level, std::mt19937& random) -> Pick {
 			std::discrete_distribution<int> pick(weights.begin(), weights.end());
 			return Rune(21 + static_cast<uint32_t>(pick(random)));
 		}
-		case Loot::RandomUnique:  return PickQualityItem(data::Uniques, Quality::Unique, level, true, data::Weapon, random);
-		case Loot::UniqueWeapon:  return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Weapon, random);
-		case Loot::UniqueArmor:   return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Armor, random);
-		case Loot::UniqueJewelry: return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Jewelry, random);
-		case Loot::SetItem:       return PickQualityItem(data::SetItems, Quality::Set, level, true, data::Weapon, random);
-		case Loot::SocketedBase:  return PickBase(level, random);
+		case Loot::RandomUnique:  return PickQualityItem(data::Uniques, Quality::Unique, level, true, data::Weapon, playerClass, random);
+		case Loot::UniqueWeapon:  return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Weapon, playerClass, random);
+		case Loot::UniqueArmor:   return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Armor, playerClass, random);
+		case Loot::UniqueJewelry: return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Jewelry, playerClass, random);
+		case Loot::SetItem:       return PickQualityItem(data::SetItems, Quality::Set, level, true, data::Weapon, playerClass, random);
+		case Loot::SocketedBase:  return PickBase(level, playerClass, random);
 		case Loot::JunkBackpack:  return { .code = CodeFromText(Junk[random() % std::size(Junk)]), .name = "junk" };
 		case Loot::RandomCharm: {
 			constexpr const char* Charms[][2] = { { "cm1", "Small Charm" }, { "cm2", "Large Charm" }, { "cm3", "Grand Charm" } };

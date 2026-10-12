@@ -117,6 +117,8 @@ a guess checked against the item before writing, so test the command first.
       the game doesn't crash.
 - [ ] Multiworld seed with a second slot: a `Random Unique` that slot finds arrives named after it, and
       chat says "you got <item> from <name>!". Your own finds and `/send` (from the server) stay unnamed.
+- [ ] Several `/send`s of `Random Unique`, `Random Set Item` and `Socketed Base` never give another
+      class's gear (no Arreat's Face or Paladin shield on a Sorceress); your own class's still turn up.
 
 ## Found in testing
 
