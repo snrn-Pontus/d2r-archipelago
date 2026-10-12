@@ -234,7 +234,7 @@ class StashLock(Toggle):
 
 class MerchantLock(Toggle):
     """Merchants won't trade (buy, sell, repair or gamble) until you find Merchant Access. Shop Checks
-    then wait for it too."""
+    then wait for it too, and so does the Secret Cow Level (its portal takes a Tome of Town Portal)."""
     display_name = "Merchant Lock"
 
 

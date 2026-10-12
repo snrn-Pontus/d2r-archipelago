@@ -1162,6 +1162,18 @@ auto CollectionChecks(const ItemScan& scan, const ap::SlotData& slots) -> std::v
 	return checks;
 }
 
+// The check for finding a quest item on a difficulty, if the code is one
+// (the Horadric Cube counts once).
+auto QuestItemCheck(uint32_t code, int difficulty) -> std::optional<int64_t> {
+	for (uint32_t index = 0; index < std::size(ap::data::QuestItems); ++index) {
+		const auto& item = ap::data::QuestItems[index];
+		if (code == ap::loot::CodeFromText(item.code)) {
+			return ap::ids::QuestItemLocation(item.everyDifficulty ? static_cast<uint32_t>(std::clamp(difficulty, 0, 2)) : 0, index);
+		}
+	}
+	return std::nullopt;
+}
+
 // Quest items and collections anywhere on the character (worn, inventory,
 // belt, cube, stash, cursor).
 void ScanItems(D2RL::PlayerHandle player) {
@@ -1178,11 +1190,11 @@ void ScanItems(D2RL::PlayerHandle player) {
 			gQuestQueue.insert(std::clamp(gDifficulty, 0, 2) * 100 + flag);
 		}
 	}
-	// Quest items, on the difficulty you're on (the Horadric Cube counts once).
-	for (uint32_t index = 0; slots.questItemChecks && gDifficultyKnown && index < std::size(ap::data::QuestItems); ++index) {
-		const auto& item = ap::data::QuestItems[index];
-		if (scan.codes.contains(ap::loot::CodeFromText(item.code))) {
-			checks.push_back(ap::ids::QuestItemLocation(item.everyDifficulty ? static_cast<uint32_t>(std::clamp(gDifficulty, 0, 2)) : 0, index));
+	// Quest items, on the difficulty you're on.
+	for (const uint32_t code : scan.codes) {
+		const auto check = slots.questItemChecks && gDifficultyKnown ? QuestItemCheck(code, gDifficulty) : std::nullopt;
+		if (check) {
+			checks.push_back(*check);
 		}
 	}
 	// Uniques and set items found, counted across sessions.
@@ -1719,6 +1731,8 @@ auto IsPotion(uint32_t code) -> bool {
 }
 
 // Blocks reading Town Portal scrolls and tomes, and drinking potions, while locked.
+// Also records quest items used at once (the Book of Skill, Horadric Scroll, Potion
+// of Life and Scroll of Resistance), which are gone before the next item scan.
 auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteractions::ItemInteractionEvent* event, void*) noexcept
 	-> D2RL::ItemInteractions::Decision {
 	using Decision = D2RL::ItemInteractions::Decision;
@@ -1726,18 +1740,27 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 		|| event->action != D2RL::ItemInteractions::Action::Activate) {
 		return Decision::Continue;
 	}
-	bool townPortal = false, potions = false;
+	bool townPortal = false, potions = false, questItems = false;
+	int difficulty = 0;
 	{
 		std::lock_guard lock(gMutex);
 		townPortal = gLocks.townPortal;
 		potions = gLocks.potions;
+		questItems = gSlots.questItemChecks && gDifficultyKnown;
+		difficulty = gDifficulty;
 	}
-	if (!townPortal && !potions) {
+	if (!townPortal && !potions && !questItems) {
 		return Decision::Continue;
 	}
 	D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
 	if (gItems->getItemInfo(gContext, event->item, &info) != D2RL::Items::Result::Success) {
 		return Decision::Continue;
+	}
+	if (questItems && !IsReward(info)) {
+		if (const auto check = QuestItemCheck(info.code, difficulty)) {
+			std::lock_guard lock(gMutex);
+			gCollectionQueue.push_back(*check);
+		}
 	}
 	if (townPortal && (info.code == ap::loot::CodeFromText("tsc") || info.code == ap::loot::CodeFromText("tbk"))) {
 		LockMessage("Town Portal is locked until you find Town Portal Access.");
@@ -2836,10 +2859,10 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		};
 		D2RL::ItemInteractions::ListenerHandle handle = D2RL::ItemInteractions::InvalidHandle;
 		if (gInteractions->registerListener(context, &listener, &handle) != D2RL::ItemInteractions::Result::Success) {
-			context->LogWarn("Archipelago: couldn't register the item-use listener; the Town Portal and Potion locks won't work.");
+			context->LogWarn("Archipelago: couldn't register the item-use listener; the Town Portal and Potion locks won't work, and quest items used at once may be missed.");
 		}
 	} else {
-		context->LogWarn("Archipelago: no item interaction service; the Town Portal and Potion locks won't work.");
+		context->LogWarn("Archipelago: no item interaction service; the Town Portal and Potion locks won't work, and quest items used at once may be missed.");
 	}
 	RegisterCommandPanel(context);
 	gConfig = ap::ParseConfig(ConfigText());

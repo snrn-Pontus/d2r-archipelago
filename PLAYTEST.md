@@ -86,6 +86,19 @@ Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: 
 - [ ] 100 kills in Act I sends "Kill 100 monsters"; finding your first unique sends "Find 1 Unique".
 - [ ] Rewards don't count: a Random Unique from the server doesn't count toward "Find 1 Unique".
 
+## 2b. Quest items used at once
+
+Defaults (`quest_item_checks` on). The plugin scans for quest items every 5 seconds, so these are now also
+recorded the moment you use them. Use each one right after picking it up, within a second or two.
+
+- [ ] **Book of Skill** (Radament): read it at once; "Find Book of Skill" still sends.
+- [ ] **Horadric Scroll**: read it at once; "Find Horadric Scroll" still sends.
+- [ ] **Potion of Life** (Alkor, after the Golden Bird): drink it at once; "Find Potion of Life" still sends.
+- [ ] **Scroll of Resistance** (Anya): read it at once; "Find Scroll of Resistance" still sends.
+- [ ] Each sends once, not again on the next scan or after rejoining.
+- [ ] Note whether handing the Golden Bird to Alkor right after Meshif gives it to you still sends
+      "Find The Golden Bird" (this one is handed over, not used, so the change doesn't cover it).
+
 ## 3. Act keys
 
 Defaults (`act_keys` and `enforce_act_keys` on).
@@ -181,6 +194,9 @@ These need a character that has beaten Baal, so test them during a real run.
 
 - [ ] Secret Cow Level (on difficulties before the goal): entering it, The Cow King, and 100 cows each send
       a check.
+- [ ] With `merchant_lock`: the cow portal needs a Tome of Town Portal, so logic now waits for Merchant
+      Access. Check whether a tome ever drops or can be had without a merchant (new characters only have
+      a scroll); if it can't, the rule is right.
 - [ ] Quest checks that only use fallbacks: Radament (Book of Skill), the Golden Bird, Lam Esen's Tome,
       rescuing Anya, Prison of Ice, Siege on Harrogath.
 - [ ] Hell goal: Pandemonium keys, organs, essences, the Torch and Annihilus; the uber kills.

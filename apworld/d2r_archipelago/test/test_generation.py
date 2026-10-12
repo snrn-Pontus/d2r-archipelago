@@ -326,6 +326,21 @@ class TestLocks(D2RTestBase):
         self.assertFalse(self.can_reach_location("Act I: Buy Archipelago Parcel 1"))
 
 
+class TestCowLevelMerchants(D2RTestBase):
+    # No shops, so only the cow level makes Merchant Access progression.
+    options = {"merchant_lock": True, "shop_checks": 0, "goal": "nightmare", "goal_act": 1, "act_keys": False}
+
+    def test_cow_portal_needs_a_tome(self) -> None:
+        # The cow portal takes a Tome of Town Portal, which only a merchant sells.
+        self.assertTrue(self.world.create_item("Merchant Access").advancement)
+        self.collect_all_but(["Merchant Access"])
+        self.assertTrue(self.can_reach_region("Normal Act V"))
+        self.assertFalse(self.can_reach_location("Normal: Enter the Secret Cow Level"))
+        self.assertFalse(self.can_reach_location("Normal: Kill The Cow King"))
+        self.collect_by_name("Merchant Access")
+        self.assertTrue(self.can_reach_location("Normal: Kill The Cow King"))
+
+
 class TestEndgameChecks(D2RTestBase):
     options = {"goal": "hell", "goal_act": 5, "uber_checks": True, "kill_count_checks": True, "find_count_checks": True}
 

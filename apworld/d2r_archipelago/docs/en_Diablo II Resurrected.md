@@ -104,7 +104,8 @@ Optional locks block part of the game until their item turns up from the multiwo
 - `town_portal_lock`, `potion_lock`: Town Portal scrolls and tomes, or potions, can't be used without **Town
   Portal Access** or **Potion Access**.
 - `stash_lock`, `merchant_lock`: the stash, or trading with merchants, needs **Stash Access** or **Merchant
-  Access**. Shop checks wait for Merchant Access.
+  Access**. Shop checks wait for Merchant Access, and so do the cow level checks: the portal takes a Tome of
+  Town Portal, and new characters only have a scroll.
 - `waypoint_lock`: the waypoints of Acts I to III need that act's **Waypoints** item (Act I Waypoints...).
   Acts IV and V keep theirs: a waypoint is the only way back from them, so a check left behind stays reachable.
 

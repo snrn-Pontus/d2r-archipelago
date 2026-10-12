@@ -155,6 +155,10 @@ class D2RWorld(World):
                     # Killing The Cow King first closes the level for good, so the 100 cows can be missed.
                     add(acts[difficulty * len(ACTS) + 4], cow_location_name(difficulty, check),
                         filler_only=COW_CHECKS[check] == "Kill 100 Cows")
+                    # The portal takes a Tome of Town Portal, and new characters only have a scroll.
+                    if self.options.merchant_lock:
+                        add_rule(acts[difficulty * len(ACTS) + 4].locations[-1],
+                                 lambda state: state.has(MERCHANT_ACCESS, self.player))
         # Collections can take a long time (or luck), so they only hold filler.
         for _number, name in RUNES[:self.options.rune_checks.value]:
             add(acts[0], find_location_name(name), filler_only=True)
@@ -229,7 +233,7 @@ class D2RWorld(World):
         self.multiworld.completion_condition[self.player] = lambda state: state.has("Victory", self.player)
 
     def create_item(self, name: str) -> D2RItem:
-        if name in KEY_NAMES or (name == CUBE_ACCESS and self.options.cube_lock) or (name == MERCHANT_ACCESS and self.shop_locked()):
+        if name in KEY_NAMES or (name == CUBE_ACCESS and self.options.cube_lock) or (name == MERCHANT_ACCESS and self.merchants_gate_checks()):
             classification = ItemClassification.progression
         elif name in LOCKS:
             classification = ItemClassification.useful
@@ -317,6 +321,12 @@ class D2RWorld(World):
     def shop_locked(self) -> bool:
         """Whether the shop checks wait for Merchant Access."""
         return bool(self.options.merchant_lock) and self.options.shop_checks.value > 0
+
+    def merchants_gate_checks(self) -> bool:
+        """Whether any check waits for Merchant Access: the shops, or the cow level (its portal takes a
+        Tome of Town Portal) on a difficulty before the goal."""
+        return self.shop_locked() or (bool(self.options.merchant_lock) and bool(self.options.cow_level_checks)
+                                      and self.options.goal.value > 0)
 
     def lock_items(self) -> list[str]:
         """The lock items in the pool: one per lock that's on, and a Waypoints item per act in play up to
