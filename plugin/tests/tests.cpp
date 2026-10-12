@@ -10,8 +10,10 @@
 #include "randomizer.h"
 #include "table.h"
 #include "save_state.h"
+#include "sprite.h"
 
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <algorithm>
 #include <iterator>
@@ -480,19 +482,40 @@ void TestSuperUniqueMonsters() {
 	EXPECT(ap::randomizer::Settings {}.Stamp().find("superunique_checks") == std::string::npos);
 }
 
+void TestSprite() {
+	// Two 2x2 frames: the first all 1s, the second all 2s.
+	auto make = [](uint8_t first, uint8_t second) {
+		std::string bytes(40, '\0');
+		bytes.replace(0, 4, "SpA1");
+		const uint32_t header[] = { 4, 2, 0, 2 };
+		std::memcpy(bytes.data() + 8, header, sizeof(header));
+		for (int y = 0; y < 2; ++y) {
+			bytes += std::string(8, static_cast<char>(first)) + std::string(8, static_cast<char>(second));
+		}
+		return bytes;
+	};
+	const auto source = ap::sprite::Parse(make(1, 2));
+	auto target = ap::sprite::Parse(make(7, 8));
+	EXPECT(source && target && source->FrameWidth() == 2 && source->height == 2);
+	EXPECT(ap::sprite::CopyFrame(*source, 1, *target, 0));
+	EXPECT(target->bytes.substr(40, 16) == std::string(8, '\2') + std::string(8, '\b'));
+	EXPECT(target->bytes.substr(56, 16) == std::string(8, '\2') + std::string(8, '\b'));
+	EXPECT(!ap::sprite::CopyFrame(*source, 2, *target, 0) && !ap::sprite::Parse("SpA0"));
+}
+
 void TestSkillTreeShuffle() {
 	auto skills = ap::Table::Parse("skill\tcharclass\tskilldesc\trestrict\r\nAttack\t\tattack\t\r\nFire Bolt\tsor\tfire bolt\t\r\nWarmth\tsor\twarmth\t\r\n"
 	                               "Inferno\tsor\tinferno\t\r\nBash\tbar\tbash\t\r\nHowl\tbar\thowl\t\r\nLeap\tbar\tleap\t\r\n"
 	                               "Wearwolf\tdru\twearwolf\t1\r\nFury\tdru\tfury\t2\r\n");
-	auto desc = ap::Table::Parse("skilldesc\tSkillPage\tSkillRow\tSkillColumn\tListRow\r\nattack\t0\t0\t0\t0\r\nfire bolt\t1\t1\t2\t1\r\n"
-	                             "warmth\t1\t1\t3\t1\r\ninferno\t1\t2\t1\t1\r\nbash\t1\t1\t2\t1\r\nhowl\t3\t1\t1\t3\r\nleap\t1\t2\t1\t1\r\n"
-	                             "wearwolf\t2\t1\t1\t2\r\nfury\t2\t2\t1\t2\r\n");
+	auto desc = ap::Table::Parse("skilldesc\tSkillPage\tSkillRow\tSkillColumn\tListRow\tIconCel\r\nattack\t0\t0\t0\t0\t0\r\n"
+	                             "fire bolt\t1\t1\t2\t1\t0\r\nwarmth\t1\t1\t3\t1\t2\r\ninferno\t1\t2\t1\t1\t4\r\nbash\t1\t1\t2\t1\t0\r\n"
+	                             "howl\t3\t1\t1\t3\t2\r\nleap\t1\t2\t1\t1\t4\r\nwearwolf\t2\t1\t1\t2\t0\r\nfury\t2\t2\t1\t2\t2\r\n");
 	bool mixed = false;
 	for (uint32_t seed = 1; seed < 20; ++seed) {
 		auto s = skills;
 		auto d = desc;
 		std::mt19937 random(seed);
-		const int moved = ap::randomizer::ShuffleSkillTrees(s, d, random);
+		const auto shuffle = ap::randomizer::ShuffleSkillTrees(s, d, random);
 		// Row 1 holds Fire Bolt, Warmth, Bash and Howl in some order: two Sorceress and two Barbarian slots.
 		int sorceressRow1 = 0;
 		for (size_t row : { 1U, 2U, 4U, 5U }) {
@@ -503,7 +526,22 @@ void TestSkillTreeShuffle() {
 		// Inferno and Leap trade places or stay; the Druid's skills and Attack never move.
 		EXPECT(d.Cell(3, 2) == "2" && d.Cell(6, 2) == "2");
 		EXPECT(s.Cell(7, 1) == "dru" && s.Cell(8, 1) == "dru" && s.Cell(0, 1).empty() && d.Cell(7, 1) == "2");
-		mixed = mixed || moved > 0;
+		mixed = mixed || shuffle.moved > 0;
+		// Each skill takes its slot's icon frame and brings its own icon: every class's
+		// frames are still used once, and each icon comes from the skill's old frame.
+		EXPECT(shuffle.icons.size() == 6);
+		std::map<std::string, std::set<int>> cels;
+		for (const auto& icon : shuffle.icons) {
+			cels[icon.toClass].insert(icon.toCel);
+		}
+		EXPECT((cels["sor"] == std::set<int> { 0, 2, 4 }) && (cels["bar"] == std::set<int> { 0, 2, 4 }));
+		for (size_t row = 1; row <= 6; ++row) {
+			// The skill's new frame and class, and the frame and class it had before.
+			const auto icon = std::ranges::find_if(shuffle.icons, [&](const auto& i) {
+				return d.Cell(row, 5) == std::to_string(i.toCel) && s.Cell(row, 1) == i.toClass;
+			});
+			EXPECT(icon != shuffle.icons.end() && std::to_string(icon->fromCel) == desc.Cell(row, 5) && icon->fromClass == skills.Cell(row, 1));
+		}
 	}
 	EXPECT(mixed);
 }
@@ -569,6 +607,7 @@ int main() {
 	TestSuperUniqueMonsters();
 	TestShopParcels();
 	TestSkillTreeShuffle();
+	TestSprite();
 	TestRunewordShuffle();
 	TestTableEdits();
 	TestLootScalesToLevel();

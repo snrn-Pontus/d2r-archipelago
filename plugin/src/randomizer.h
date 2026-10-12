@@ -46,12 +46,28 @@ struct Settings {
 // Returns how many skills it locked.
 auto BlockClassSkills(Table& skills) -> int;
 
-// Deals the class skills out to every class's tree slots (tree, row, column),
-// a skill only moving to a row of its own level, so low-level skills stay at
-// the top. The Druid's shapeshifts and the skills that need a form stay put.
-// Moves the skill to the slot's class (skills.txt) and position (skilldesc.txt).
-// Returns how many skills changed class.
-auto ShuffleSkillTrees(Table& skills, Table& skilldesc, std::mt19937& random) -> int;
+// A skill's icon after a tree shuffle: frame `fromCel` of its old class's icon
+// sheet belongs at frame `toCel` (and the pressed frames after each) of the new one.
+struct IconMove {
+	std::string fromClass;
+	int         fromCel = 0;
+	std::string toClass;
+	int         toCel = 0;
+};
+
+struct TreeShuffle {
+	// Skills that changed class.
+	int moved = 0;
+	std::vector<IconMove> icons;
+};
+
+// Deals the class skills out to every class's tree slots (tree, row, column,
+// icon), a skill only moving to a row of its own level, so low-level skills
+// stay at the top. The Druid's shapeshifts, the skills that need a form and the
+// Warlock (whose tree only Reign of the Warlock has) stay put, so the Classic/LoD
+// and RotW tables shuffle alike from the same seed and share the icon sheets.
+// Moves the skill to the slot's class (skills.txt) and place and icon (skilldesc.txt).
+auto ShuffleSkillTrees(Table& skills, Table& skilldesc, std::mt19937& random) -> TreeShuffle;
 
 // Swaps whole monster line-ups (normal, nightmare/hell and unique lists move
 // together) between areas: Nearby within each act, Anywhere across all of

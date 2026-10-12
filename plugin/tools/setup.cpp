@@ -7,6 +7,7 @@
 //   d2r-ap-setup --offline                         skill lock only, no seed
 //   d2r-ap-setup --extract <folder>                copy the raw tables for tools/gen_data.py
 //   d2r-ap-setup --dump <game path> <file>         copy one game file, e.g. data\hd\items\items.json
+//   d2r-ap-setup --find <text>                     list the game files whose names contain the text
 //
 // Options for all of them: --game <D2R folder>, --mod <name>, --out <mods folder>.
 
@@ -14,6 +15,7 @@
 #include "config.h"
 #include "game_data.h"
 #include "randomizer.h"
+#include "sprite.h"
 #include "table.h"
 
 #include <CascLib.h>
@@ -26,6 +28,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -54,6 +57,7 @@ struct Options {
 	std::string mod = "Archipelago";
 	std::string out;
 	std::string extract;
+	std::string find;
 	std::string dumpPath, dumpFile;
 	std::string server, slot, password;
 	bool offline = false;
@@ -103,6 +107,8 @@ auto ParseArgs(int argc, char** argv) -> Options {
 			options.mod = next();
 		} else if (arg == "--out") {
 			options.out = next();
+		} else if (arg == "--find") {
+			options.find = next();
 		} else if (arg == "--extract") {
 			options.extract = next();
 		} else if (arg == "--dump") {
@@ -221,6 +227,54 @@ auto AddItemNames(HANDLE storage, const fs::path& mpq, const std::vector<std::st
 	return true;
 }
 
+// Each class's skill icon sheet, under data/hd/global/ui/spells/.
+const std::map<std::string, std::string> IconSheets = {
+	{ "ama", "amazon/amskillicon" }, { "sor", "sorceress/soskillicon" }, { "nec", "necromancer/neskillicon" },
+	{ "pal", "paladin/paskillicon" }, { "bar", "barbarian/baskillicon" }, { "dru", "druid/drskillicon" },
+	{ "ass", "assassin/asskillicon" },
+};
+
+// After a skill tree shuffle, rebuilds every class's skill icon sheets (HD and
+// low-end) so each skill shows its own icon in its new tree: the skill's frames
+// (icon and pressed icon) are copied from its old class's sheet to its new slot.
+auto WriteSkillIcons(HANDLE storage, const fs::path& mpq, const std::vector<rnd::IconMove>& icons) -> int {
+	int written = 0;
+	for (const char* suffix : { ".sprite", ".lowend.sprite" }) {
+		std::map<std::string, ap::sprite::Sheet> original, rebuilt;
+		for (const auto& [cls, sheet] : IconSheets) {
+			std::string bytes;
+			std::string path = "data/hd/global/ui/spells/" + sheet + suffix;
+			std::ranges::replace(path, '/', '\\');
+			if (ReadCascFile(storage, path, bytes)) {
+				if (auto parsed = ap::sprite::Parse(std::move(bytes))) {
+					original.emplace(cls, *parsed);
+					rebuilt.emplace(cls, *parsed);
+				}
+			}
+		}
+		std::set<std::string> changed;
+		for (const auto& icon : icons) {
+			const auto from = original.find(icon.fromClass);
+			const auto to = rebuilt.find(icon.toClass);
+			if (from == original.end() || to == rebuilt.end()) {
+				continue;
+			}
+			for (int frame = 0; frame < 2; ++frame) {
+				if (ap::sprite::CopyFrame(from->second, static_cast<uint32_t>(icon.fromCel + frame), to->second, static_cast<uint32_t>(icon.toCel + frame))) {
+					changed.insert(icon.toClass);
+				}
+			}
+		}
+		for (const auto& cls : changed) {
+			const fs::path target = mpq / "data" / "hd" / "global" / "ui" / "spells" / fs::path(IconSheets.at(cls) + suffix);
+			fs::create_directories(target.parent_path());
+			std::ofstream(target, std::ios::binary | std::ios::trunc) << rebuilt.at(cls).bytes;
+			++written;
+		}
+	}
+	return written;
+}
+
 // Gives the shop parcel an HD picture: items.json maps each item code to a
 // sprite, and a code without one shows nothing. The parcel borrows the
 // Standard of Heroes' flag, like its misc.txt row.
@@ -289,6 +343,8 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	}
 	std::error_code error;
 	fs::remove_all(excel, error);
+	// And the previous seed's skill icon sheets, which only a tree shuffle writes.
+	fs::remove_all(mpq / "data" / "hd" / "global" / "ui" / "spells", error);
 	if (!AddItemNames(storage, mpq, { "Archipelago Codex", rnd::ParcelName, rnd::ProphecyName, rnd::LedgerName })) {
 		std::printf("  couldn't add the Codex's name; it will show as \"An Evil Force\"\n");
 	}
@@ -298,6 +354,8 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 
 	const rnd::Settings settings = seed != nullptr ? seed->settings : rnd::Settings {};
 	std::vector<std::string> recipes;
+	// Both banks shuffle the trees alike, so either one's icon moves will do.
+	std::vector<rnd::IconMove> icons;
 	for (const std::string bank : Banks) {
 		const char* label = bank.empty() ? "RotW" : "Classic/LoD";
 		int blocked = 0;
@@ -309,7 +367,9 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			int moved = 0;
 			auto random = TableRandom(settings.seed, "skilltrees");
 			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) {
-				moved = rnd::ShuffleSkillTrees(t, skilldesc, random);
+				auto shuffle = rnd::ShuffleSkillTrees(t, skilldesc, random);
+				moved = shuffle.moved;
+				icons = std::move(shuffle.icons);
 				blocked = rnd::BlockClassSkills(t);
 			});
 			PatchTable(storage, excel, bank, "skilldesc.txt", [&](Table& t) { t = skilldesc; });
@@ -391,6 +451,10 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 		});
 	}
 
+	if (!icons.empty()) {
+		const int sheets = WriteSkillIcons(storage, mpq, icons);
+		std::printf("  %d skill icon sheets rebuilt for the new trees\n", sheets);
+	}
 	if (!recipes.empty()) {
 		std::ofstream list(modRoot / "runewords.txt", std::ios::trunc);
 		list << "Runeword recipes for this seed:\n\n";
@@ -423,6 +487,23 @@ int main(int argc, char** argv) {
 	if (!CascOpenStorage(options.game.c_str(), 0, &storage)) {
 		std::printf("Couldn't open the game files (error %lu). Pass the D2R folder with --game.\n", GetLastError());
 		return 1;
+	}
+	if (!options.find.empty()) {
+		CASC_FIND_DATA data {};
+		HANDLE search = CascFindFirstFile(storage, "*", &data, nullptr);
+		int found = 0;
+		for (bool more = search != nullptr; more; more = CascFindNextFile(search, &data)) {
+			if (std::string_view(data.szFileName).find(options.find) != std::string_view::npos) {
+				std::printf("%s (%llu bytes)\n", data.szFileName, static_cast<unsigned long long>(data.FileSize));
+				++found;
+			}
+		}
+		if (search != nullptr) {
+			CascFindClose(search);
+		}
+		CascCloseStorage(storage);
+		std::printf("%d files\n", found);
+		return 0;
 	}
 	if (!options.extract.empty()) {
 		const int result = Extract(storage, options);

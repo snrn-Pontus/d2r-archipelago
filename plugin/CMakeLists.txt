@@ -16,6 +16,7 @@ add_library(ap_core STATIC
 	src/loot.cpp
 	src/randomizer.cpp
 	src/save_state.cpp
+	src/sprite.cpp
 	src/table.cpp
 	src/websocket.cpp
 )
