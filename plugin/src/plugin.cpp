@@ -6,6 +6,7 @@
 
 #include "ap_client.h"
 #include "codex.h"
+#include "command_panel.h"
 #include "config.h"
 #include "game_data.h"
 #include "ids.h"
@@ -76,6 +77,9 @@ const D2RL::WidgetService*      gWidgets;
 const D2RL::OverlayService*   gOverlay;
 // Optional: blocks Town Portal and potion use while those are locked.
 const D2RL::ItemInteractionService* gInteractions;
+// Optional: the command panel (F9 or ap-panel).
+const D2RL::PanelService*     gPanels;
+D2RL::Panels::RegistrationHandle gPanel = D2RL::Panels::InvalidHandle;
 
 std::unique_ptr<ap::Client> gClient;
 std::atomic<bool>           gWorkQueued;
@@ -229,6 +233,20 @@ void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 		if (inGame) {
 			ShowInChat(line);
 		}
+	}
+}
+
+// A command's answer, on the UI thread: the console, and the chat in game, so
+// answers to the command panel's buttons can be seen.
+void Reply(const std::string& text) {
+	gContext->WriteConsoleMessage(text.c_str());
+	bool inGame = false;
+	{
+		std::lock_guard lock(gMutex);
+		inGame = gInGame;
+	}
+	if (inGame) {
+		ShowInChat(text);
 	}
 }
 
@@ -2220,8 +2238,10 @@ void __cdecl OnItemTooltip(const D2RL::PluginContext*, D2RL::SharedEvents::ItemT
 	event->length = static_cast<uint32_t>(length);
 }
 
-// Watches for D2R's death screen (YouDiedModal), and logs each distinct UI
-// message once, to find ones worth reacting to.
+void RunPanelButton(std::string_view id);
+
+// Watches for D2R's death screen (YouDiedModal), runs the command panel's
+// buttons, and logs each distinct UI message once, to find ones worth reacting to.
 auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::UiMessageEvent* event, void*) noexcept -> D2RL::SharedEvents::UiMessageAction {
 	static std::set<std::string> seen;
 	if (event == nullptr || event->structSize < D2RL::SharedEvents::UiMessageEventRequiredSize || event->target == nullptr || event->command == nullptr) {
@@ -2232,6 +2252,10 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::U
 	std::ranges::transform(lower, lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 	if (lower.find("youdied") != std::string::npos || lower.find("playerdied") != std::string::npos) {
 		PlayerDied(key);
+	}
+	if (std::string_view(event->target) == ap::panel::Target && std::string_view(event->command) == ap::panel::Command) {
+		RunPanelButton(event->text != nullptr ? event->text : "");
+		return D2RL::SharedEvents::UiMessageAction::Consume;
 	}
 	if (std::string_view(event->target) == "PanelManager" && event->text != nullptr
 		&& (std::string_view(event->command) == "OpenPanel" || std::string_view(event->command) == "OpenExclusivePanel")) {
@@ -2355,7 +2379,7 @@ auto CommandConnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 
 auto CommandDisconnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
 	gClient->Disconnect();
-	gContext->WriteConsoleMessage("Disconnected from Archipelago.");
+	Reply("Disconnected from Archipelago.");
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
@@ -2371,7 +2395,7 @@ auto CommandStatus(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*
 	}
 	const std::string text = gClient->StatusText() + " Server has " + std::to_string(gClient->Checked().size()) + "/" + std::to_string(gClient->LocationCount())
 	                       + " checks; this client found " + std::to_string(local) + ". Skills received: " + std::to_string(skills) + ".";
-	gContext->WriteConsoleMessage(text.c_str());
+	Reply(text);
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
@@ -2489,16 +2513,16 @@ auto CommandHints(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 		others = gSave.otherHints;
 	}
 	if (own.empty() && others.empty()) {
-		gContext->WriteConsoleMessage("No hints found yet: Deckard Cain, torn pages from superuniques and Scrolls of Prophecy have them.");
+		Reply("No hints found yet: Deckard Cain, torn pages from superuniques and Scrolls of Prophecy have them.");
 	}
 	for (const int index : own) {
 		if (index < static_cast<int>(slots.hints.size())) {
-			gContext->WriteConsoleMessage(("Hint: " + OwnHintText(slots.hints[static_cast<size_t>(index)])).c_str());
+			Reply("Hint: " + OwnHintText(slots.hints[static_cast<size_t>(index)]));
 		}
 	}
 	for (const int64_t location : others) {
 		if (const auto item = scouted.find(location); item != scouted.end()) {
-			gContext->WriteConsoleMessage(("Hint: " + OtherHintText(location, item->second)).c_str());
+			Reply("Hint: " + OtherHintText(location, item->second));
 		}
 	}
 	return D2RL::ConsoleCommandResult::Handled;
@@ -2508,7 +2532,7 @@ auto CommandHints(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 // Checks found in a locked act wait for its key; they count as held, not missing.
 auto CommandMissing(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
 	if (gClient->State() != ap::ConnectionState::Connected) {
-		gContext->WriteConsoleMessage("Not connected: ap-missing needs the server's list of checks.");
+		Reply("Not connected: ap-missing needs the server's list of checks.");
 		return D2RL::ConsoleCommandResult::Failed;
 	}
 	const auto args = SplitArgs(command);
@@ -2542,37 +2566,195 @@ auto CommandMissing(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 			acts.insert(act);
 		}
 		if (acts.empty()) {
-			gContext->WriteConsoleMessage("Every check is done.");
+			Reply("Every check is done.");
 		}
 		for (const int act : acts) {
-			gContext->WriteConsoleMessage((label(act) + ": " + std::to_string(left[act].size()) + " left" + heldText(act) + ".").c_str());
+			Reply(label(act) + ": " + std::to_string(left[act].size()) + " left" + heldText(act) + ".");
 		}
 		return D2RL::ConsoleCommandResult::Handled;
 	}
 	const int me = gClient->MySlot();
-	gContext->WriteConsoleMessage((ActLabel(here) + ": " + std::to_string(left[here].size()) + " left" + heldText(here) + ".").c_str());
+	Reply(ActLabel(here) + ": " + std::to_string(left[here].size()) + " left" + heldText(here) + ".");
 	for (const int64_t location : left[here]) {
-		gContext->WriteConsoleMessage(("  " + gClient->LocationName(location, me)).c_str());
+		Reply("  " + gClient->LocationName(location, me));
 	}
 	if (!left[-1].empty()) {
-		gContext->WriteConsoleMessage((std::to_string(left[-1].size()) + " more aren't tied to an act (level milestones, collections, find counts).").c_str());
+		Reply(std::to_string(left[-1].size()) + " more aren't tied to an act (level milestones, collections, find counts).");
 	}
-	gContext->WriteConsoleMessage("ap-missing all counts what's left in every act.");
+	Reply("ap-missing all counts what's left in every act.");
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
 // ap-ledger: a new Archipelago Ledger, if you lost yours.
 auto CommandLedger(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
-	std::lock_guard lock(gMutex);
-	gSave.ledgerGiven = false;
-	gLedgerRetryAt = {};
+	{
+		std::lock_guard lock(gMutex);
+		gSave.ledgerGiven = false;
+		gLedgerRetryAt = {};
+	}
+	Reply("A new Archipelago Ledger is on its way.");
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
 auto CommandCodex(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
-	std::lock_guard lock(gMutex);
-	gCodexDirty = true;
+	{
+		std::lock_guard lock(gMutex);
+		gCodexDirty = true;
+	}
+	Reply("Rebuilding the Archipelago Codex.");
 	return D2RL::ConsoleCommandResult::Handled;
+}
+
+// ap-reconnect: connect again with the saved server and slot.
+auto CommandReconnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
+	ap::Config config;
+	{
+		std::lock_guard lock(gMutex);
+		config = gConfig;
+	}
+	if (config.server.empty() || config.slot.empty()) {
+		Reply("No server saved yet: connect once with ap-connect <server[:port]> <slot> [password].");
+		return D2RL::ConsoleCommandResult::Failed;
+	}
+	gClient->Connect(config.server, config.slot, config.password);
+	Reply("Connecting to " + config.server + " as " + config.slot + "...");
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
+// ---- Command panel ----------------------------------------------------------
+
+// ap-panel and the F9 action open or close the command panel (UI thread).
+void TogglePanel() {
+	if (gPanels == nullptr) {
+		return;
+	}
+	if (const auto result = gPanels->togglePanel(gContext, gPanel); result != D2RL::Panels::Result::Success) {
+		Log("Archipelago: couldn't open the command panel (result " + std::to_string(static_cast<uint32_t>(result)) + ").");
+	}
+}
+
+void __cdecl TogglePanelWork(const D2RL::PluginContext*, void*) noexcept {
+	TogglePanel();
+}
+
+void __cdecl ClosePanelWork(const D2RL::PluginContext*, void*) noexcept {
+	if (gPanels != nullptr) {
+		gPanels->closePanel(gContext, gPanel);
+	}
+}
+
+auto CommandPanel(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
+	if (gPanels == nullptr) {
+		gContext->WriteConsoleMessage("ap-panel: this D2RLoader has no panel service.");
+		return D2RL::ConsoleCommandResult::Failed;
+	}
+	TogglePanel();
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
+// Key presses arrive during input processing, so the toggle waits for the UI thread.
+auto __cdecl OnPanelKey(const D2RL::PluginContext*, const D2RL::Input::ActionEvent* event, void*) noexcept -> D2RL::Input::ActionResult {
+	if (!D2RL::Input::HasActionEventField(event, D2RL::Input::ActionEventRequiredSize) || event->kind != D2RL::Input::ActionEventKind::Pressed) {
+		return D2RL::Input::ActionResult::Ignored;
+	}
+	gThreads->runOnUiThread(gContext, TogglePanelWork, nullptr);
+	return D2RL::Input::ActionResult::Handled;
+}
+
+// A command panel button (UI thread): closes the panel, so the chat with the
+// answer shows, and runs the button's command.
+void RunPanelButton(std::string_view id) {
+	const auto* button = ap::panel::Find(id);
+	if (button == nullptr) {
+		return;
+	}
+	Log("Archipelago: command panel: " + std::string(button->action));
+	gThreads->runOnUiThread(gContext, ClosePanelWork, nullptr);
+	if (button->action.starts_with('!')) {
+		if (gClient->State() != ap::ConnectionState::Connected) {
+			Reply("Not connected to Archipelago: " + gClient->StatusText());
+			return;
+		}
+		gClient->Say(std::string(button->action));
+		return;
+	}
+	using Handler = D2RL::ConsoleCommandResult (*)(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept;
+	static const std::map<std::string_view, Handler> handlers {
+		{ "ap-status", CommandStatus },
+		{ "ap-missing", CommandMissing },
+		{ "ap-hints", CommandHints },
+		{ "ap-ledger", CommandLedger },
+		{ "ap-codex", CommandCodex },
+		{ "ap-reconnect", CommandReconnect },
+		{ "ap-disconnect", CommandDisconnect },
+	};
+	const size_t           space   = button->action.find(' ');
+	const std::string_view name    = button->action.substr(0, space);
+	const std::string_view args    = space == std::string_view::npos ? std::string_view() : button->action.substr(space + 1);
+	const auto             handler = handlers.find(name);
+	if (handler == handlers.end()) {
+		return;
+	}
+	const D2RL::ConsoleCommandContext command {
+		.contextSize = sizeof(D2RL::ConsoleCommandContext),
+		.inputLength = static_cast<uint32_t>(button->action.size()),
+		.nameLength  = static_cast<uint32_t>(name.size()),
+		.argsLength  = static_cast<uint32_t>(args.size()),
+		.input       = button->action.data(),
+		.name        = name.data(),
+		.args        = args.data(),
+		.plugin      = gContext,
+	};
+	handler->second(nullptr, &command, nullptr);
+}
+
+// Registers the command panel's layout, the panel and its F9 action. Without
+// them the panel is missing, but the console commands still work.
+void RegisterCommandPanel(const D2RL::PluginContext* context) {
+	const D2RL::ResourceService* resources = nullptr;
+	const D2RL::InputService*    input     = nullptr;
+	if (context->QueryService(&resources) != D2RL::ServiceQueryResult::Success || !D2RL::HasResourceServiceField(resources, D2RL::ResourceServiceRequiredSize)
+		|| context->QueryService(&gPanels) != D2RL::ServiceQueryResult::Success || !D2RL::HasPanelServiceField(gPanels, D2RL::PanelServiceRequiredSize)) {
+		gPanels = nullptr;
+		context->LogWarn("Archipelago: no panel service; the command panel is off.");
+		return;
+	}
+	const std::string layout = ap::panel::Layout();
+	const D2RL::Resources::ResourceRegistration resource {
+		.structSize = D2RL::Resources::ResourceRegistrationSize,
+		.path       = ap::panel::Path,
+		.bytes      = layout.data(),
+		.byteCount  = layout.size(),
+	};
+	const D2RL::Panels::PanelRegistration registration {
+		.structSize = D2RL::Panels::PanelRegistrationSize,
+		.flags      = D2RL::Panels::PanelFlags::CloseOnEscape,
+		.localId    = ap::panel::LocalId,
+	};
+	D2RL::Resources::RegistrationHandle resourceHandle = D2RL::Resources::InvalidHandle;
+	if (resources->registerResource(context, &resource, &resourceHandle) != D2RL::Resources::Result::Success
+		|| gPanels->registerPanel(context, &registration, &gPanel) != D2RL::Panels::Result::Success) {
+		gPanels = nullptr;
+		context->LogWarn("Archipelago: couldn't register the command panel.");
+		return;
+	}
+	if (context->QueryService(&input) != D2RL::ServiceQueryResult::Success || !D2RL::HasInputServiceField(input, D2RL::InputServiceRequiredSize)) {
+		context->LogWarn("Archipelago: no input service; open the command panel with ap-panel.");
+		return;
+	}
+	const D2RL::Input::ActionRegistration action {
+		.structSize       = D2RL::Input::ActionRegistrationSize,
+		.logicalId        = "command-panel",
+		.displayName      = "Archipelago Commands",
+		.category         = "Archipelago",
+		.defaultPrimary   = { .key = D2RL::Input::Key::F9 },
+		.defaultSecondary = { .key = D2RL::Input::Key::None },
+		.callback         = OnPanelKey,
+	};
+	D2RL::Input::ActionHandle actionHandle = D2RL::Input::InvalidHandle;
+	if (input->registerAction(context, &action, &actionHandle) != D2RL::Input::Result::Success) {
+		context->LogWarn("Archipelago: couldn't register the command panel key; open it with ap-panel.");
+	}
 }
 
 template <typename Service, typename Check>
@@ -2647,6 +2829,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	} else {
 		context->LogWarn("Archipelago: no item interaction service; the Town Portal and Potion locks won't work.");
 	}
+	RegisterCommandPanel(context);
 	gConfig = ap::ParseConfig(ConfigText());
 	gClient = std::make_unique<ap::Client>(Log);
 
@@ -2685,6 +2868,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	}
 
 	const bool commands = context->RegisterConsoleCommand("ap-connect", CommandConnect, "Connect to an Archipelago server: ap-connect <server[:port]> <slot> [password].")
+	                   && context->RegisterConsoleCommand("ap-reconnect", CommandReconnect, "Connect again with the saved server and slot.")
 	                   && context->RegisterConsoleCommand("ap-disconnect", CommandDisconnect, "Disconnect from the Archipelago server.")
 	                   && context->RegisterConsoleCommand("ap-status", CommandStatus, "Show the Archipelago connection and progress.")
 	                   && context->RegisterConsoleCommand("ap-say", CommandSay, "Send a chat message to the Archipelago server.")
@@ -2695,6 +2879,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-hints", CommandHints, "List the hints you've found in game.")
 	                   && context->RegisterConsoleCommand("ap-ledger", CommandLedger, "Get a new Archipelago Ledger if you lost yours.")
 	                   && context->RegisterConsoleCommand("ap-missing", CommandMissing, "List the checks left in this act: ap-missing [all].")
+	                   && context->RegisterConsoleCommand("ap-panel", CommandPanel, "Open or close the Archipelago command panel (F9).")
 	                   && context->RegisterConsoleCommand("ap-ui", CommandUi, "Send a D2R UI message: ap-ui <target> <command> [text].");
 	if (!commands) {
 		context->LogError("Archipelago: couldn't register console commands.");

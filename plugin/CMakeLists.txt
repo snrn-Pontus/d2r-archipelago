@@ -12,6 +12,7 @@ add_subdirectory(sdk)
 add_library(ap_core STATIC
 	src/ap_client.cpp
 	src/codex.cpp
+	src/command_panel.cpp
 	src/config.cpp
 	src/loot.cpp
 	src/personalize.cpp

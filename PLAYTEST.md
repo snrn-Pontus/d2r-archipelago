@@ -61,6 +61,19 @@ Any seed with the defaults.
 - [ ] `ap-missing` lists the checks left in your act by name; `ap-missing all` gives a count per act.
 - [ ] With `ap-disconnect`, the tooltip says "not connected" and `ap-missing` says it needs the server.
 
+## 1b. Command panel
+
+Any seed, connected.
+
+- [ ] F9 opens the Archipelago panel: a title, "Answers show in the chat.", twelve buttons in two
+      columns and Close under them, over a dimmed screen. F9 again, Escape and Close each close it.
+- [ ] `ap-panel` in the console opens and closes it too; Options, Controls lists "Archipelago Commands".
+- [ ] Each button closes the panel and answers in the chat: Status, Checks Left Here, Checks Left by Act,
+      Hints Found, New Ledger, Rebuild Codex; Server Hints, Items Left, Multiworld Status and Collect show the
+      server's reply. Disconnect then Reconnect drops and restores the connection.
+- [ ] Clicks on the panel don't move the character or hit anything behind it.
+- [ ] Controller: the buttons can be reached and pressed with the gamepad.
+
 ## 2. New checks
 
 Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: true`.

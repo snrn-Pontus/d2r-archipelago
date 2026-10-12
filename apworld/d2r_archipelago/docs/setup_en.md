@@ -39,3 +39,8 @@ classes') must stay in your inventory; if you lose one, `ap-codex` rebuilds it.
 Your character also gets an **Archipelago Ledger**. Hover over it to see how many checks you've done in
 each act, and outside any act, out of the total. `ap-missing` lists the checks left in the act you're in,
 and `ap-missing all` counts them for every act. If you lose the Ledger, `ap-ledger` makes another.
+
+**F9** (or `ap-panel`) opens the Archipelago command panel, so you don't need the console for everyday
+commands: status, checks left here or by act, hints found in game, the server's hints (`!hint`), items
+left (`!remaining`), the multiworld's status (`!status`), `!collect`, a new Ledger or Codex, and reconnect
+or disconnect. Answers show in the chat. The key can be changed in Options, Controls.

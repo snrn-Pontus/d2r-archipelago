@@ -2,6 +2,7 @@
 
 #include "ap_client.h"
 #include "codex.h"
+#include "command_panel.h"
 #include "config.h"
 #include "game_data.h"
 #include "ids.h"
@@ -12,6 +13,8 @@
 #include "table.h"
 #include "save_state.h"
 #include "sprite.h"
+
+#include <nlohmann/json.hpp>
 
 #include <cstdio>
 #include <cstring>
@@ -688,7 +691,31 @@ void TestPersonalization() {
 	EXPECT(HexDump(std::span(data).first(18)).find("\n0010: ") != std::string::npos);
 }
 
+void TestCommandPanel() {
+	const auto layout = nlohmann::json::parse(ap::panel::Layout());
+	EXPECT(layout["type"] == "Panel" && layout["name"] == ap::panel::Name);
+	std::set<std::string> names;
+	std::set<std::string> messages;
+	for (const auto& child : layout["children"]) {
+		EXPECT(names.insert(child["name"].get<std::string>()).second);
+		if (child["type"] == "ButtonWidget") {
+			messages.insert(child["fields"]["onClickMessage"].get<std::string>());
+		}
+	}
+	// Every button runs through Find, and Close closes the panel.
+	for (const auto& button : ap::panel::Buttons()) {
+		EXPECT(ap::panel::Find(button.id) == &button);
+		EXPECT(messages.contains(std::string(ap::panel::Target) + ":" + ap::panel::Command + ":" + std::string(button.id)));
+		EXPECT(button.action.starts_with('!') || button.action.starts_with("ap-"));
+	}
+	EXPECT(messages.contains(std::string("PanelManager:ClosePanel:") + ap::panel::Name));
+	EXPECT(messages.size() == ap::panel::Buttons().size() + 1);
+	EXPECT(ap::panel::Find("nothing") == nullptr);
+	EXPECT(std::string(ap::panel::Name) == std::string("archipelago/") + ap::panel::LocalId);
+}
+
 int main() {
+	TestCommandPanel();
 	TestQuestTriggers();
 	TestCodexLevels();
 	TestTableRoundTrip();
