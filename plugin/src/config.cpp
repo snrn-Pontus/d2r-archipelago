@@ -62,6 +62,8 @@ auto ParseConfig(const std::string& text) -> Config {
 			config.password = value;
 		} else if (key == "auto_connect") {
 			config.autoConnect = value == "true";
+		} else if (key == "debug_tools") {
+			config.debugTools = value == "true";
 		} else if (key == "codex_item" && !value.empty()) {
 			config.codexItem = value;
 		} else if (key == "codex_unique" && !value.empty()) {
@@ -82,7 +84,9 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "server = " << Quote(config.server) << "\n"
 	    << "slot = " << Quote(config.slot) << "\n"
 	    << "password = " << Quote(config.password) << "\n"
-	    << "auto_connect = " << (config.autoConnect ? "true" : "false") << "\n\n"
+	    << "auto_connect = " << (config.autoConnect ? "true" : "false") << "\n"
+	    << "# Set by ap-debug on/off: the debug panel (F10) for testing.\n"
+	    << "debug_tools = " << (config.debugTools ? "true" : "false") << "\n\n"
 	    << "# The Codex charm that carries your received skills.\n"
 	    << "codex_item = " << Quote(config.codexItem) << "\n"
 	    << "# UniqueItems record of the Archipelago Codex, added by d2r-ap-setup.\n"

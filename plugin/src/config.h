@@ -14,6 +14,8 @@ struct Config {
 	std::string slot;
 	std::string password;
 	bool autoConnect = true;
+	// The debug panel (F10), set by ap-debug on/off.
+	bool debugTools = false;
 	// The Codex is the "Archipelago Codex" unique small charm that d2r-ap-setup
 	// adds to UniqueItems. If D2R refuses it, the plugin makes a Magic small
 	// charm with a fixed, level-1 affix instead ("Stout", +1 Defense).

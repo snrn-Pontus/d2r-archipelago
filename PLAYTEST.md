@@ -8,6 +8,16 @@ console command and refused item).
 matches, then start a new Lord of Destruction character. Most sessions test faster with items handed out
 from the server console: `/send <slot> <item name>` (for example `/send Snrn Act I Waypoints`).
 
+**Debug panel:** `ap-debug on` once (it's saved), then F10 or `ap-debug` opens it. Four columns:
+- **Go To:** jumps to the areas the checks below need (Cold Plains, Stony Field, Tristram, Moo Moo Farm,
+  Lut Gholein, Frigid Highlands...).
+- **Character:** god mode, one-hit kills, heal, Level 6 / 30, skill points, gold, all waypoints, 25 Fallen,
+  Andariel, Radament, Kill Me.
+- **Items:** quest items, a unique ring, a Town Portal scroll and a potion, made in your inventory as if
+  found, so they send their checks.
+- **From the Server:** `!getitem` for all the lock items, the Normal act keys, a bundle of rewards, Codex
+  Empowerment, Skill Point and each trap, the same as `/send`. They stay in the seed's save.
+
 ## 0. Codex charms
 
 - [ ] Your class's skills are on one Codex and other classes' skills on a second one. Below level 6 the
@@ -74,6 +84,20 @@ Any seed, connected.
 - [ ] Clicks on the panel don't move the character or hit anything behind it.
 - [ ] Controller: the buttons can be reached and pressed with the gamepad.
 
+## 1c. Debug panel
+
+Any seed, connected. Several of these D2RCore cheats haven't been tried yet; note any that do nothing
+(the log has each command).
+
+- [ ] F10 does nothing until `ap-debug on`; then it opens "Archipelago Debug" with four headed columns of
+      twelve buttons and Close, all on screen. `ap-debug off` closes it and F10 stops working.
+- [ ] Go To: Cold Plains and Tristram from Rogue Encampment. Lut Gholein without the Act II key warps you
+      back (that's section 3's test); with the keys from From the Server, Kurast Docks and Harrogath work.
+- [ ] God Mode, One-Hit Kills (`easykill`), Level 6 and Level 30 (`level <n>`) do what they say.
+- [ ] Spawn Andariel / Spawn Radament: killing the spawn sends their quest check.
+- [ ] Items: each lands in the inventory and its check is sent; the unique ring counts for "Find 1 Unique".
+- [ ] From the Server: the chat shows "Cheat console: sending ..." and the item arrives.
+
 ## 2. New checks
 
 Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: true`.
@@ -112,11 +136,16 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 
 `cube_lock`, `town_portal_lock`, `potion_lock`, `stash_lock`, `merchant_lock` and `waypoint_lock` all on.
 
-- [ ] Each is blocked with a chat message: opening the Cube, reading a Town Portal scroll or tome, drinking a
-      potion, opening the stash, trading with a merchant, using an Act I waypoint.
+- [x] Blocked with a chat message: drinking a potion, opening the stash (`BankExpansionLayout`), trading
+      with a merchant (`VendorPanelLayout`), using an Act I waypoint (`WaypointsPanelExpansion`). You can
+      still move afterwards.
+- [ ] Opening the Cube is blocked (its panel name hasn't been seen yet; the log lists each panel opened).
 - [x] Potions stay locked from the belt hotkeys too.
+- [x] Town Portal: D2RLoader doesn't report scroll use, so within 5 seconds every scroll and tome on the
+      character crumbles, with a chat message (the starting scroll too).
+- [x] Town Portal Access brings a Tome of Town Portal, once.
 - [ ] Each opens after its item: `Horadric Cube Access`, `Town Portal Access`, `Potion Access`,
-      `Stash Access`, `Merchant Access`, `Act I Waypoints`.
+      `Stash Access`, `Merchant Access`, `Act I Waypoints`. (Stash confirmed after All Lock Items.)
 - [ ] Shop parcels can't be bought before Merchant Access.
 - [ ] None of the blocks freezes the game or leaves a panel half-open.
 

@@ -3,33 +3,59 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace ap::panel {
 
-// The in-game command panel: a grid of buttons for the Archipelago commands a
-// player needs, opened with a key (F9 by default) or ap-panel. Each button
-// sends the UI message "archipelago:Run:<id>", which the plugin handles.
+// The in-game panels: grids of buttons opened with a key or a console command.
+// The command panel (F9 or ap-panel) has the Archipelago commands a player
+// needs; the debug panel (F10 or ap-debug, after ap-debug on) has test tools.
+// Each button sends a UI message the plugin handles; ids are unique across
+// both panels. D2R drops button messages to targets it doesn't know, so they
+// go to PanelManager as "PanelManager:OpenPanel:archipelago-run/<id>", which
+// the plugin consumes before D2R looks for that panel.
 
-inline constexpr const char* LocalId = "CommandPanel";
-inline constexpr const char* Name    = "archipelago/CommandPanel";
-inline constexpr const char* Path    = "data/global/ui/layouts/archipelago/CommandPanelhd.json";
-inline constexpr const char* Target  = "archipelago";
-inline constexpr const char* Command = "Run";
+// The click message for a button.
+auto ClickMessage(std::string_view id) -> std::string;
+
+// The button id a UI message carries, or empty if it isn't a button click.
+auto ClickedButton(std::string_view target, std::string_view command, std::string_view text) -> std::string_view;
 
 struct Button {
 	std::string_view id;
 	std::string_view label;
-	// What it does: a plugin console command, or a server chat command ("!hint").
+	// What it does: a plugin console command ("ap-core goto 3"), or server chat
+	// commands ("!hint"), several joined by "; ".
 	std::string_view action;
 };
 
-// Two columns, filled row by row: game-side tools left, the server's right.
-auto Buttons() -> std::span<const Button>;
+// A column of buttons under an optional heading.
+struct Column {
+	std::string_view heading;
+	std::span<const Button> buttons;
+};
 
-// The button with this id, or nullptr.
-auto Find(std::string_view id) -> const Button*;
+struct Panel {
+	const char* localId;
+	const char* name; // "archipelago/" + localId
+	const char* path; // the HD layout D2R loads for name
+	std::string_view title;
+	std::string_view help;
+	std::span<const Column> columns;
+	// Space between buttons.
+	int gap;
+};
 
-// The panel's layout JSON (the HD layout D2R loads for Name).
-auto Layout() -> std::string;
+auto Main() -> const Panel&;
+auto Debug() -> const Panel&;
+
+// The button with this id on the panel, or nullptr.
+auto Find(const Panel& panel, std::string_view id) -> const Button*;
+
+// The panel's layout JSON.
+auto Layout(const Panel& panel) -> std::string;
+
+// An action's parts: "!a; !b" is two server commands.
+auto SplitAction(std::string_view action) -> std::vector<std::string_view>;
 
 } // namespace ap::panel

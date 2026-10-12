@@ -77,9 +77,10 @@ const D2RL::WidgetService*      gWidgets;
 const D2RL::OverlayService*   gOverlay;
 // Optional: blocks Town Portal and potion use while those are locked.
 const D2RL::ItemInteractionService* gInteractions;
-// Optional: the command panel (F9 or ap-panel).
+// Optional: the command panel (F9 or ap-panel) and the debug panel (F10 or ap-debug).
 const D2RL::PanelService*     gPanels;
 D2RL::Panels::RegistrationHandle gPanel = D2RL::Panels::InvalidHandle;
+D2RL::Panels::RegistrationHandle gDebugPanel = D2RL::Panels::InvalidHandle;
 
 std::unique_ptr<ap::Client> gClient;
 std::atomic<bool>           gWorkQueued;
@@ -1293,6 +1294,70 @@ void ScanParcels(D2RL::PlayerHandle player) {
 	}
 }
 
+// ---- Town Portal lock (game thread) ---------------------------------------------
+//
+// D2RLoader doesn't report Town Portal scroll use, so it can't be blocked like a
+// potion. Instead, while Town Portal is locked, scrolls and tomes on the
+// character are taken away; Town Portal Access then brings a Tome of Town Portal.
+
+auto __cdecl CollectPortals(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
+	static const uint32_t scroll = ap::loot::CodeFromText("tsc"), tome = ap::loot::CodeFromText("tbk");
+	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && (item->code == scroll || item->code == tome)
+		&& item->container != D2RL::Items::ItemContainer::Ground && item->container != D2RL::Items::ItemContainer::Trade) {
+		static_cast<std::vector<D2RL::ItemHandle>*>(userData)->push_back(item->handle);
+	}
+	return D2RL::Inventory::IterationAction::Continue;
+}
+
+void EnforceTownPortalLock(D2RL::PlayerHandle player) {
+	bool locked = false, lockInSeed = false, given = false;
+	{
+		std::lock_guard lock(gMutex);
+		locked = gLocks.townPortal;
+		lockInSeed = gSlots.locks.townPortal;
+		given = gSave.portalTomeGiven;
+	}
+	if (!locked) {
+		if (!lockInSeed || given) {
+			return;
+		}
+		auto spec = MakeSpec(ap::loot::CodeFromText("tbk"), D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
+		spec.quantity = 20;
+		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
+		auto result = gItems->createItem(gContext, player, &spec, &item);
+		if (result != D2RL::Items::Result::Success) {
+			spec.destination.container = D2RL::Items::ItemContainer::Ground;
+			result = gItems->createItem(gContext, player, &spec, &item);
+		}
+		if (result != D2RL::Items::Result::Success) {
+			Log("Archipelago: couldn't give the Tome of Town Portal (" + std::to_string(static_cast<uint32_t>(result)) + ").");
+			return;
+		}
+		{
+			std::lock_guard lock(gMutex);
+			gSave.portalTomeGiven = true;
+			gSave.Save(gSavePath);
+		}
+		Feed("Archipelago: Town Portal Access! Here's a Tome of Town Portal.");
+		return;
+	}
+	std::vector<D2RL::ItemHandle> portals;
+	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
+	if (gInventory->forEachInventoryItem(gContext, player, &filter, CollectPortals, &portals) != D2RL::Inventory::Result::Success) {
+		return;
+	}
+	int removed = 0;
+	for (const auto item : portals) {
+		if (gItems->destroyItem(gContext, player, item, D2RL::Items::SocketedItemPolicy::DestroyContents) == D2RL::Items::Result::Success) {
+			++removed;
+		}
+	}
+	if (removed > 0) {
+		Log("Archipelago: removed " + std::to_string(removed) + " Town Portal scrolls or tomes.");
+		Feed("Archipelago: Town Portal is locked until you find Town Portal Access, so your Town Portal scrolls crumble.");
+	}
+}
+
 // The superunique copies are the last MonStats rows of each bank.
 void FindSuperUniqueMonsters() {
 	int bases[2] = { -1, -1 };
@@ -1405,6 +1470,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 
 	ScanItems(player);
 	ScanParcels(player);
+	EnforceTownPortalLock(player);
 	GiveLedger(player);
 	{
 		auto records = UniqueRecords("Archipelago Codex");
@@ -1682,6 +1748,9 @@ void UpdateLocks() {
 	for (uint32_t act = 0; act < 3; ++act) {
 		locks.waypoints[act] = locked(slots.locks.waypoints, static_cast<uint32_t>(Lock::Waypoints) + act);
 	}
+	Log(std::string("Archipelago: locked: cube ") + (locks.cube ? "yes" : "no") + ", town portal " + (locks.townPortal ? "yes" : "no") + ", potions "
+	    + (locks.potions ? "yes" : "no") + ", stash " + (locks.stash ? "yes" : "no") + ", merchants " + (locks.merchants ? "yes" : "no")
+	    + ", waypoints " + (locks.waypoints[0] ? "I " : "") + (locks.waypoints[1] ? "II " : "") + (locks.waypoints[2] ? "III" : "") + ".");
 	std::lock_guard lock(gMutex);
 	gLocks = locks;
 	gSlots = slots;
@@ -1689,6 +1758,7 @@ void UpdateLocks() {
 
 // Tells the player why something didn't work, at most every few seconds.
 void LockMessage(const std::string& text) {
+	Log("Archipelago: blocked: " + text);
 	{
 		std::lock_guard lock(gMutex);
 		if (Clock::now() - gLastLockMessage < std::chrono::seconds(3)) {
@@ -1702,18 +1772,21 @@ void LockMessage(const std::string& text) {
 // Why a D2R panel may not open right now, or empty if it may.
 auto LockedPanel(std::string panel) -> std::string {
 	std::erase(panel, '"');
+	// D2R's names vary with the layout: BankExpansionLayout, VendorPanelLayout,
+	// WaypointsPanelExpansion, and Original/Classic variants.
+	const auto is = [&](std::string_view prefix) { return panel.starts_with(prefix); };
 	std::lock_guard lock(gMutex);
 	const int act = std::clamp(gAct, 0, 4);
-	if (panel == "WaypointsPanel" && gLocks.waypoints[act]) {
+	if (is("Waypoints") && gLocks.waypoints[act]) {
 		return std::string("the waypoints are locked until you find ") + ActNames[act] + " Waypoints.";
 	}
-	if (panel == "BankPanel" && gLocks.stash) {
+	if (is("Bank") && gLocks.stash) {
 		return "your stash is locked until you find Stash Access.";
 	}
-	if (panel == "HoradricCubePanel" && gLocks.cube) {
+	if ((is("HoradricCube") || is("Cube")) && gLocks.cube) {
 		return "the Horadric Cube is locked until you find Horadric Cube Access.";
 	}
-	if (panel == "VendorPanel" && gLocks.merchants) {
+	if (is("Vendor") && gLocks.merchants) {
 		return "merchants won't trade with you until you find Merchant Access.";
 	}
 	return {};
@@ -1755,6 +1828,11 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 	D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
 	if (gItems->getItemInfo(gContext, event->item, &info) != D2RL::Items::Result::Success) {
 		return Decision::Continue;
+	}
+	{
+		std::string code(4, ' ');
+		std::memcpy(code.data(), &info.code, 4);
+		Log("Archipelago: activated \"" + code + "\" (container " + std::to_string(static_cast<uint32_t>(event->container)) + ").");
 	}
 	if (questItems && !IsReward(info)) {
 		if (const auto check = QuestItemCheck(info.code, difficulty)) {
@@ -2281,8 +2359,8 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::U
 	if (lower.find("youdied") != std::string::npos || lower.find("playerdied") != std::string::npos) {
 		PlayerDied(key);
 	}
-	if (std::string_view(event->target) == ap::panel::Target && std::string_view(event->command) == ap::panel::Command) {
-		RunPanelButton(event->text != nullptr ? event->text : "");
+	if (const auto id = ap::panel::ClickedButton(event->target, event->command, event->text != nullptr ? event->text : ""); !id.empty()) {
+		RunPanelButton(id);
 		return D2RL::SharedEvents::UiMessageAction::Consume;
 	}
 	if (std::string_view(event->target) == "PanelManager" && event->text != nullptr
@@ -2295,7 +2373,9 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::U
 	if (seen.size() >= 400) {
 		return D2RL::SharedEvents::UiMessageAction::Continue;
 	}
-	if (seen.insert(key).second) {
+	// Panel names matter (which panel the stash or a merchant opens), so those log once per panel.
+	if (seen.insert(key == "PanelManager:OpenPanel" || key == "PanelManager:OpenExclusivePanel" || key == "PanelManager:TogglePanel"
+		    ? key + ":" + (event->text != nullptr ? event->text : "") : key).second) {
 		const std::string text = event->text != nullptr ? std::string(event->text).substr(0, 80) : "";
 		Log("Archipelago: UI message " + key + (text.empty() ? "" : " \"" + text + "\""));
 	}
@@ -2656,25 +2736,26 @@ auto CommandReconnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, vo
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
-// ---- Command panel ----------------------------------------------------------
+// ---- Command and debug panels -------------------------------------------------
 
-// ap-panel and the F9 action open or close the command panel (UI thread).
-void TogglePanel() {
+auto DebugToolsOn() -> bool {
+	std::lock_guard lock(gMutex);
+	return gConfig.debugTools;
+}
+
+// Opens or closes a panel; userData points at its handle (UI thread).
+void __cdecl TogglePanelWork(const D2RL::PluginContext*, void* userData) noexcept {
 	if (gPanels == nullptr) {
 		return;
 	}
-	if (const auto result = gPanels->togglePanel(gContext, gPanel); result != D2RL::Panels::Result::Success) {
-		Log("Archipelago: couldn't open the command panel (result " + std::to_string(static_cast<uint32_t>(result)) + ").");
+	if (const auto result = gPanels->togglePanel(gContext, *static_cast<D2RL::Panels::RegistrationHandle*>(userData)); result != D2RL::Panels::Result::Success) {
+		Log("Archipelago: couldn't open a panel (result " + std::to_string(static_cast<uint32_t>(result)) + ").");
 	}
 }
 
-void __cdecl TogglePanelWork(const D2RL::PluginContext*, void*) noexcept {
-	TogglePanel();
-}
-
-void __cdecl ClosePanelWork(const D2RL::PluginContext*, void*) noexcept {
+void __cdecl ClosePanelWork(const D2RL::PluginContext*, void* userData) noexcept {
 	if (gPanels != nullptr) {
-		gPanels->closePanel(gContext, gPanel);
+		gPanels->closePanel(gContext, *static_cast<D2RL::Panels::RegistrationHandle*>(userData));
 	}
 }
 
@@ -2683,36 +2764,111 @@ auto CommandPanel(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 		gContext->WriteConsoleMessage("ap-panel: this D2RLoader has no panel service.");
 		return D2RL::ConsoleCommandResult::Failed;
 	}
-	TogglePanel();
+	TogglePanelWork(gContext, &gPanel);
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
 // Key presses arrive during input processing, so the toggle waits for the UI thread.
-auto __cdecl OnPanelKey(const D2RL::PluginContext*, const D2RL::Input::ActionEvent* event, void*) noexcept -> D2RL::Input::ActionResult {
-	if (!D2RL::Input::HasActionEventField(event, D2RL::Input::ActionEventRequiredSize) || event->kind != D2RL::Input::ActionEventKind::Pressed) {
+// userData points at the panel's handle; the debug panel's key does nothing while
+// the debug tools are off.
+auto __cdecl OnPanelKey(const D2RL::PluginContext*, const D2RL::Input::ActionEvent* event, void* userData) noexcept -> D2RL::Input::ActionResult {
+	if (!D2RL::Input::HasActionEventField(event, D2RL::Input::ActionEventRequiredSize) || event->kind != D2RL::Input::ActionEventKind::Pressed
+		|| (userData == &gDebugPanel && !DebugToolsOn())) {
 		return D2RL::Input::ActionResult::Ignored;
 	}
-	gThreads->runOnUiThread(gContext, TogglePanelWork, nullptr);
+	gThreads->runOnUiThread(gContext, TogglePanelWork, userData);
 	return D2RL::Input::ActionResult::Handled;
 }
 
-// A command panel button (UI thread): closes the panel, so the chat with the
-// answer shows, and runs the button's command.
-void RunPanelButton(std::string_view id) {
-	const auto* button = ap::panel::Find(id);
-	if (button == nullptr) {
+// Items made by ap-debug spawn, waiting for the game thread: a code, and
+// whether it's a unique.
+std::vector<std::pair<uint32_t, bool>> gSpawnQueue;
+
+// Makes the queued items in the inventory, or at your feet if it's full. They
+// aren't marked as rewards, so they count as found.
+void __cdecl SpawnWork(const D2RL::PluginContext*, void*) noexcept {
+	std::vector<std::pair<uint32_t, bool>> spawns;
+	{
+		std::lock_guard lock(gMutex);
+		spawns.swap(gSpawnQueue);
+	}
+	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
+	if (gInventory->getLocalPlayer(gContext, &player) != D2RL::Inventory::Result::Success) {
+		std::lock_guard lock(gMutex);
+		gConsoleQueue.push_back("ap-debug: join a game first.");
 		return;
 	}
-	Log("Archipelago: command panel: " + std::string(button->action));
-	gThreads->runOnUiThread(gContext, ClosePanelWork, nullptr);
-	if (button->action.starts_with('!')) {
-		if (gClient->State() != ap::ConnectionState::Connected) {
-			Reply("Not connected to Archipelago: " + gClient->StatusText());
-			return;
+	for (const auto& [code, unique] : spawns) {
+		auto spec = MakeSpec(code, unique ? D2RL::Items::Quality::Unique : D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
+		spec.itemLevel = unique ? 99 : 1;
+		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
+		auto result = gItems->createItem(gContext, player, &spec, &item);
+		if (result != D2RL::Items::Result::Success) {
+			spec.destination.container = D2RL::Items::ItemContainer::Ground;
+			result = gItems->createItem(gContext, player, &spec, &item);
 		}
-		gClient->Say(std::string(button->action));
-		return;
+		std::string name = "item";
+		D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
+		if (result == D2RL::Items::Result::Success && gItems->getItemInfo(gContext, item, &info) == D2RL::Items::Result::Success) {
+			name = DescribeItem(info);
+		}
+		std::lock_guard lock(gMutex);
+		gConsoleQueue.push_back(result == D2RL::Items::Result::Success
+			? "ap-debug: made " + name + "."
+			: "ap-debug: couldn't make that item (result " + std::to_string(static_cast<uint32_t>(result)) + ").");
 	}
+}
+
+// ap-debug on|off turns the debug tools on or off (saved in the config);
+// ap-debug opens the debug panel (F10); ap-debug spawn <code> [unique] makes an
+// item as if found.
+auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
+	const auto args = SplitArgs(command);
+	if (!args.empty() && (args[0] == "on" || args[0] == "off")) {
+		ap::Config config;
+		{
+			std::lock_guard lock(gMutex);
+			gConfig.debugTools = args[0] == "on";
+			config = gConfig;
+		}
+		if (!gContext->WriteConfig(ap::FormatConfig(config).c_str())) {
+			gContext->WriteConsoleWarning("Couldn't save the debug setting to the config file.");
+		}
+		if (!config.debugTools && gPanels != nullptr) {
+			gPanels->closePanel(gContext, gDebugPanel);
+		}
+		Reply(config.debugTools ? "Debug tools on: F10 or ap-debug opens the debug panel." : "Debug tools off.");
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	if (!DebugToolsOn()) {
+		Reply("The debug tools are off; turn them on with ap-debug on.");
+		return D2RL::ConsoleCommandResult::Failed;
+	}
+	if (args.empty()) {
+		if (gPanels == nullptr) {
+			gContext->WriteConsoleMessage("ap-debug: this D2RLoader has no panel service.");
+			return D2RL::ConsoleCommandResult::Failed;
+		}
+		TogglePanelWork(gContext, &gDebugPanel);
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	if (args[0] == "spawn" && args.size() >= 2 && args[1].size() >= 3 && args[1].size() <= 4) {
+		{
+			std::lock_guard lock(gMutex);
+			gSpawnQueue.emplace_back(ap::loot::CodeFromText(args[1].c_str()), args.size() > 2 && args[2] == "unique");
+		}
+		if (gThreads->runOnGameThread(gContext, SpawnWork, nullptr) != D2RL::Threads::Result::Success) {
+			gContext->WriteConsoleMessage("ap-debug: join a game first.");
+			return D2RL::ConsoleCommandResult::Failed;
+		}
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	gContext->WriteConsoleMessage("Usage: ap-debug [on|off], or ap-debug spawn <item code> [unique]");
+	return D2RL::ConsoleCommandResult::InvalidArguments;
+}
+
+// Runs one console command from a panel button.
+void RunPanelCommand(std::string_view action) {
 	using Handler = D2RL::ConsoleCommandResult (*)(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept;
 	static const std::map<std::string_view, Handler> handlers {
 		{ "ap-status", CommandStatus },
@@ -2722,20 +2878,22 @@ void RunPanelButton(std::string_view id) {
 		{ "ap-codex", CommandCodex },
 		{ "ap-reconnect", CommandReconnect },
 		{ "ap-disconnect", CommandDisconnect },
+		{ "ap-core", CommandCore },
+		{ "ap-debug", CommandDebug },
 	};
-	const size_t           space   = button->action.find(' ');
-	const std::string_view name    = button->action.substr(0, space);
-	const std::string_view args    = space == std::string_view::npos ? std::string_view() : button->action.substr(space + 1);
+	const size_t           space   = action.find(' ');
+	const std::string_view name    = action.substr(0, space);
+	const std::string_view args    = space == std::string_view::npos ? std::string_view() : action.substr(space + 1);
 	const auto             handler = handlers.find(name);
 	if (handler == handlers.end()) {
 		return;
 	}
 	const D2RL::ConsoleCommandContext command {
 		.contextSize = sizeof(D2RL::ConsoleCommandContext),
-		.inputLength = static_cast<uint32_t>(button->action.size()),
+		.inputLength = static_cast<uint32_t>(action.size()),
 		.nameLength  = static_cast<uint32_t>(name.size()),
 		.argsLength  = static_cast<uint32_t>(args.size()),
-		.input       = button->action.data(),
+		.input       = action.data(),
 		.name        = name.data(),
 		.args        = args.data(),
 		.plugin      = gContext,
@@ -2743,52 +2901,94 @@ void RunPanelButton(std::string_view id) {
 	handler->second(nullptr, &command, nullptr);
 }
 
-// Registers the command panel's layout, the panel and its F9 action. Without
-// them the panel is missing, but the console commands still work.
-void RegisterCommandPanel(const D2RL::PluginContext* context) {
-	const D2RL::ResourceService* resources = nullptr;
-	const D2RL::InputService*    input     = nullptr;
-	if (context->QueryService(&resources) != D2RL::ServiceQueryResult::Success || !D2RL::HasResourceServiceField(resources, D2RL::ResourceServiceRequiredSize)
-		|| context->QueryService(&gPanels) != D2RL::ServiceQueryResult::Success || !D2RL::HasPanelServiceField(gPanels, D2RL::PanelServiceRequiredSize)) {
-		gPanels = nullptr;
-		context->LogWarn("Archipelago: no panel service; the command panel is off.");
+// A panel button (UI thread): closes its panel, so the chat with the answer
+// shows, and runs the button's commands. Debug buttons only run while the
+// debug tools are on.
+void RunPanelButton(std::string_view id) {
+	auto* handle = &gPanel;
+	const auto* button = ap::panel::Find(ap::panel::Main(), id);
+	if (button == nullptr && DebugToolsOn()) {
+		handle = &gDebugPanel;
+		button = ap::panel::Find(ap::panel::Debug(), id);
+	}
+	if (button == nullptr) {
+		Log("Archipelago: panel button " + std::string(id) + " isn't on an open panel (debug tools " + (DebugToolsOn() ? "on" : "off") + ").");
 		return;
 	}
-	const std::string layout = ap::panel::Layout();
+	Log("Archipelago: panel button: " + std::string(button->action));
+	gThreads->runOnUiThread(gContext, ClosePanelWork, handle);
+	for (const auto part : ap::panel::SplitAction(button->action)) {
+		if (!part.starts_with('!')) {
+			RunPanelCommand(part);
+			continue;
+		}
+		if (gClient->State() != ap::ConnectionState::Connected) {
+			Reply("Not connected to Archipelago: " + gClient->StatusText());
+			return;
+		}
+		gClient->Say(std::string(part));
+	}
+}
+
+// Registers a panel's layout, the panel and its key. Without them the panel is
+// missing, but the console commands still work. False if the panel is missing.
+bool RegisterPanel(const D2RL::PluginContext* context, const D2RL::ResourceService* resources, const D2RL::InputService* input,
+	const ap::panel::Panel& panel, D2RL::Panels::RegistrationHandle& handle, const char* logicalId, const char* displayName, D2RL::Input::Key key) {
+	const std::string layout = ap::panel::Layout(panel);
 	const D2RL::Resources::ResourceRegistration resource {
 		.structSize = D2RL::Resources::ResourceRegistrationSize,
-		.path       = ap::panel::Path,
+		.path       = panel.path,
 		.bytes      = layout.data(),
 		.byteCount  = layout.size(),
 	};
 	const D2RL::Panels::PanelRegistration registration {
 		.structSize = D2RL::Panels::PanelRegistrationSize,
 		.flags      = D2RL::Panels::PanelFlags::CloseOnEscape,
-		.localId    = ap::panel::LocalId,
+		.localId    = panel.localId,
 	};
 	D2RL::Resources::RegistrationHandle resourceHandle = D2RL::Resources::InvalidHandle;
 	if (resources->registerResource(context, &resource, &resourceHandle) != D2RL::Resources::Result::Success
-		|| gPanels->registerPanel(context, &registration, &gPanel) != D2RL::Panels::Result::Success) {
-		gPanels = nullptr;
-		context->LogWarn("Archipelago: couldn't register the command panel.");
-		return;
+		|| gPanels->registerPanel(context, &registration, &handle) != D2RL::Panels::Result::Success) {
+		context->LogWarn(("Archipelago: couldn't register the " + std::string(panel.localId) + ".").c_str());
+		return false;
 	}
-	if (context->QueryService(&input) != D2RL::ServiceQueryResult::Success || !D2RL::HasInputServiceField(input, D2RL::InputServiceRequiredSize)) {
-		context->LogWarn("Archipelago: no input service; open the command panel with ap-panel.");
-		return;
+	if (input == nullptr) {
+		return true;
 	}
 	const D2RL::Input::ActionRegistration action {
 		.structSize       = D2RL::Input::ActionRegistrationSize,
-		.logicalId        = "command-panel",
-		.displayName      = "Archipelago Commands",
+		.logicalId        = logicalId,
+		.displayName      = displayName,
 		.category         = "Archipelago",
-		.defaultPrimary   = { .key = D2RL::Input::Key::F9 },
+		.defaultPrimary   = { .key = key },
 		.defaultSecondary = { .key = D2RL::Input::Key::None },
 		.callback         = OnPanelKey,
+		.userData         = &handle,
 	};
 	D2RL::Input::ActionHandle actionHandle = D2RL::Input::InvalidHandle;
 	if (input->registerAction(context, &action, &actionHandle) != D2RL::Input::Result::Success) {
-		context->LogWarn("Archipelago: couldn't register the command panel key; open it with ap-panel.");
+		context->LogWarn(("Archipelago: couldn't register the key for the " + std::string(panel.localId) + "; use its console command.").c_str());
+	}
+	return true;
+}
+
+void RegisterPanels(const D2RL::PluginContext* context) {
+	const D2RL::ResourceService* resources = nullptr;
+	const D2RL::InputService*    input     = nullptr;
+	if (context->QueryService(&resources) != D2RL::ServiceQueryResult::Success || !D2RL::HasResourceServiceField(resources, D2RL::ResourceServiceRequiredSize)
+		|| context->QueryService(&gPanels) != D2RL::ServiceQueryResult::Success || !D2RL::HasPanelServiceField(gPanels, D2RL::PanelServiceRequiredSize)) {
+		gPanels = nullptr;
+		context->LogWarn("Archipelago: no panel service; the command and debug panels are off.");
+		return;
+	}
+	if (context->QueryService(&input) != D2RL::ServiceQueryResult::Success || !D2RL::HasInputServiceField(input, D2RL::InputServiceRequiredSize)) {
+		input = nullptr;
+		context->LogWarn("Archipelago: no input service; open the panels with ap-panel and ap-debug.");
+	}
+	const bool main = RegisterPanel(context, resources, input, ap::panel::Main(), gPanel, "command-panel", "Archipelago Commands", D2RL::Input::Key::F9);
+	const bool debug = RegisterPanel(context, resources, input, ap::panel::Debug(), gDebugPanel, "debug-panel", "Archipelago Debug Panel", D2RL::Input::Key::F10);
+	if (!main && !debug) {
+		gPanels = nullptr;
 	}
 }
 
@@ -2864,7 +3064,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	} else {
 		context->LogWarn("Archipelago: no item interaction service; the Town Portal and Potion locks won't work, and quest items used at once may be missed.");
 	}
-	RegisterCommandPanel(context);
+	RegisterPanels(context);
 	gConfig = ap::ParseConfig(ConfigText());
 	gClient = std::make_unique<ap::Client>(Log);
 
@@ -2915,6 +3115,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-ledger", CommandLedger, "Get a new Archipelago Ledger if you lost yours.")
 	                   && context->RegisterConsoleCommand("ap-missing", CommandMissing, "List the checks left in this act: ap-missing [all].")
 	                   && context->RegisterConsoleCommand("ap-panel", CommandPanel, "Open or close the Archipelago command panel (F9).")
+	                   && context->RegisterConsoleCommand("ap-debug", CommandDebug, "Debug tools: ap-debug on|off, ap-debug opens the debug panel (F10), ap-debug spawn <item code> [unique].")
 	                   && context->RegisterConsoleCommand("ap-ui", CommandUi, "Send a D2R UI message: ap-ui <target> <command> [text].");
 	if (!commands) {
 		context->LogError("Archipelago: couldn't register console commands.");

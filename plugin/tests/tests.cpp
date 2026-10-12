@@ -118,7 +118,10 @@ void TestConfigRoundTrip() {
 	config.autoConnect = false;
 	config.codexUnique = 500;
 	config.oskillProperty = 300;
+	config.debugTools = true;
+	EXPECT(!ap::ParseConfig("").debugTools);
 	const ap::Config parsed = ap::ParseConfig(ap::FormatConfig(config));
+	EXPECT(parsed.debugTools);
 	EXPECT(parsed.server == config.server);
 	EXPECT(parsed.slot == config.slot);
 	EXPECT(parsed.password == config.password);
@@ -154,6 +157,7 @@ void TestSaveStateRoundTrip() {
 	state.ledgerGiven = true;
 	state.unlockedSkills = { 126, 54 };
 	state.skillPointsGiven = 3;
+	state.portalTomeGiven = true;
 	EXPECT(state.Save(path));
 	ap::SaveState loaded;
 	EXPECT(loaded.Load(path));
@@ -163,7 +167,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.playerClass == 4);
 	EXPECT(loaded.kills == state.kills && loaded.cowKills == state.cowKills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven
-	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3);
+	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven);
 	std::filesystem::remove_all(path.parent_path());
 }
 
@@ -696,26 +700,46 @@ void TestPersonalization() {
 }
 
 void TestCommandPanel() {
-	const auto layout = nlohmann::json::parse(ap::panel::Layout());
-	EXPECT(layout["type"] == "Panel" && layout["name"] == ap::panel::Name);
-	std::set<std::string> names;
-	std::set<std::string> messages;
-	for (const auto& child : layout["children"]) {
-		EXPECT(names.insert(child["name"].get<std::string>()).second);
-		if (child["type"] == "ButtonWidget") {
-			messages.insert(child["fields"]["onClickMessage"].get<std::string>());
+	std::set<std::string> ids;
+	for (const auto* panel : { &ap::panel::Main(), &ap::panel::Debug() }) {
+		const auto layout = nlohmann::json::parse(ap::panel::Layout(*panel));
+		EXPECT(layout["type"] == "Panel" && layout["name"] == panel->name);
+		std::set<std::string> names;
+		std::set<std::string> messages;
+		for (const auto& child : layout["children"]) {
+			EXPECT(names.insert(child["name"].get<std::string>()).second);
+			if (child["type"] == "ButtonWidget") {
+				messages.insert(child["fields"]["onClickMessage"].get<std::string>());
+			}
 		}
+		// Every button runs through Find, ids are unique across the panels, and Close closes the panel.
+		size_t count = 0;
+		for (const auto& column : panel->columns) {
+			for (const auto& button : column.buttons) {
+				++count;
+				EXPECT(ids.insert(std::string(button.id)).second);
+				EXPECT(ap::panel::Find(*panel, button.id) == &button);
+				EXPECT(messages.contains(ap::panel::ClickMessage(button.id)));
+				EXPECT(ap::panel::ClickedButton("PanelManager", "OpenPanel", ap::panel::ClickMessage(button.id).substr(23)) == button.id);
+				const auto parts = ap::panel::SplitAction(button.action);
+				EXPECT(!parts.empty());
+				for (const auto part : parts) {
+					EXPECT(part.starts_with('!') || (part.starts_with("ap-") && parts.size() == 1));
+				}
+			}
+		}
+		EXPECT(messages.contains(std::string("PanelManager:ClosePanel:") + panel->name));
+		EXPECT(messages.size() == count + 1);
+		EXPECT(ap::panel::Find(*panel, "nothing") == nullptr);
+		EXPECT(std::string(panel->name) == std::string("archipelago/") + panel->localId);
 	}
-	// Every button runs through Find, and Close closes the panel.
-	for (const auto& button : ap::panel::Buttons()) {
-		EXPECT(ap::panel::Find(button.id) == &button);
-		EXPECT(messages.contains(std::string(ap::panel::Target) + ":" + ap::panel::Command + ":" + std::string(button.id)));
-		EXPECT(button.action.starts_with('!') || button.action.starts_with("ap-"));
-	}
-	EXPECT(messages.contains(std::string("PanelManager:ClosePanel:") + ap::panel::Name));
-	EXPECT(messages.size() == ap::panel::Buttons().size() + 1);
-	EXPECT(ap::panel::Find("nothing") == nullptr);
-	EXPECT(std::string(ap::panel::Name) == std::string("archipelago/") + ap::panel::LocalId);
+	// Debug buttons only run from the debug panel.
+	EXPECT(ap::panel::Find(ap::panel::Main(), "debug-god") == nullptr);
+	EXPECT(ap::panel::Find(ap::panel::Debug(), "debug-god") != nullptr);
+	EXPECT(ap::panel::ClickedButton("PanelManager", "OpenPanel", "\"archipelago-run/status\"") == "status");
+	EXPECT(ap::panel::ClickedButton("PanelManager", "OpenPanel", "BankPanel").empty());
+	EXPECT(ap::panel::ClickedButton("PanelManager", "ClosePanel", "archipelago-run/status").empty());
+	EXPECT((ap::panel::SplitAction("!a; !b c") == std::vector<std::string_view> { "!a", "!b c" }));
 }
 
 int main() {

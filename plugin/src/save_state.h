@@ -36,6 +36,8 @@ struct SaveState {
 	// once), and skill points handed out for extra copies and Skill Points.
 	std::set<uint32_t> unlockedSkills;
 	int skillPointsGiven = 0;
+	// Whether Town Portal Access has brought its Tome of Town Portal.
+	bool portalTomeGiven = false;
 
 	bool Load(const std::filesystem::path& path);
 	bool Save(const std::filesystem::path& path) const;
