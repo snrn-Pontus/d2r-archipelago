@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // Banner sounds: game sounds that d2r-ap-setup converts from the game files
 // (FLAC) to WAV, for the plugin to play with the banners.
@@ -20,6 +20,6 @@ inline constexpr Sound Item { L"item.wav", "data\\global\\sfx\\item\\gem.flac" }
 inline constexpr Sound All[] = { Important, Trap, Item };
 
 // Played quieter than the game files, since they ignore the game's volume.
-inline constexpr float Volume = 0.35F;
+inline constexpr float Volume = 0.5F;
 
 } // namespace ap::sounds

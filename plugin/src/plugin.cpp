@@ -1985,53 +1985,10 @@ void RevealHint(const std::string& flavor) {
 	Feed("Archipelago: " + flavor + " " + text);
 }
 
-// ---- Overlay --------------------------------------------------------------
-
-// Text height for this screen: the loader default is tiny at 4K, so scale
-// with the screen height (about 24 px at 1080p, 45 px at 2160p).
-auto TextSize(const D2RL::Overlay::Frame* frame) -> float {
-	return std::max(frame->defaultTextSize, frame->screenHeight / 48.0F);
-}
-
-auto MeasureText(const D2RL::Overlay::Frame* frame, const std::string& text, float size) -> float {
-	const D2RL::Overlay::MeasureTextRequest request {
-		.structSize = D2RL::Overlay::MeasureTextRequestSize,
-		.canvas     = frame->canvas,
-		.textSize   = size,
-		.text       = text.data(),
-		.textLength = static_cast<uint32_t>(std::min<size_t>(text.size(), D2RL::Overlay::MaxTextBytes)),
-	};
-	D2RL::Overlay::TextMetrics metrics { .structSize = D2RL::Overlay::TextMetricsSize };
-	return gOverlay->measureText(gContext, &request, &metrics) == D2RL::Overlay::Result::Success ? metrics.width : size * 0.55F * text.size();
-}
-
-void FillRect(const D2RL::Overlay::Frame* frame, D2RL::Overlay::Rect rect, D2RL::Overlay::Color color) {
-	const D2RL::Overlay::FilledRectangleRequest request {
-		.structSize = D2RL::Overlay::FilledRectangleRequestSize,
-		.canvas     = frame->canvas,
-		.rect       = rect,
-		.color      = color,
-		.rounding   = 4.0F,
-	};
-	gOverlay->drawFilledRectangle(gContext, &request);
-}
-
-void DrawText(const D2RL::Overlay::Frame* frame, float x, float y, const std::string& text, D2RL::Overlay::Color color) {
-	const D2RL::Overlay::TextRequest request {
-		.structSize = D2RL::Overlay::TextRequestSize,
-		.canvas     = frame->canvas,
-		.position   = { x, y },
-		.color      = color,
-		.textSize   = TextSize(frame),
-		.text       = text.data(),
-		.textLength = static_cast<uint32_t>(std::min<size_t>(text.size(), D2RL::Overlay::MaxTextBytes)),
-	};
-	gOverlay->drawText(gContext, &request);
-}
-
-
-
-// ---- Banners ------------------------------------------------------------------
+// ---- Banners and the status line ----------------------------------------------
+//
+// D2RLoader's overlay draws nothing on 1.3.1-beta, so these are windows of our
+// own (notify.cpp); OnFrame, the overlay callback, only drives them.
 
 void __cdecl BannerWork(const D2RL::PluginContext*, void*) noexcept {
 	gBannerQueued = false;
@@ -2057,9 +2014,13 @@ void AnnounceItems() {
 		return;
 	}
 	const int me = gClient->MySlot();
-	if (items.size() - from > 4) {
+	// A big catch-up (reconnecting, a new save) is one line. Otherwise keys,
+	// locks, skills and traps each get a banner, and ordinary loot is summed up
+	// when more than three arrive together.
+	if (items.size() - from > 10) {
 		Banner("Received " + std::to_string(items.size() - from) + " items", ap::notify::Style::Info);
 	} else {
+		std::vector<std::pair<std::string, ap::notify::Style>> ordinary;
 		for (size_t i = from; i < items.size(); ++i) {
 			const auto& item = items[i];
 			using ap::loot::Loot;
@@ -2072,12 +2033,47 @@ void AnnounceItems() {
 			if (item.player > 0 && item.player != me) {
 				text += " from " + gClient->PlayerName(item.player);
 			}
-			Banner(text, trap ? ap::notify::Style::Trap : important ? ap::notify::Style::Important : ap::notify::Style::Info);
+			if (trap || important) {
+				Banner(text, trap ? ap::notify::Style::Trap : ap::notify::Style::Important);
+			} else {
+				ordinary.emplace_back(std::move(text), ap::notify::Style::Info);
+			}
+		}
+		if (ordinary.size() > 3) {
+			Banner("Received " + std::to_string(ordinary.size()) + " more items", ap::notify::Style::Info);
+		} else {
+			for (const auto& [text, style] : ordinary) {
+				Banner(text, style);
+			}
 		}
 	}
 	std::lock_guard lock(gMutex);
 	gSave.notifiedItems = items.size();
 	gSave.Save(gSavePath);
+}
+
+auto StatusLine() -> std::string;
+
+// The always-on checks line, refreshed once a second while in a game.
+void UpdateStatusLine() {
+	static Clock::time_point next;
+	if (Clock::now() < next) {
+		return;
+	}
+	next = Clock::now() + std::chrono::seconds(1);
+	bool show = false;
+	std::string position;
+	{
+		std::lock_guard lock(gMutex);
+		show = gInGame && gConfig.statusLine;
+		position = gConfig.statusPosition;
+	}
+	using Corner = ap::notify::Corner;
+	static const std::map<std::string, Corner> corners {
+		{ "top-left", Corner::TopLeft }, { "top", Corner::Top }, { "top-right", Corner::TopRight },
+		{ "bottom-left", Corner::BottomLeft }, { "bottom-right", Corner::BottomRight } };
+	const auto corner = corners.find(position);
+	ap::notify::SetStatus(show ? StatusLine() : std::string(), corner != corners.end() ? corner->second : Corner::TopLeft);
 }
 
 // ap-debug overlay: test shapes for finding out why the overlay doesn't show.
@@ -2150,6 +2146,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		DrawOverlayTest(frame);
 	}
 	AnnounceItems();
+	UpdateStatusLine();
 	if (ap::notify::Busy() && !gBannerQueued.exchange(true) && gThreads->runOnUiThread(gContext, BannerWork, nullptr) != D2RL::Threads::Result::Success) {
 		gBannerQueued = false;
 	}
@@ -2287,17 +2284,6 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 			gWorkQueued = false;
 		}
 	}
-
-	const float size = TextSize(frame);
-	const float pad = size * 0.3F;
-	std::string status = "AP: " + gClient->StatusText();
-	if (gClient->State() == ap::ConnectionState::Connected) {
-		status = "AP: " + gClient->Slot() + " - " + std::to_string(gClient->CheckedCount()) + "/" + std::to_string(gClient->LocationCount()) + " checks";
-	}
-	// Status in the top-left corner.
-	const float statusX = size * 0.5F, statusY = size * 0.4F;
-	FillRect(frame, { statusX - pad, statusY - pad, statusX + MeasureText(frame, status, size) + pad, statusY + size + pad }, { 0.0F, 0.0F, 0.0F, 0.55F });
-	DrawText(frame, statusX, statusY, status, { 0.85F, 0.75F, 0.45F, 1.0F });
 }
 
 // ---- Gameplay events (UI thread) --------------------------------------------
@@ -2383,53 +2369,78 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 
 // The Ledger's tooltip: checks done (sent, or held for a key) out of each act's
 // total, with the act you're in marked, then the ones not tied to an act.
+// Checks done and total per act (-1 for none), with the act you're in and how
+// many found checks are held for a missing act key.
+struct CheckCounts {
+	std::map<int, std::pair<size_t, size_t>> acts;
+	size_t done = 0, total = 0, held = 0;
+	int    here = 0;
+};
+
+auto CountChecks() -> CheckCounts {
+	CheckCounts counts;
+	const ap::SlotData slots = gClient->Slots();
+	std::set<int64_t> found;
+	{
+		std::lock_guard lock(gMutex);
+		found = gBoundSession != 0 ? gSave.checks : gUnbound;
+		counts.here = std::clamp(gDifficulty, 0, 2) * 5 + std::clamp(gAct, 0, 4);
+	}
+	for (const int64_t location : gClient->Checked()) {
+		auto& [done, total] = counts.acts[ActOfLocation(location, slots)];
+		++done;
+		++total;
+	}
+	for (const int64_t location : gClient->Missing()) {
+		auto& [done, total] = counts.acts[ActOfLocation(location, slots)];
+		++total;
+		if (found.contains(location)) {
+			++done;
+			++counts.held;
+		}
+	}
+	for (const auto& [act, pair] : counts.acts) {
+		counts.done += pair.first;
+		counts.total += pair.second;
+	}
+	return counts;
+}
+
 auto LedgerText() -> std::string {
 	if (gClient->State() != ap::ConnectionState::Connected) {
 		return "Archipelago: not connected";
 	}
-	const ap::SlotData slots = gClient->Slots();
-	std::set<int64_t> found;
-	int here = 0;
-	{
-		std::lock_guard lock(gMutex);
-		found = gBoundSession != 0 ? gSave.checks : gUnbound;
-		here = std::clamp(gDifficulty, 0, 2) * 5 + std::clamp(gAct, 0, 4);
-	}
-	// Per act (-1 for none): checks done and total.
-	std::map<int, std::pair<size_t, size_t>> acts;
-	for (const int64_t location : gClient->Checked()) {
-		auto& [done, total] = acts[ActOfLocation(location, slots)];
-		++done;
-		++total;
-	}
-	size_t held = 0;
-	for (const int64_t location : gClient->Missing()) {
-		auto& [done, total] = acts[ActOfLocation(location, slots)];
-		++total;
-		if (found.contains(location)) {
-			++done;
-			++held;
-		}
-	}
-	size_t done = 0, total = 0;
-	for (const auto& [act, counts] : acts) {
-		done += counts.first;
-		total += counts.second;
-	}
-	auto line = [](const std::string& label, const std::pair<size_t, size_t>& counts) {
-		return "\n" + label + ": " + std::to_string(counts.first) + "/" + std::to_string(counts.second) + (counts.first == counts.second ? " done" : "");
+	const CheckCounts counts = CountChecks();
+	auto line = [](const std::string& label, const std::pair<size_t, size_t>& pair) {
+		return "\n" + label + ": " + std::to_string(pair.first) + "/" + std::to_string(pair.second) + (pair.first == pair.second ? " done" : "");
 	};
-	std::string text = "Archipelago: " + std::to_string(done) + "/" + std::to_string(total) + " checks";
-	for (const auto& [act, counts] : acts) {
+	std::string text = "Archipelago: " + std::to_string(counts.done) + "/" + std::to_string(counts.total) + " checks";
+	for (const auto& [act, pair] : counts.acts) {
 		if (act >= 0) {
-			text += line((act == here ? "> " : "") + ActLabel(act), counts);
+			text += line((act == counts.here ? "> " : "") + ActLabel(act), pair);
 		}
 	}
-	if (const auto other = acts.find(-1); other != acts.end()) {
+	if (const auto other = counts.acts.find(-1); other != counts.acts.end()) {
 		text += line("Not tied to an act", other->second);
 	}
-	if (held > 0) {
-		text += "\n" + std::to_string(held) + " held until their act's key arrives";
+	if (counts.held > 0) {
+		text += "\n" + std::to_string(counts.held) + " held until their act's key arrives";
+	}
+	return text;
+}
+
+// The always-on status line: "Archipelago 34/210 - Normal Act I 12/40".
+auto StatusLine() -> std::string {
+	if (gClient->State() != ap::ConnectionState::Connected) {
+		return "Archipelago: not connected";
+	}
+	const CheckCounts counts = CountChecks();
+	std::string text = "Archipelago " + std::to_string(counts.done) + "/" + std::to_string(counts.total);
+	if (const auto act = counts.acts.find(counts.here); act != counts.acts.end()) {
+		text += "  -  " + ActLabel(counts.here) + " " + std::to_string(act->second.first) + "/" + std::to_string(act->second.second);
+	}
+	if (counts.held > 0) {
+		text += "  -  " + std::to_string(counts.held) + " held";
 	}
 	return text;
 }

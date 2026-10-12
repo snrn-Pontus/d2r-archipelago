@@ -23,6 +23,9 @@ constexpr size_t MaxLines = 5;
 constexpr auto   FadeIn   = std::chrono::milliseconds(200);
 constexpr auto   FadeOut  = std::chrono::milliseconds(600);
 constexpr BYTE   MaxAlpha = 235;
+constexpr BYTE   StatusAlpha = 200;
+// The status line follows the game window this often.
+constexpr auto   StatusRefresh = std::chrono::milliseconds(250);
 
 struct Line {
 	std::wstring      text;
@@ -31,36 +34,32 @@ struct Line {
 	Clock::time_point endsAt;
 };
 
+// One of our windows: the rows it paints and the font it paints them in.
+struct Box {
+	HWND  window = nullptr;
+	HFONT font = nullptr;
+	int   fontHeight = 0;
+	std::vector<std::pair<std::wstring, COLORREF>> rows;
+	int   width = 0, height = 0;
+};
+
 std::mutex        gMutex;
 std::deque<Line>  gWaiting; // queued, not on screen yet
 std::vector<Line> gShowing; // on screen (UI thread only)
 std::atomic<bool> gBusy;
+// The status line, set from any thread.
+std::wstring      gStatusText;
+Corner            gStatusCorner = Corner::TopLeft;
+bool              gStatusChanged = false;
+std::atomic<bool> gStatusOn;
+Clock::time_point gStatusPlaced;
 
 std::wstring gSoundFolder;
 bool         gSoundsOn = false;
 
-// The sound for the most important of the lines just shown.
-void PlayFor(const std::vector<Style>& shown) {
-	if (!gSoundsOn || gSoundFolder.empty()) {
-		return;
-	}
-	const ap::sounds::Sound* sound = nullptr;
-	for (const Style style : { Style::Important, Style::Trap, Style::Info }) {
-		if (sound == nullptr && std::ranges::find(shown, style) != shown.end()) {
-			sound = style == Style::Important ? &ap::sounds::Important : style == Style::Trap ? &ap::sounds::Trap : &ap::sounds::Item;
-		}
-	}
-	if (sound != nullptr) {
-		const std::wstring path = gSoundFolder + L"\\" + sound->file;
-		PlaySoundW(path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
-	}
-}
-
-HWND  gHost   = nullptr;
-HWND  gWindow = nullptr;
-HFONT gFont   = nullptr;
-int   gFontHeight = 0;
-bool  gFontLoaded = false;
+HWND gHost = nullptr;
+Box  gBanner, gStatus;
+bool gFontLoaded = false;
 
 auto Widen(const std::string& text) -> std::wstring {
 	if (text.empty()) {
@@ -85,6 +84,23 @@ auto TextColor(Style style) -> COLORREF {
 	}
 }
 
+// The sound for the most important of the lines just shown.
+void PlayFor(const std::vector<Style>& shown) {
+	if (!gSoundsOn || gSoundFolder.empty()) {
+		return;
+	}
+	const ap::sounds::Sound* sound = nullptr;
+	for (const Style style : { Style::Important, Style::Trap, Style::Info }) {
+		if (sound == nullptr && std::ranges::find(shown, style) != shown.end()) {
+			sound = style == Style::Important ? &ap::sounds::Important : style == Style::Trap ? &ap::sounds::Trap : &ap::sounds::Item;
+		}
+	}
+	if (sound != nullptr) {
+		const std::wstring path = gSoundFolder + L"\\" + sound->file;
+		PlaySoundW(path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+	}
+}
+
 // The game's largest visible window, preferring one titled like the game.
 struct Candidate {
 	HWND      window = nullptr;
@@ -96,7 +112,7 @@ BOOL CALLBACK FindHost(HWND window, LPARAM parameter) {
 	auto* best = reinterpret_cast<Candidate*>(parameter);
 	DWORD process = 0;
 	GetWindowThreadProcessId(window, &process);
-	if (process != GetCurrentProcessId() || window == gWindow || !IsWindowVisible(window) || IsIconic(window)) {
+	if (process != GetCurrentProcessId() || window == gBanner.window || window == gStatus.window || !IsWindowVisible(window) || IsIconic(window)) {
 		return TRUE;
 	}
 	RECT client {};
@@ -129,26 +145,31 @@ void LoadGameFont() {
 	AddFontResourceExW(font.c_str(), FR_PRIVATE, nullptr);
 }
 
-void UpdateFont(int height) {
-	if (gFont != nullptr && height == gFontHeight) {
+void UpdateFont(Box& box, int height) {
+	if (box.font != nullptr && height == box.fontHeight) {
 		return;
 	}
-	if (gFont != nullptr) {
-		DeleteObject(gFont);
+	if (box.font != nullptr) {
+		DeleteObject(box.font);
 	}
-	gFontHeight = height;
-	gFont = CreateFontW(-height, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+	box.fontHeight = height;
+	box.font = CreateFontW(-height, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
 		DEFAULT_PITCH, L"ExocetBlizzardMixedCapsOTMedium");
 }
 
-LRESULT CALLBACK BannerProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+auto LineHeight(const Box& box) -> int {
+	return box.fontHeight * 3 / 2;
+}
+
+LRESULT CALLBACK BoxProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 	if (message == WM_NCHITTEST) {
 		return HTTRANSPARENT;
 	}
 	if (message == WM_MOUSEACTIVATE) {
 		return MA_NOACTIVATE;
 	}
-	if (message != WM_PAINT) {
+	const auto* box = reinterpret_cast<const Box*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+	if (message != WM_PAINT || box == nullptr) {
 		return DefWindowProcW(window, message, wParam, lParam);
 	}
 	PAINTSTRUCT paint;
@@ -167,15 +188,14 @@ LRESULT CALLBACK BannerProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 	FrameRect(dc, &rect, frame);
 	DeleteObject(frame);
 
-	HGDIOBJ oldFont = SelectObject(dc, gFont);
+	HGDIOBJ oldFont = SelectObject(dc, box->font);
 	SetBkMode(dc, TRANSPARENT);
-	const int lineHeight = gFontHeight * 3 / 2;
-	int y = gFontHeight / 2;
-	for (const auto& line : gShowing) {
-		SetTextColor(dc, TextColor(line.style));
-		RECT row { 0, y, rect.right, y + lineHeight };
-		DrawTextW(dc, line.text.c_str(), static_cast<int>(line.text.size()), &row, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-		y += lineHeight;
+	int y = (rect.bottom - static_cast<int>(box->rows.size()) * LineHeight(*box)) / 2;
+	for (const auto& [text, color] : box->rows) {
+		SetTextColor(dc, color);
+		RECT row { 0, y, rect.right, y + LineHeight(*box) };
+		DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &row, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+		y += LineHeight(*box);
 	}
 	SelectObject(dc, oldFont);
 
@@ -187,8 +207,17 @@ LRESULT CALLBACK BannerProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 	return 0;
 }
 
-auto CreateBanner() -> bool {
-	if (gWindow != nullptr && IsWindow(gWindow) && gHost != nullptr && IsWindow(gHost)) {
+void DestroyBox(Box& box) {
+	if (box.window != nullptr) {
+		DestroyWindow(box.window);
+		box.window = nullptr;
+	}
+	box.width = box.height = 0;
+}
+
+// Finds the game window and creates our two windows over it.
+auto CreateWindows() -> bool {
+	if (gHost != nullptr && IsWindow(gHost) && gBanner.window != nullptr && gStatus.window != nullptr) {
 		return true;
 	}
 	Shutdown();
@@ -200,7 +229,7 @@ auto CreateBanner() -> bool {
 	}
 	static const ATOM windowClass = [] {
 		const WNDCLASSW description {
-			.lpfnWndProc   = BannerProc,
+			.lpfnWndProc   = BoxProc,
 			.hInstance     = GetModuleHandleW(nullptr),
 			.lpszClassName = L"ArchipelagoBanner",
 		};
@@ -210,36 +239,49 @@ auto CreateBanner() -> bool {
 		return false;
 	}
 	LoadGameFont();
-	// Owned by the game window, so it stays above it and minimizes with it.
-	gWindow = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"ArchipelagoBanner", L"", WS_POPUP, 0, 0, 1, 1, gHost,
-		nullptr, GetModuleHandleW(nullptr), nullptr);
-	return gWindow != nullptr;
+	// Owned by the game window, so they stay above it and minimize with it.
+	for (Box* box : { &gBanner, &gStatus }) {
+		box->window = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"ArchipelagoBanner", L"", WS_POPUP, 0, 0, 1, 1,
+			gHost, nullptr, GetModuleHandleW(nullptr), nullptr);
+		if (box->window == nullptr) {
+			Shutdown();
+			return false;
+		}
+		SetWindowLongPtrW(box->window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(box));
+	}
+	return true;
 }
 
-} // namespace
-
-void SetSounds(const std::wstring& folder, bool enabled) {
-	gSoundFolder = folder;
-	gSoundsOn = enabled;
+// The size a box needs for its rows.
+auto Measure(Box& box) -> SIZE {
+	HDC dc = GetDC(box.window);
+	HGDIOBJ oldFont = SelectObject(dc, box.font);
+	int widest = 0;
+	for (const auto& [text, color] : box.rows) {
+		SIZE size {};
+		GetTextExtentPoint32W(dc, text.c_str(), static_cast<int>(text.size()), &size);
+		widest = std::max(widest, static_cast<int>(size.cx));
+	}
+	SelectObject(dc, oldFont);
+	ReleaseDC(box.window, dc);
+	return { widest + box.fontHeight * 2, static_cast<int>(box.rows.size()) * LineHeight(box) + box.fontHeight };
 }
 
-void Show(const std::string& text, Style style) {
-	std::lock_guard lock(gMutex);
-	gWaiting.push_back({ Widen(text), style, {}, {} });
-	gBusy = true;
+// Places and shows the box; repaints it when its rows or size changed.
+void Place(Box& box, int x, int y, SIZE size, bool changed, BYTE alpha) {
+	SetLayeredWindowAttributes(box.window, 0, alpha, LWA_ALPHA);
+	SetWindowPos(box.window, HWND_TOP, x, y, size.cx, size.cy, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+	if (changed || size.cx != box.width || size.cy != box.height) {
+		box.width = size.cx;
+		box.height = size.cy;
+		InvalidateRect(box.window, nullptr, FALSE);
+	}
 }
 
-auto Busy() -> bool {
-	return gBusy;
-}
-
-void Tick() {
-	const auto now = Clock::now();
-	bool changed = false;
-	// Lines that are done leave; waiting ones take their place.
+void TickBanner(const RECT& client, POINT origin, Clock::time_point now) {
 	const size_t before = gShowing.size();
 	std::erase_if(gShowing, [&](const Line& line) { return now >= line.endsAt; });
-	changed = gShowing.size() != before;
+	bool changed = gShowing.size() != before;
 	std::vector<Style> shown;
 	{
 		std::lock_guard lock(gMutex);
@@ -258,41 +300,16 @@ void Tick() {
 	}
 	PlayFor(shown);
 	if (gShowing.empty()) {
-		if (gWindow != nullptr && IsWindowVisible(gWindow)) {
-			ShowWindow(gWindow, SW_HIDE);
+		if (IsWindowVisible(gBanner.window)) {
+			ShowWindow(gBanner.window, SW_HIDE);
 		}
 		return;
 	}
-	if (!CreateBanner()) {
-		return;
-	}
-	if (IsIconic(gHost)) {
-		ShowWindow(gWindow, SW_HIDE);
-		return;
-	}
-	RECT client {};
-	GetClientRect(gHost, &client);
-	POINT origin {};
-	ClientToScreen(gHost, &origin);
-	const int clientWidth = client.right, clientHeight = client.bottom;
-	UpdateFont(std::max(14, clientHeight / 40));
-
-	// Size the box to the widest line.
-	HDC dc = GetDC(gWindow);
-	HGDIOBJ oldFont = SelectObject(dc, gFont);
-	int widest = 0;
+	UpdateFont(gBanner, std::max(14, static_cast<int>(client.bottom) / 40));
+	gBanner.rows.clear();
 	for (const auto& line : gShowing) {
-		SIZE size {};
-		GetTextExtentPoint32W(dc, line.text.c_str(), static_cast<int>(line.text.size()), &size);
-		widest = std::max(widest, static_cast<int>(size.cx));
+		gBanner.rows.emplace_back(line.text, TextColor(line.style));
 	}
-	SelectObject(dc, oldFont);
-	ReleaseDC(gWindow, dc);
-	const int width = std::min(clientWidth, widest + gFontHeight * 2);
-	const int height = static_cast<int>(gShowing.size()) * (gFontHeight * 3 / 2) + gFontHeight;
-	const int x = origin.x + (clientWidth - width) / 2;
-	const int y = origin.y + clientHeight / 9;
-
 	// Fade in with the first line, out with the last.
 	Clock::time_point first = gShowing.front().shownAt, last = gShowing.front().endsAt;
 	for (const auto& line : gShowing) {
@@ -301,22 +318,101 @@ void Tick() {
 	}
 	const float in = std::min(1.0F, std::chrono::duration<float>(now - first) / std::chrono::duration<float>(FadeIn));
 	const float out = std::min(1.0F, std::chrono::duration<float>(last - now) / std::chrono::duration<float>(FadeOut));
-	SetLayeredWindowAttributes(gWindow, 0, static_cast<BYTE>(MaxAlpha * std::clamp(std::min(in, out), 0.0F, 1.0F)), LWA_ALPHA);
+	const SIZE size = Measure(gBanner);
+	Place(gBanner, origin.x + (client.right - size.cx) / 2, origin.y + client.bottom / 9, size, changed,
+		static_cast<BYTE>(MaxAlpha * std::clamp(std::min(in, out), 0.0F, 1.0F)));
+}
 
-	SetWindowPos(gWindow, HWND_TOP, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-	static int lastWidth = 0, lastHeight = 0;
-	if (changed || width != lastWidth || height != lastHeight) {
-		lastWidth = width;
-		lastHeight = height;
-		InvalidateRect(gWindow, nullptr, FALSE);
+void TickStatus(const RECT& client, POINT origin, Clock::time_point now) {
+	std::wstring text;
+	Corner corner = Corner::TopLeft;
+	bool changed = false;
+	{
+		std::lock_guard lock(gMutex);
+		text = gStatusText;
+		corner = gStatusCorner;
+		changed = gStatusChanged;
+		gStatusChanged = false;
+	}
+	if (text.empty()) {
+		if (IsWindowVisible(gStatus.window)) {
+			ShowWindow(gStatus.window, SW_HIDE);
+		}
+		return;
+	}
+	if (!changed && now - gStatusPlaced < StatusRefresh && IsWindowVisible(gStatus.window)) {
+		return;
+	}
+	gStatusPlaced = now;
+	UpdateFont(gStatus, std::max(12, static_cast<int>(client.bottom) / 64));
+	gStatus.rows = { { text, RGB(199, 179, 119) } };
+	const SIZE size = Measure(gStatus);
+	const int margin = std::max(4, static_cast<int>(client.bottom) / 90);
+	const bool right = corner == Corner::TopRight || corner == Corner::BottomRight;
+	const bool bottom = corner == Corner::BottomLeft || corner == Corner::BottomRight;
+	int x = right ? client.right - size.cx - margin : margin;
+	if (corner == Corner::Top) {
+		x = (client.right - size.cx) / 2;
+	}
+	const int y = bottom ? client.bottom - size.cy - margin : margin;
+	Place(gStatus, origin.x + x, origin.y + y, size, changed, StatusAlpha);
+}
+
+} // namespace
+
+void SetSounds(const std::wstring& folder, bool enabled) {
+	gSoundFolder = folder;
+	gSoundsOn = enabled;
+}
+
+void Show(const std::string& text, Style style) {
+	std::lock_guard lock(gMutex);
+	gWaiting.push_back({ Widen(text), style, {}, {} });
+	gBusy = true;
+}
+
+void SetStatus(const std::string& text, Corner corner) {
+	std::lock_guard lock(gMutex);
+	std::wstring wide = Widen(text);
+	if (wide != gStatusText || corner != gStatusCorner) {
+		gStatusText = std::move(wide);
+		gStatusCorner = corner;
+		gStatusChanged = true;
+		gStatusOn = true; // one more tick hides it when empty
 	}
 }
 
-void Shutdown() {
-	if (gWindow != nullptr) {
-		DestroyWindow(gWindow);
-		gWindow = nullptr;
+auto Busy() -> bool {
+	return gBusy || gStatusOn;
+}
+
+void Tick() {
+	const auto now = Clock::now();
+	{
+		std::lock_guard lock(gMutex);
+		if (gStatusText.empty() && !gStatusChanged) {
+			gStatusOn = false;
+		}
 	}
+	if (!CreateWindows()) {
+		return;
+	}
+	if (IsIconic(gHost)) {
+		ShowWindow(gBanner.window, SW_HIDE);
+		ShowWindow(gStatus.window, SW_HIDE);
+		return;
+	}
+	RECT client {};
+	GetClientRect(gHost, &client);
+	POINT origin {};
+	ClientToScreen(gHost, &origin);
+	TickBanner(client, origin, now);
+	TickStatus(client, origin, now);
+}
+
+void Shutdown() {
+	DestroyBox(gBanner);
+	DestroyBox(gStatus);
 	gHost = nullptr;
 }
 

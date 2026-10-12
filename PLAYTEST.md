@@ -112,6 +112,12 @@ config turns them off.
 - [x] Sounds (converted from the game's own by d2r-ap-setup into `d2rloader\archipelago\sounds`; `--sounds`
       writes only those): gold banners play the quest-done chime, red the hostile warning, white the gem
       sound; checks are silent. `banner_sounds = false` turns them off.
+- [x] Status line, top-left by default: "Archipelago done/total - <act> done/total", with "n held" when
+      checks wait for a key; it updates within a second of a check. `status_line = false` hides it and
+      `status_position` moves it (top-left, top, top-right, bottom-left, bottom-right).
+- [ ] With a hired mercenary, the status line and the mercenary's portrait don't overlap.
+- [ ] Several items at once: skills, keys, locks and traps each get a banner; more than three ordinary
+      items become "Received n more items", and more than ten in all become one line.
 - [x] Alt-Tab away and back, and minimizing: the banner stays with the game and doesn't float over
       other windows.
 

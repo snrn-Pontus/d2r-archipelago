@@ -123,6 +123,10 @@ void TestConfigRoundTrip() {
 	const ap::Config parsed = ap::ParseConfig(ap::FormatConfig(config));
 	EXPECT(parsed.debugTools);
 	EXPECT(ap::ParseConfig("").notifications);
+	EXPECT(ap::ParseConfig("").statusLine && ap::ParseConfig("").statusPosition == "top-left");
+	config.statusLine = false;
+	config.statusPosition = "bottom-left";
+	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).statusLine && ap::ParseConfig(ap::FormatConfig(config)).statusPosition == "bottom-left");
 	EXPECT(ap::ParseConfig("").bannerSounds);
 	config.bannerSounds = false;
 	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).bannerSounds);

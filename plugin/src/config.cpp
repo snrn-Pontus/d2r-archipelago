@@ -68,6 +68,10 @@ auto ParseConfig(const std::string& text) -> Config {
 			config.notifications = value != "false";
 		} else if (key == "banner_sounds") {
 			config.bannerSounds = value != "false";
+		} else if (key == "status_line") {
+			config.statusLine = value != "false";
+		} else if (key == "status_position" && !value.empty()) {
+			config.statusPosition = value;
 		} else if (key == "codex_item" && !value.empty()) {
 			config.codexItem = value;
 		} else if (key == "codex_unique" && !value.empty()) {
@@ -94,7 +98,10 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "# On-screen banners for items received and checks sent.\n"
 	    << "notifications = " << (config.notifications ? "true" : "false") << "\n"
 	    << "# Game sounds with the gold, red and white banners.\n"
-	    << "banner_sounds = " << (config.bannerSounds ? "true" : "false") << "\n\n"
+	    << "banner_sounds = " << (config.bannerSounds ? "true" : "false") << "\n"
+	    << "# The always-on checks line; status_position is top-left, top, top-right, bottom-left or bottom-right.\n"
+	    << "status_line = " << (config.statusLine ? "true" : "false") << "\n"
+	    << "status_position = " << Quote(config.statusPosition) << "\n\n"
 	    << "# The Codex charm that carries your received skills.\n"
 	    << "codex_item = " << Quote(config.codexItem) << "\n"
 	    << "# UniqueItems record of the Archipelago Codex, added by d2r-ap-setup.\n"

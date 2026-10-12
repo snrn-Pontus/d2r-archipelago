@@ -24,7 +24,13 @@ void SetSounds(const std::wstring& folder, bool enabled);
 // Queues a banner line. Thread-safe.
 void Show(const std::string& text, Style style);
 
-// Whether Tick has work: lines waiting or showing. Thread-safe.
+// Where the status line sits on the game window.
+enum class Corner { TopLeft, Top, TopRight, BottomLeft, BottomRight };
+
+// The always-on status line; empty hides it. Thread-safe.
+void SetStatus(const std::string& text, Corner corner);
+
+// Whether Tick has work: banner lines or the status line. Thread-safe.
 auto Busy() -> bool;
 
 // UI thread, every frame or so while Busy: finds the game window, creates the
