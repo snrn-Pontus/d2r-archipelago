@@ -136,6 +136,9 @@ void TestConfigRoundTrip() {
 	EXPECT(ap::ParseConfig(ap::FormatConfig(config)).bannerVolume == 40);
 	EXPECT(ap::ParseConfig("banner_volume = 500").bannerVolume == 200);
 	EXPECT(ap::ParseConfig("banner_volume = -5").bannerVolume == 0);
+	EXPECT(ap::ParseConfig("banner_volume = 999999999999").bannerVolume == 200);
+	EXPECT(ap::ParseConfig("banner_volume = 99999999999999999999").bannerVolume == 100);
+	EXPECT(ap::ParseConfig("banner_volume = loud").bannerVolume == 100);
 	config.notifications = false;
 	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).notifications);
 	EXPECT(parsed.server == config.server);

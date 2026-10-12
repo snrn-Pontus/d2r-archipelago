@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <algorithm>
+#include <charconv>
 #include <sstream>
 
 namespace ap {
@@ -70,7 +71,11 @@ auto ParseConfig(const std::string& text) -> Config {
 		} else if (key == "banner_sounds") {
 			config.bannerSounds = value != "false";
 		} else if (key == "banner_volume" && !value.empty()) {
-			config.bannerVolume = std::clamp(std::stoi(value), 0, 200);
+			// No exceptions: they'd escape the noexcept plugin load. Junk keeps the default.
+			long long volume = 0;
+			if (const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), volume); error == std::errc {}) {
+				config.bannerVolume = static_cast<int>(std::clamp(volume, 0LL, 200LL));
+			}
 		} else if (key == "status_line") {
 			config.statusLine = value != "false";
 		} else if (key == "status_position" && !value.empty()) {
