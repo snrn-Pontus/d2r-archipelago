@@ -18,6 +18,26 @@ from the server console: `/send <slot> <item name>` (for example `/send Snrn Act
 - **From the Server:** `!getitem` for all the lock items, the Normal act keys, a bundle of rewards, Codex
   Empowerment, Skill Point and each trap, the same as `/send`. They stay in the seed's save.
 
+## Next up (from the 2026-10-12 session)
+
+Built, pushed and installed, still to check in game:
+
+- [ ] The **Archipelago Parcel** is in Akara's Misc tab now (shop item type fix) and buying it sends a check
+      (section 2).
+- [ ] Buying a Scroll of Prophecy tier you've already used refunds the gold (section 6).
+- [ ] **Potion Access** gives back the potions set aside from the inventory (section 4).
+- [ ] All eight 2x2 Scrolls of Prophecy fit in Akara's Misc tab next to her usual stock. If they crowd it,
+      switch them to a 1x1 picture (size and picture must match).
+- [ ] Parcels and scrolls are no longer quest items: check whether a vendor buys them back, and that a
+      bought one doesn't stay in the inventory.
+
+Ideas, not started:
+
+- A Scroll of Prophecy tooltip line, e.g. "A hint about your world. Next prophecy: 1,000 gold", so it's clear
+  which tier to buy (the tooltip only shows price and name).
+- Optionally name shuffled superuniques after their new body ("Bishibosh (Soul Killer Shaman)"); with
+  `superunique_shuffle` on, Bishibosh as a Flayer looks like an ordinary monster.
+
 ## 00. Mod-scoped plugin
 
 - [x] After `d2r-ap-setup.exe`, the plugin is in `mods\Archipelago\d2rloader\plugins\` and the global copy
@@ -78,6 +98,8 @@ Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fana
 Any seed with the defaults.
 
 - [x] A new character gets an **Archipelago Ledger** next to the Codex, and the chat says to hover over it.
+- [x] The Ledger shows the Token of Absolution picture in one cell, in Lord of Destruction too (fixed
+      2026-10-12: LoD showed the previous item's 2x2 bark scroll).
 - [ ] Its tooltip shows the total (`Archipelago: n/m checks`), one line per act in the seed with
       `done/total`, `> ` before the act you're in, and a "Not tied to an act" line.
 - [ ] Entering Cold Plains raises Normal Act I's count by one; the tooltip updates without reopening anything.
@@ -179,8 +201,9 @@ Defaults (`act_keys` and `enforce_act_keys` on).
       still move afterwards.
 - [ ] Opening the Cube is blocked (its panel name hasn't been seen yet; the log lists each panel opened).
 - [x] Potions stay locked from the belt hotkeys too.
-- [ ] D2RLoader doesn't report drinking from the inventory (only the belt), so within 5 seconds potions
-      in the inventory are set aside, with a chat message; Potion Access gives them back.
+- [x] D2RLoader doesn't report drinking from the inventory (only the belt), so within 5 seconds potions
+      in the inventory are set aside, with a chat message (confirmed 2026-10-12).
+- [ ] Potion Access gives the set-aside potions back (to the ground if the inventory is full).
 - [x] Town Portal: D2RLoader doesn't report scroll use, so within 5 seconds every scroll and tome on the
       character crumbles, with a chat message (the starting scroll too).
 - [x] Town Portal Access brings a Tome of Town Portal, once.
@@ -221,6 +244,11 @@ a guess checked against the item before writing, so test the command first.
 - D2RCore runs gold, experience, mspawn, pcloud, killme, skadd and the rest only as cheats
   (`cheat gold 100`); the plugin adds the prefix. Typed by hand they need `debug_mode`, but the plugin's
   calls work without it.
+- D2R matches `data\hd\items\items.json` to items by position, not code, and both banks share it. Any item
+  the mod adds must sit on the same row in both banks' tables (setup pads LoD's misc for RotW's `cs2`), and
+  its inventory size must match its picture.
+- Vendors only stock `spawnable` items whose item type has a `StorePage`; the quest type has none, so the
+  shop items use their own `apsh` type.
 - `cheat skadd <skill>,1` gives a locked skill its first point, and after that normal skill points can go
   into it: the basis for a randomized skill tree mode.
 
@@ -254,7 +282,8 @@ on `death_link: true` in both.
 
 - [ ] Blood Moor and Cold Plains have monsters from other acts, at a level that fits (not Hell-strength in
       Normal).
-- [ ] Bishibosh is a different monster but still sends his check.
+- [ ] Bishibosh is a different monster but still sends his check. (2026-10-12: he was a Flayer shaman, as
+      the seed said; the check is still to confirm.)
 - [ ] `mods\Archipelago\runewords.txt` lists new recipes, and one made from low runes works in game.
 - [ ] More monsters, and faster levelling than usual.
 
