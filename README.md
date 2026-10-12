@@ -8,8 +8,14 @@ points on the normal trees; instead each skill you receive is added to your **Ar
 charm that grants every skill you've found (D2's `oskill` property, which works for any class), at a
 level set by copies found, Codex Empowerments and your character level.
 
-Locations are story quests on each difficulty up to the goal, first visits to waypoint and landmark areas,
-and every fifth character level. The goal is killing Baal on the chosen difficulty.
+Locations are story quests, kills of the 41 field superuniques and first visits to waypoint and landmark
+areas, each on every difficulty up to the goal, every fifth character level, and the Secret Cow Level on
+difficulties finished before the goal. Optional collection checks (runes, gems, complete sets, Hell's keys,
+organs, essences, the Torch and Annihilus) only hold filler, and so do uber, kill-count and find-count checks.
+Quest item pickups and Archipelago Parcels bought from each act's potion seller are checks too. Optional
+locks keep the Horadric Cube, Town Portal, potions, the stash, merchants and each act's waypoints closed until
+their item arrives, and locked acts warp you back to town. Hints turn up in game too: from Deckard Cain after
+act bosses, torn pages from superuniques, and Scrolls of Prophecy sold at rising prices. DeathLink is optional. The goal is killing Baal on the chosen difficulty.
 
 Each act after the first needs an Act Key from the multiworld; checks in a locked act are held until it
 arrives. The defaults aim at a 4-6 hour game (Normal to Diablo). Games can be as short as Normal Act 1 or as
@@ -19,8 +25,11 @@ superuniques, runeword recipes, monster density, champion packs, drop quality, e
 requirements.
 
 Other rewards are rolled when they arrive and scaled to the character's level: random uniques and set
-items, runes up to Zod, socketed runeword bases, Codex Empowerments (+1 to every Codex skill), and optional
-Junk Backpack traps. Act boss quests always give a unique.
+items, runes up to Zod, socketed runeword bases, magic charms and jewels, gold, experience, Codex
+Empowerments (+1 to every Codex skill), shrines at your feet, and traps (Junk Backpack, Ambush, Poison Cloud,
+Firestorm, Mana Drain, Tax Collector, Mercenary Down). Gold, experience, shrines and traps go through
+D2RCore's console commands (`gold`, `experience`, `shrine`, `mspawn`, `pcloud`...). Skills and Empowerments
+scale with the game's length. Act boss quests always give a unique.
 
 It's inspired by [Diablo II Archipelago](https://github.com/solida1987/Diablo-II-Archipelago) for LoD 1.10f,
 but shares no code with it: that mod hooks fixed 1.10f addresses, while this one uses only D2RLoader's
@@ -80,7 +89,11 @@ and the overlay. The first in-game session needs to confirm:
 ## Known limits
 
 - One character per seed: fillers are handed out once per seed, to whichever character is playing.
-- No DeathLink, no superunique or waypoint-object checks (D2RLoader has no events for them yet).
+- Superunique kills are told apart by giving each field superunique a monster row of its own (D2RLoader's
+  monster-death event only names the monster). They need the seed's mod from `d2r-ap-setup`.
+- DeathLink kills you with D2RCore's `killme` command and spots your own deaths from D2R's death screen
+  (the `YouDiedModal` UI message), falling back to the resurrection event. Not yet tested in game.
+- No waypoint-object checks.
 - The WebSocket client doesn't support compression. Current servers accept that with a warning.
 
 ## Third-party code

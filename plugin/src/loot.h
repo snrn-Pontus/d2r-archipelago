@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <random>
 #include <string>
+#include <vector>
 
 namespace ap::loot {
 
@@ -26,6 +27,21 @@ enum class Loot : uint32_t {
 	SetItem,
 	SocketedBase,
 	JunkBackpack,
+	// Gold and Experience aren't items: the plugin adds them through D2RCore.
+	Gold,
+	Experience,
+	RandomCharm,
+	RandomJewel,
+	// Also through D2RCore commands: a shrine at your feet, and traps.
+	RandomShrine,
+	AmbushTrap,
+	PoisonCloudTrap,
+	FirestormTrap,
+	ManaDrainTrap,
+	TaxCollectorTrap,
+	MercenaryDownTrap,
+	// A hint, like a Scroll of Prophecy.
+	Prophecy,
 	Count,
 };
 
@@ -44,6 +60,28 @@ auto CodeFromText(const char* text) -> uint32_t;
 // Rolls one item. For JunkBackpack it returns one piece of junk; the caller
 // repeats until the inventory is full.
 auto Roll(Loot loot, int level, std::mt19937& random) -> Pick;
+
+// Gold for a Gold reward: 1,000 per character level.
+auto GoldAmount(int level) -> int;
+
+// Experience for an Experience reward: 15% of what the level needs to level
+// up (0 at level 99).
+auto ExperienceAmount(int level) -> int64_t;
+
+// A helpful Shrines.txt row for a Random Shrine.
+auto ShrineId(std::mt19937& random) -> int;
+
+// A MonStats id for an Ambush in this act (0-4): a common monster of the act.
+auto AmbushMonster(int act, std::mt19937& random) -> const char*;
+
+// The D2RCore console commands for a Random Shrine or a trap, and the line
+// that announces it. Empty for other loot.
+struct Commands {
+	std::vector<std::string> commands;
+	std::string              message;
+	bool                     trap = false;
+};
+auto CommandsFor(Loot loot, int level, int act, std::mt19937& random) -> Commands;
 
 // A level estimate from where the character is, for when no level-up has
 // been seen yet: the start of the difficulty plus a few levels per act.

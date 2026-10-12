@@ -16,22 +16,75 @@ with more copies each.
 
 - Completing each story quest, on every difficulty up to your goal.
 - Entering each waypoint area, plus a few landmarks (Den of Evil, Tristram, the Chaos Sanctuary and more),
-  for the first time.
+  for the first time, on every difficulty up to your goal.
 - Reaching every fifth character level.
+- Killing each of the 41 superuniques that roam the field (Bishibosh, Rakanishu, Pindleskin and the rest), on
+  every difficulty up to your goal (`superunique_checks`). Quest bosses and the Chaos Sanctuary seal bosses
+  don't count.
+- The Secret Cow Level, on each difficulty you finish before the goal (`cow_level_checks`): entering it,
+  killing The Cow King, and killing 100 cows in one session. The King closes the portal, so kill him last.
+- Optional collections, which only ever hold filler: each rune up to `rune_checks`, every gem (`gem_checks`),
+  every complete Lord of Destruction set (`set_checks`), and with a Hell goal the Pandemonium keys, organs,
+  essences, Token of Absolution, Hellfire Torch and Annihilus (`special_item_checks`). Items count anywhere on
+  your character, stash included; items Archipelago gives you don't.
+- Picking up quest items (`quest_item_checks`, on): the Scroll of Inifuss, Wirt's Leg, the Horadric Scroll,
+  the Staff of Kings, the Book of Skill, Khalim's Eye, Heart, Brain and Flail, the Golden Bird, the Potion of
+  Life, Mephisto's Soulstone, the Hellforge Hammer and the Scroll of Resistance on every difficulty, and the
+  Horadric Cube once.
+- Buying Archipelago Parcels (`shop_checks`, 3 per act by default) from each act's potion seller: Akara,
+  Lysander, Ormus, Jamella and Malah. They cost 2,500 to 40,000 gold; one bought past the last check is
+  refunded.
+- Filler-only extras: Pandemonium's six uber bosses with a Hell goal through Baal (`uber_checks`), killing 100,
+  250 and 500 monsters in each act (`kill_count_checks`), and finding 1 to 50 uniques and 1 to 25 set items
+  (`find_count_checks`).
 
 ## What is the goal?
 
 Kill the boss of the act set by `goal_act` on the difficulty set by `goal`. That sets the game's length:
 `goal: normal` with `goal_act: 2` ends at Duriel and is a short game, `goal: hell` with `goal_act: 5` is the
-full run. Quests, areas and level milestones past the goal are left out.
+full run. Quests, superuniques, areas and level milestones past the goal are left out.
+
+## DeathLink
+
+With `death_link`, when you die everyone else with DeathLink dies too, and the other way round. Careful with
+Hardcore characters: a DeathLink death is a real one.
 
 ## What makes me wait for other players?
 
 With `act_keys` (on by default), every act after the first needs its key, such as "Normal Act II Key", and
 the keys are shuffled into the multiworld. You can still walk into a locked act, but the quests and areas
-you complete there are only recorded; they're sent, all at once, when the key arrives. Level milestones
+you complete there (and the superuniques you kill) are only recorded; they're sent, all at once, when the key arrives. Level milestones
 aren't held. The defaults (Normal to Diablo, with a little more experience and loot) aim at a 4 to 6 hour
 game.
+
+## Hints you find in the game
+
+Besides the hints you buy with hint points, the game hands some out:
+
+- **Deckard Cain** has one after each act boss quest (`cain_hints`).
+- Superuniques may drop a **torn page** the first time you kill them (`page_hint_chance`, 25%).
+- Every potion seller sells **Scrolls of Prophecy** (`prophecy_shop`). The vendor lists eight prices from
+  1,000 to 100,000 gold; only the next one counts (a cheaper scroll is refunded), and the dearest repeats.
+- Other players can send you a **Prophecy** (`prophecy_weight`).
+
+Most hints tell you where your own important items are, act keys first. `hint_balance` (30% by default) of
+them instead name one of your locations that holds another player's important item, and that player is told.
+Found hints go to the server like bought ones, without costing hint points; `ap-hints` in the console lists
+them.
+
+## Locks
+
+Optional locks block part of the game until their item turns up from the multiworld:
+
+- `enforce_act_keys` (on): walking into an act you don't have the key for warps you back to the town of an
+  act you can be in.
+- `cube_lock`: the Horadric Cube won't open without **Horadric Cube Access**. Logic expects it before the
+  Horadric Staff, Duriel and Khalim's Will.
+- `town_portal_lock`, `potion_lock`: Town Portal scrolls and tomes, or potions, can't be used without **Town
+  Portal Access** or **Potion Access**.
+- `stash_lock`, `merchant_lock`: the stash, or trading with merchants, needs **Stash Access** or **Merchant
+  Access**. Shop checks wait for Merchant Access.
+- `waypoint_lock`: each act's waypoints need that act's **Waypoints** item (Act I Waypoints...).
 
 ## What else is randomized?
 
@@ -57,8 +110,17 @@ Everything else arrives in your inventory, rolled when you receive it and scaled
 - **Socketed Base**: a white weapon or armor with three or more sockets, ready for a runeword.
 - **Codex Empowerment**: +1 to every skill in your Codex.
 - Potions and perfect gems.
-- Optionally, **Junk Backpack** traps that stuff your free inventory space with worthless gear
-  (`junk_trap_percentage`).
+- **Gold** (1,000 per character level), **Experience** (15% of your current level) and **Random Charms**
+  and **Random Jewels**, rolled at your level.
+- **Random Shrine**: a helpful shrine (refill, defense, combat, a resistance, skill, mana recharge, experience
+  or gem) appears at your feet.
+- **Traps** (`trap_percentage`, 10% of filler by default), which wait until you leave town: **Junk Backpack**
+  (worthless gear fills your free inventory space), **Ambush** (a pack of the act's monsters), **Poison
+  Cloud**, **Firestorm**, **Mana Drain**, **Tax Collector** (lose up to 1,000 gold per level) and, only if you
+  give it a weight, **Mercenary Down**. Each has its own weight option.
+
+The skill pool and Codex Empowerments are set for a four-act game; with `scale_with_length` (on by default)
+longer games get proportionally more, so a full Hell run has about 60 skills and 8 Empowerments.
 
 The weight options (`unique_weight`, `set_item_weight`, `high_rune_weight`, `socketed_base_weight` and
 `basic_loot_weight`) set the mix.

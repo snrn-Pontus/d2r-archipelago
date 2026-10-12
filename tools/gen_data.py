@@ -1,6 +1,7 @@
 """Generate the shared game tables for the apworld and the plugin.
 
-Reads skills, levels, uniqueitems, setitems, weapons, armor and misc from an
+Reads skills, levels, uniqueitems, setitems, weapons, armor, misc, monstats,
+superuniques and experience from an
 extracted D2R 3.x excel folder (`d2r-ap-setup --extract <folder>` writes one)
 and writes apworld/d2r_archipelago/data.py and plugin/src/game_data.h. Only
 ids, names, codes and level requirements are copied; no game files are
@@ -40,6 +41,40 @@ QUESTS = [
 ]
 GOAL_QUEST = 40
 
+# Superuniques that roam the field: each kill is a check per difficulty, and
+# d2r-ap-setup may shuffle their monsters. Quest bosses (Radament, the
+# Summoner, the Council, the Countess, Shenk, Nihlathak, the Ancients), the
+# Chaos Sanctuary seal bosses and Baal's minion waves are scripted, so they're
+# left alone.
+FIELD_SUPERUNIQUES = [
+    "Bishibosh", "Bonebreak", "Coldcrow", "Rakanishu", "Treehead WoodFist", "Griswold", "Pitspawn Fouldog",
+    "Flamespike the Crawler", "Boneash", "Corpsefire", "Bloodwitch the Wild", "Fangskin", "Beetleburst", "Leatherarm",
+    "Coldworm the Burrower", "Fire Eye", "Dark Elder", "Ancient Kaa the Soulless", "Web Mage the Burning",
+    "Witch Doctor Endugu", "Stormtree", "Sarina the Battlemaid", "Icehawk Riftwing", "Winged Death", "The Tormentor",
+    "Taintbreeder", "Riftwraith the Cannibal", "Axe Dweller", "Bonesaw Breaker", "Dac Farren", "Megaflow Rectifier",
+    "Eyeback Unleashed", "Threash Socket", "Pindleskin", "Snapchip Shatter", "Anodized Elite", "Vinvear Molech",
+    "Sharp Tooth Sayer", "Magma Torquer", "Blaze Ripper", "Frozenstein",
+]
+
+# Collection checks: quest items you find on Hell (by misc.txt code), then
+# uniques (by name, with their base code).
+SPECIAL_CODES = ["pk1", "pk2", "pk3", "mbr", "dhn", "bey", "toa", "tes", "ceh", "bet", "fed"]
+SPECIAL_UNIQUES = [("cm2", "Hellfire Torch"), ("cm1", "Annihilus")]
+GEM_TYPES = ["gema", "gemt", "gems", "geme", "gemr", "gemd", "gemz"]
+
+# Quest items worth a check when they turn up (code, act index, every
+# difficulty). Ones that already complete a quest (Horadric Malus, Amulet of
+# the Viper, Horadric Staff...) are left out. You keep the Horadric Cube, so
+# it only counts once.
+QUEST_ITEMS = [
+    ("bks", 0, True), ("leg", 0, True), ("box", 1, False), ("tr1", 1, True), ("msf", 1, True), ("ass", 1, True),
+    ("qey", 2, True), ("qhr", 2, True), ("qbr", 2, True), ("qf1", 2, True), ("g34", 2, True), ("xyz", 2, True),
+    ("mss", 3, True), ("hfh", 3, True), ("tr2", 4, True),
+]
+# Pandemonium's uber bosses, by MonStats Id.
+UBERS = [("uberandariel", "Lilith"), ("uberduriel", "Uber Duriel"), ("uberizual", "Uber Izual"),
+         ("ubermephisto", "Uber Mephisto"), ("uberdiablo", "Uber Diablo"), ("uberbaal", "Uber Baal")]
+
 # Item kinds for level-scaled rewards.
 WEAPON, ARMOR, JEWELRY = 0, 1, 2
 JEWELRY_CODES = {"rin", "amu", "jew"}
@@ -66,6 +101,11 @@ def main() -> None:
     skills.sort()
 
     areas = []
+    # The act of every level id, for counting kills per act.
+    level_acts = {}
+    for row in read_table(excel / "levels.txt"):
+        if row.get("Id", "").isdigit() and row.get("Act", "").isdigit():
+            level_acts[int(row["Id"])] = int(row["Act"])
     for row in read_table(excel / "levels.txt"):
         if not row.get("Id", "").isdigit():
             continue
@@ -76,6 +116,47 @@ def main() -> None:
             continue
         areas.append((level_id, int(row["Act"]), row["*StringName"]))
     areas.sort()
+
+    # (superunique row, act index, name). The act comes from the treasure class
+    # ("Act 2 Super A"); Griswold has his own, in Act I.
+    superuniques = []
+    for position, row in enumerate(read_table(excel / "superuniques.txt")):
+        name = row.get("Superunique", "")
+        if name in FIELD_SUPERUNIQUES:
+            tc = row.get("TC", "")
+            act = int(tc.split()[1]) - 1 if tc.startswith("Act ") else 0
+            superuniques.append((int(row["hcIdx"]), act, name))
+    assert len(superuniques) == len(FIELD_SUPERUNIQUES), "a field superunique is missing from superuniques.txt"
+    superuniques.sort()
+
+    misc = read_table(excel / "misc.txt")
+    misc_names = {row["code"]: row["name"] for row in misc if row.get("code")}
+    # (rune number, name) and (index, code, name) of each gem, in misc.txt order.
+    runes = [(n, misc_names[f"r{n:02d}"]) for n in range(1, 34)]
+    gems = [(row["code"], row["name"]) for row in misc if row.get("type") in GEM_TYPES]
+    assert len(gems) == 35, len(gems)
+    specials = [(code, "", misc_names[code].replace("Essense", "Essence")) for code in SPECIAL_CODES] + [(code, name, name) for code, name in SPECIAL_UNIQUES]
+
+    # Lord of Destruction sets and their pieces, in setitems.txt order.
+    item_sets: dict[str, list[str]] = {}
+    for row in read_table(excel / "setitems.txt"):
+        if row.get("*ID", "").isdigit() and int(row["*ID"]) <= 126 and row.get("set"):
+            item_sets.setdefault(row["set"], []).append(row["index"])
+    assert len(item_sets) == 32, len(item_sets)
+
+    # Monster rows (*hcIdx) of the Secret Cow Level's cows and their king.
+    monster_rows = {row["Id"]: int(row["*hcIdx"]) for row in read_table(excel / "monstats.txt") if row.get("*hcIdx", "").isdigit()}
+    cow, cow_king = monster_rows["cow"], monster_rows["cowking"]
+    ubers = [(monster_rows[monster], name) for monster, name in UBERS]
+
+    names_by_code = dict(misc_names)
+    for table in ("weapons.txt", "armor.txt"):
+        names_by_code.update({row["code"]: row["name"] for row in read_table(excel / table) if row.get("code")})
+    quest_items = [(code, act, every, names_by_code[code]) for code, act, every in QUEST_ITEMS]
+
+    # Experience needed for each character level (1..99): row N is level N + 1.
+    experience = [int(row["Amazon"]) for row in read_table(excel / "experience.txt") if row.get("Level", "").isdigit()][:99]
+    assert len(experience) == 99 and experience[0] == 0, len(experience)
 
     weapon_codes = {row["code"] for row in read_table(excel / "weapons.txt") if row.get("code")}
     armor_codes = {row["code"] for row in read_table(excel / "armor.txt") if row.get("code")}
@@ -156,7 +237,21 @@ def main() -> None:
     py += [f"    ({lid}, {act}, {name!r})," for lid, act, name in areas]
     py += ["]", "", "# (quest flag id, act index, name)", "QUESTS = ["]
     py += [f"    ({qid}, {act}, {name!r})," for qid, act, name in QUESTS]
-    py += ["]", "", f"GOAL_QUEST = {GOAL_QUEST}", ""]
+    py += ["]", "", "# (superunique id, act index, name): the field superuniques, one check each per difficulty.", "SUPERUNIQUES = ["]
+    py += [f"    ({sid}, {act}, {name!r})," for sid, act, name in superuniques]
+    py += ["]", "", "# (rune number, name)", "RUNES = ["]
+    py += [f"    ({n}, {name!r})," for n, name in runes]
+    py += ["]", "", "# Gem names, in misc.txt order (index = position).", "GEMS = ["]
+    py += [f"    {name!r}," for _code, name in gems]
+    py += ["]", "", "# Lord of Destruction sets: (name, piece names).", "SETS = ["]
+    py += [f"    ({name!r}, {pieces!r})," for name, pieces in item_sets.items()]
+    py += ["]", "", "# Rare Hell items worth a check (index = position).", "SPECIAL_ITEMS = ["]
+    py += [f"    {name!r}," for _code, _unique, name in specials]
+    py += ["]", "", "# Quest items worth a check: (act index, every difficulty, name); index = position.", "QUEST_ITEMS = ["]
+    py += [f"    ({act}, {every}, {name!r})," for _code, act, every, name in quest_items]
+    py += ["]", "", "# Pandemonium's uber bosses; index = position.", "UBERS = ["]
+    py += [f"    {name!r}," for _row, name in ubers]
+    py += ["]", "", f"COW_LEVEL = 39", "", f"GOAL_QUEST = {GOAL_QUEST}", ""]
     (ROOT / "apworld" / "d2r_archipelago" / "data.py").write_text("\n".join(py), encoding="utf-8")
 
     def cstr(text: str) -> str:
@@ -167,6 +262,11 @@ def main() -> None:
          "struct Skill { uint16_t id; const char* name; const char* cls; };",
          "struct Area { uint16_t id; uint8_t act; const char* name; };",
          "struct Quest { uint8_t flag; uint8_t act; const char* name; };",
+         "struct SuperUnique { uint8_t id; uint8_t act; const char* name; };",
+         "struct Collectible { const char* code; const char* unique; const char* name; };",
+         "struct ItemSet { const char* name; const char* pieces[8]; };",
+         "struct QuestItem { const char* code; uint8_t act; bool everyDifficulty; const char* name; };",
+         "struct Uber { uint16_t monster; const char* name; };",
          "enum Kind : uint8_t { Weapon, Armor, Jewelry };",
          "// record is the UniqueItems/SetItems *ID; code is the base item.",
          "struct QualityItem { uint16_t record; const char* code; uint8_t itemLevel; uint8_t reqLevel; Kind kind; const char* name; };",
@@ -177,6 +277,29 @@ def main() -> None:
     h += [f"\t{{ {lid}, {act}, {cstr(name)} }}," for lid, act, name in areas]
     h += ["};", "", "inline constexpr Quest Quests[] = {"]
     h += [f"\t{{ {qid}, {act}, {cstr(name)} }}," for qid, act, name in QUESTS]
+    h += ["};", "", "// The field superuniques (SuperUniques row, act, name), one check each per difficulty.",
+          "inline constexpr SuperUnique SuperUniques[] = {"]
+    h += [f"\t{{ {sid}, {act}, {cstr(name)} }}," for sid, act, name in superuniques]
+    h += ["};", "", "// Collection checks. Runes are r01..r33; Gems and Specials go by base code,",
+          "// and a Special with a unique name must be that unique.", "inline constexpr Collectible Gems[] = {"]
+    h += [f"\t{{ {cstr(code)}, nullptr, {cstr(name)} }}," for code, name in gems]
+    h += ["};", "", "inline constexpr Collectible Specials[] = {"]
+    h += [f"\t{{ {cstr(code)}, {cstr(unique) if unique else 'nullptr'}, {cstr(name)} }}," for code, unique, name in specials]
+    h += ["};", "", "// Lord of Destruction sets: a check once every piece is on the character.", "inline constexpr ItemSet Sets[] = {"]
+    h += ["\t{ " + cstr(name) + ", { " + ", ".join(cstr(piece) for piece in pieces) + " } }," for name, pieces in item_sets.items()]
+    h += ["};", "", "// Quest items worth a check, per difficulty unless everyDifficulty is false.",
+          "inline constexpr QuestItem QuestItems[] = {"]
+    h += [f"\t{{ {cstr(code)}, {act}, {'true' if every else 'false'}, {cstr(name)} }}," for code, act, every, name in quest_items]
+    h += ["};", "", "// Pandemonium's uber bosses (MonStats rows).", "inline constexpr Uber Ubers[] = {"]
+    h += [f"\t{{ {row}, {cstr(name)} }}," for row, name in ubers]
+    top = max(level_acts)
+    h += ["};", "", "// The act of each level id (0-4), 255 for none.", "inline constexpr uint8_t LevelActs[] = {"]
+    acts_list = [level_acts.get(level, 255) for level in range(top + 1)]
+    h += ["\t" + ", ".join(str(act) for act in acts_list[i:i + 20]) + "," for i in range(0, len(acts_list), 20)]
+    h += ["};", "", "// The Secret Cow Level and its monster rows.", "inline constexpr uint16_t CowLevel = 39;",
+          f"inline constexpr uint16_t CowMonster = {cow};", f"inline constexpr uint16_t CowKingMonster = {cow_king};"]
+    h += ["", "// Experience needed for character levels 1..99.", "inline constexpr uint32_t Experience[] = {"]
+    h += ["\t" + ", ".join(str(value) for value in experience[i:i + 10]) + "," for i in range(0, len(experience), 10)]
     kinds = ("Weapon", "Armor", "Jewelry")
     for label, rows in (("Uniques", uniques), ("SetItems", sets)):
         h += ["};", "", f"inline constexpr QualityItem {label}[] = {{"]
@@ -189,7 +312,7 @@ def main() -> None:
           f"inline constexpr uint32_t CodexUnique = {codex_unique};", ""]
     h += [f"inline constexpr uint8_t GoalQuest = {GOAL_QUEST};", "", "} // namespace ap::data", ""]
     (ROOT / "plugin" / "src" / "game_data.h").write_text("\n".join(h), encoding="utf-8")
-    print(f"{len(skills)} skills, {len(areas)} areas, {len(QUESTS)} quests, {len(uniques)} uniques, "
+    print(f"{len(skills)} skills, {len(areas)} areas, {len(QUESTS)} quests, {len(superuniques)} superuniques, {len(item_sets)} sets, cows {cow}/{cow_king}, {len(uniques)} uniques, "
           f"{len(sets)} set items, {len(bases)} socket bases, codex prefix {codex_prefix}")
 
 

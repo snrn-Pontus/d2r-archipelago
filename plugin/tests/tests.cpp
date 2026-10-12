@@ -106,10 +106,16 @@ void TestConfigDefaults() {
 void TestSaveStateRoundTrip() {
 	const auto path = std::filesystem::temp_directory_path() / "d2rl-ap-test" / "seed_slot.txt";
 	ap::SaveState state;
-	state.checks = { ap::ids::QuestLocation(0, 1), ap::ids::AreaLocation(38), ap::ids::LevelLocation(30) };
+	state.checks = { ap::ids::QuestLocation(0, 1), ap::ids::AreaLocation(0, 38), ap::ids::LevelLocation(30) };
 	state.fillersDelivered = 7;
 	state.goalReached = true;
 	state.playerClass = 4;
+	state.kills = { { 3, 120 }, { 24, 7 } };
+	state.foundUniques = { 11, 4000000000U };
+	state.foundSets = { 5 };
+	state.ownHints = { 0, 3 };
+	state.otherHints = { 2425500 };
+	state.prophecies = 2;
 	EXPECT(state.Save(path));
 	ap::SaveState loaded;
 	EXPECT(loaded.Load(path));
@@ -117,6 +123,8 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.fillersDelivered == 7);
 	EXPECT(loaded.goalReached);
 	EXPECT(loaded.playerClass == 4);
+	EXPECT(loaded.kills == state.kills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
+	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2);
 	std::filesystem::remove_all(path.parent_path());
 }
 
@@ -124,8 +132,23 @@ void TestSaveStateRoundTrip() {
 void TestIdsMatchApworld() {
 	EXPECT(ap::ids::QuestLocation(0, 1) == 2'420'001);
 	EXPECT(ap::ids::QuestLocation(2, 40) == 2'420'240);
-	EXPECT(ap::ids::AreaLocation(38) == 2'421'038);
+	EXPECT(ap::ids::AreaLocation(0, 38) == 2'421'038);
+	EXPECT(ap::ids::AreaLocation(2, 132) == 2'421'532);
 	EXPECT(ap::ids::LevelLocation(30) == 2'422'030);
+	EXPECT(ap::ids::SuperUniqueLocation(0, 0) == 2'423'000);
+	EXPECT(ap::ids::SuperUniqueLocation(2, 59) == 2'423'259);
+	EXPECT(ap::ids::RuneLocation(33) == 2'425'033);
+	EXPECT(ap::ids::GemLocation(34) == 2'425'134);
+	EXPECT(ap::ids::SetLocation(31) == 2'425'231);
+	EXPECT(ap::ids::SpecialLocation(12) == 2'425'312);
+	EXPECT(ap::ids::CowLocation(1, 2) == 2'425'412);
+	EXPECT(ap::ids::ShopLocation(4, 4) == 2'425'544);
+	EXPECT(ap::ids::UberLocation(5) == 2'425'605);
+	EXPECT(ap::ids::UniqueFindLocation(4) == 2'425'804 && ap::ids::SetFindLocation(3) == 2'425'813);
+	EXPECT(ap::ids::QuestItemLocation(2, 14) == 2'425'954);
+	EXPECT(ap::ids::KillLocation(2, 4, 2) == 2'426'242);
+	EXPECT(ap::ids::IsLockItem(ap::ids::LockBase + 9) && !ap::ids::IsLockItem(ap::ids::LootBase) && !ap::ids::IsKeyItem(ap::ids::LockBase));
+	EXPECT(static_cast<uint32_t>(ap::loot::Loot::Count) == 24);
 	EXPECT(ap::ids::IsSkillItem(2'430'054) && ap::ids::SkillOf(2'430'054) == 54);
 	EXPECT(!ap::ids::IsSkillItem(ap::ids::EmpowermentItem) && !ap::ids::IsSkillItem(ap::ids::LootBase));
 	EXPECT(ap::ids::IsLootItem(ap::ids::LootBase + 5) && !ap::ids::IsLootItem(ap::ids::EmpowermentItem));
@@ -134,6 +157,16 @@ void TestIdsMatchApworld() {
 void TestGameData() {
 	EXPECT(std::size(ap::data::Skills) == 240);
 	EXPECT(std::size(ap::data::Quests) == 27);
+	EXPECT(std::size(ap::data::SuperUniques) == 41);
+	EXPECT(std::size(ap::data::Gems) == 35 && std::size(ap::data::Sets) == 32 && std::size(ap::data::Specials) == 13);
+	EXPECT(std::string_view(ap::data::Sets[0].pieces[0]) == "Civerb's Ward" && ap::data::Sets[0].pieces[3] == nullptr);
+	EXPECT(ap::data::Experience[0] == 0 && ap::data::Experience[1] == 500 && std::size(ap::data::Experience) == 99);
+	EXPECT(std::size(ap::data::QuestItems) == 15 && std::size(ap::data::Ubers) == 6);
+	EXPECT(ap::data::LevelActs[1] == 0 && ap::data::LevelActs[40] == 1 && ap::data::LevelActs[75] == 2 && ap::data::LevelActs[103] == 3
+	       && ap::data::LevelActs[109] == 4);
+	for (const auto& superUnique : ap::data::SuperUniques) {
+		EXPECT(superUnique.id < 100 && superUnique.act < 5);
+	}
 	bool teleport = false;
 	for (const auto& skill : ap::data::Skills) {
 		teleport |= skill.id == 54 && std::string_view(skill.name) == "Teleport";
@@ -159,6 +192,36 @@ void TestClientParsesServerPackets() {
 	// A gap in the item index must not append anything.
 	client.Handle(R"json([{"cmd":"ReceivedItems","index":5,"items":[{"item":2431000,"location":3,"player":1,"flags":0}]}])json");
 	EXPECT(client.Items().size() == 1);
+	EXPECT(!client.Slots().deathLink && !client.Slots().superUniqueChecks && !client.Slots().locks.cube);
+	// DeathLink is off for this seed, so deaths are ignored.
+	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":1.0,"source":"Other","cause":"Other fell."}}])json");
+	EXPECT(client.TakeDeaths().empty());
+}
+
+void TestClientDeathLink() {
+	ap::Client client([](const std::string&) {});
+	client.Connect("localhost", "Snrn", "");
+	client.Disconnect();
+	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[],"missing_locations":[],"checked_locations":[],
+		"slot_data":{"death_link":true,"superunique_checks":true,"shop_checks":3,"enforce_act_keys":true,
+		"hints":[[77,2,2430951],[2420001,1,2430054]],"hint_balance":30,"hint_sources":{"cain":true,"page_chance":25,"prophecy_shop":true},
+		"locks":{"cube":true,"waypoints":true}},"slot_info":{}}])json");
+	EXPECT(client.Slots().hints.size() == 2 && client.Slots().hints[0].location == 77 && client.Slots().hints[0].player == 2
+	       && client.Slots().hints[1].item == 2430054 && client.Slots().hintBalance == 30 && client.Slots().cainHints
+	       && client.Slots().pageHintChance == 25 && client.Slots().prophecyShop);
+	client.Handle(R"json([{"cmd":"LocationInfo","locations":[{"item":99,"location":2420002,"player":3,"flags":1,"class":"NetworkItem"}]}])json");
+	EXPECT(client.Scouted().size() == 1 && client.Scouted().at(2420002).player == 3 && client.Scouted().at(2420002).flags == 1);
+	EXPECT(client.Slots().shopChecks == 3 && client.Slots().enforceActKeys && client.Slots().locks.cube && client.Slots().locks.waypoints
+	       && !client.Slots().locks.stash);
+	EXPECT(client.Slots().deathLink && client.Slots().superUniqueChecks && client.Slots().randomizer.superUniqueChecks);
+	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":1.0,"source":"Other","cause":"Other was slain by a cow."}}])json");
+	// Our own death comes back from the server too; it's not a new one.
+	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":2.0,"source":"Snrn","cause":"Snrn died."}}])json");
+	client.Handle(R"json([{"cmd":"Bounced","tags":["Other"],"data":{"source":"Other"}}])json");
+	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":3.0,"source":"Quiet"}}])json");
+	const auto deaths = client.TakeDeaths();
+	EXPECT(deaths.size() == 2 && deaths[0] == "Other was slain by a cow." && deaths[1] == "Quiet died.");
+	EXPECT(client.TakeDeaths().empty());
 }
 
 auto FindRecord(std::span<const ap::data::QualityItem> items, uint32_t record) -> const ap::data::QualityItem* {
@@ -189,6 +252,42 @@ void TestLootScalesToLevel() {
 		const auto* row = FindRecord(ap::data::Uniques, ap::loot::Roll(ap::loot::Loot::RandomUnique, 80, random).record);
 		EXPECT(row != nullptr && row->reqLevel >= 68);
 	}
+}
+
+void TestGoldExperienceCharms() {
+	EXPECT(ap::loot::GoldAmount(1) == 1000 && ap::loot::GoldAmount(80) == 80000);
+	// Level 1 needs 500 experience to level up; 15% of that is 75.
+	EXPECT(ap::loot::ExperienceAmount(1) == 75);
+	EXPECT(ap::loot::ExperienceAmount(99) == 0);
+	EXPECT(ap::loot::ExperienceAmount(90) > 0);
+	std::mt19937 random(11);
+	std::set<std::string> charms;
+	for (int i = 0; i < 60; ++i) {
+		const auto charm = ap::loot::Roll(ap::loot::Loot::RandomCharm, 40, random);
+		EXPECT(charm.quality == D2RL::Items::Quality::Magic && charm.itemLevel == 40);
+		charms.insert(charm.name);
+		const auto jewel = ap::loot::Roll(ap::loot::Loot::RandomJewel, 40, random);
+		EXPECT(jewel.code == ap::loot::CodeFromText("jew"));
+		EXPECT(jewel.quality == D2RL::Items::Quality::Magic || jewel.quality == D2RL::Items::Quality::Rare);
+	}
+	EXPECT(charms.size() == 3);
+}
+
+void TestShrinesAndTraps() {
+	std::mt19937 random(13);
+	const auto shrine = ap::loot::CommandsFor(ap::loot::Loot::RandomShrine, 30, 0, random);
+	EXPECT(!shrine.trap && shrine.commands.front() == "loc player" && shrine.commands.back().rfind("shrine ", 0) == 0);
+	const auto ambush = ap::loot::CommandsFor(ap::loot::Loot::AmbushTrap, 30, 4, random);
+	EXPECT(ambush.trap && ambush.commands.back().rfind("mspawn ", 0) == 0 && ambush.commands.back().ends_with(",6"));
+	const auto tax = ap::loot::CommandsFor(ap::loot::Loot::TaxCollectorTrap, 30, 0, random);
+	EXPECT(tax.trap && tax.commands[0] == "gold -30000");
+	EXPECT(ap::loot::CommandsFor(ap::loot::Loot::Gold, 30, 0, random).commands.empty());
+	for (int i = 0; i < 50; ++i) {
+		const int id = ap::loot::ShrineId(random);
+		// Never a harmful or unused shrine.
+		EXPECT(id != 0 && id != 4 && id != 5 && id != 16 && id != 17 && id < 19);
+	}
+	EXPECT(std::string_view(ap::loot::AmbushMonster(9, random)).size() > 0);
 }
 
 void TestOtherLoot() {
@@ -329,6 +428,51 @@ void TestRunewordShuffle() {
 	EXPECT(std::stoi(runes.Cell(2, 3).substr(1)) >= 31);
 }
 
+void TestSuperUniqueMonsters() {
+	auto monstats = ap::Table::Parse("Id\t*hcIdx\tminion1\tLevel\r\nfallenshaman1\t0\tfallen1\t2\r\nzombie1\t1\t\t1\r\nExpansion\t\t\t\r\n"
+	                                 "snowyeti4\t2\t\t40\r\n");
+	auto superUniques = ap::Table::Parse("Superunique\tName\tClass\r\nBishibosh\tBishibosh\tfallenshaman1\r\nRadament\tRadament\tradament\r\n"
+	                                     "Corpsefire\tCorpsefire\tzombie1\r\n");
+	const size_t before = monstats.Rows().size();
+	EXPECT(ap::randomizer::AddSuperUniqueMonsters(monstats, superUniques) == 2);
+	// One row per field superunique, in data::SuperUniques order, at the end.
+	EXPECT(monstats.Rows().size() == before + std::size(ap::data::SuperUniques));
+	auto rowOf = [&](std::string_view name) {
+		for (size_t i = 0; i < std::size(ap::data::SuperUniques); ++i) {
+			if (name == ap::data::SuperUniques[i].name) {
+				return before + i;
+			}
+		}
+		return size_t { 0 };
+	};
+	const size_t bishibosh = rowOf("Bishibosh"), corpsefire = rowOf("Corpsefire");
+	EXPECT(monstats.Cell(bishibosh, 0) == "ap_superunique_0" && monstats.Cell(bishibosh, 1) == "3");
+	// Bishibosh's minions were fallen already; Corpsefire's stay plain zombies.
+	EXPECT(monstats.Cell(bishibosh, 2) == "fallen1" && monstats.Cell(bishibosh, 3) == "2");
+	EXPECT(monstats.Cell(corpsefire, 2) == "zombie1" && monstats.Cell(corpsefire, 3) == "1");
+	EXPECT(superUniques.Cell(0, 2) == "ap_superunique_0" && superUniques.Cell(1, 2) == "radament" && superUniques.Cell(2, 2) == "ap_superunique_40");
+	// Superuniques this table lacks still get a row, a copy of the first monster.
+	EXPECT(monstats.Cell(rowOf("Frozenstein"), 0) == "ap_superunique_59" && monstats.Cell(rowOf("Frozenstein"), 3) == "2");
+
+	ap::randomizer::Settings settings;
+	settings.superUniqueChecks = true;
+	EXPECT(settings.Any() && settings.Stamp().find("superunique_checks=1") != std::string::npos);
+	EXPECT(ap::randomizer::Settings {}.Stamp().find("superunique_checks") == std::string::npos);
+}
+
+void TestShopParcels() {
+	auto misc = ap::Table::Parse("name\tcode\tcost\tAkaraMin\tAkaraMax\tMalahMin\tMalahMax\tspawnable\r\nStandard of Heroes\tstd\t1\t\t\t\t\t1\r\n");
+	EXPECT(ap::randomizer::AddShopParcels(misc) == 5);
+	EXPECT(ap::randomizer::AddShopParcels(misc) == 0);
+	EXPECT(misc.Rows().size() == 6);
+	EXPECT(misc.Cell(1, 1) == "ap1" && misc.Cell(1, 2) == "2500" && misc.Cell(1, 3) == "1" && misc.Cell(1, 5).empty() && misc.Cell(1, 7) == "0");
+	EXPECT(misc.Cell(5, 1) == "ap5" && misc.Cell(5, 2) == "40000" && misc.Cell(5, 3).empty() && misc.Cell(5, 5) == "1");
+	EXPECT(ap::randomizer::AddProphecyScrolls(misc) == 8 && ap::randomizer::AddProphecyScrolls(misc) == 0);
+	// Every tier at every potion seller, the price rising.
+	EXPECT(misc.Cell(6, 0) == "Scroll of Prophecy" && misc.Cell(6, 1) == "aq1" && misc.Cell(6, 2) == "1000" && misc.Cell(6, 3) == "1" && misc.Cell(6, 5) == "1");
+	EXPECT(misc.Cell(13, 1) == "aq8" && misc.Cell(13, 2) == "100000");
+}
+
 void TestTableEdits() {
 	auto skills = ap::Table::Parse("skill\tcharclass\treqlevel\treqskill1\treqskill2\treqskill3\r\nAttack\t\t1\t\t\t\r\n"
 	                               "Fire Bolt\tsor\t1\t\t\t\r\nAbyss\twar\t30\tSigil Death\tApocalypse\t\r\n");
@@ -370,11 +514,16 @@ int main() {
 	TestBalancedAnywhere();
 	TestDensityAndDrops();
 	TestSuperUniqueShuffle();
+	TestSuperUniqueMonsters();
+	TestShopParcels();
 	TestRunewordShuffle();
 	TestTableEdits();
 	TestLootScalesToLevel();
 	TestOtherLoot();
+	TestGoldExperienceCharms();
+	TestShrinesAndTraps();
 	TestClientParsesServerPackets();
+	TestClientDeathLink();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
 	TestSaveStateRoundTrip();

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <set>
 
 namespace ap {
@@ -17,6 +18,16 @@ struct SaveState {
 	int level = 0;
 	// The player's class id as seen in game (0 Amazon ... 7 Warlock), or -1.
 	int playerClass = -1;
+	// Monster kills per difficulty * 10 + act, for the kill-count checks.
+	std::map<int, int> kills;
+	// Item seeds of the uniques and set items you found (not rewards), for the find-count checks.
+	std::set<uint32_t> foundUniques;
+	std::set<uint32_t> foundSets;
+	// Hints found in game: indexes into the seed's hint list, and our own locations
+	// hinted for other players. Scrolls of Prophecy bought (the next tier to buy).
+	std::set<int> ownHints;
+	std::set<int64_t> otherHints;
+	int prophecies = 0;
 
 	bool Load(const std::filesystem::path& path);
 	bool Save(const std::filesystem::path& path) const;

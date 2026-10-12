@@ -120,7 +120,64 @@ auto Roll(Loot loot, int level, std::mt19937& random) -> Pick {
 		case Loot::SetItem:       return PickQualityItem(data::SetItems, Quality::Set, level, true, data::Weapon, random);
 		case Loot::SocketedBase:  return PickBase(level, random);
 		case Loot::JunkBackpack:  return { .code = CodeFromText(Junk[random() % std::size(Junk)]), .name = "junk" };
+		case Loot::RandomCharm: {
+			constexpr const char* Charms[][2] = { { "cm1", "Small Charm" }, { "cm2", "Large Charm" }, { "cm3", "Grand Charm" } };
+			const auto& charm = Charms[random() % std::size(Charms)];
+			return { .code = CodeFromText(charm[0]), .quality = Quality::Magic, .itemLevel = static_cast<uint32_t>(level), .name = charm[1] };
+		}
+		case Loot::RandomJewel: {
+			const bool rare = random() % 10 < 3;
+			return { .code = CodeFromText("jew"), .quality = rare ? Quality::Rare : Quality::Magic, .itemLevel = static_cast<uint32_t>(level),
+				     .name = rare ? "Rare Jewel" : "Magic Jewel" };
+		}
 		default:                  return {};
+	}
+}
+
+auto GoldAmount(int level) -> int {
+	return std::clamp(level, 1, 99) * 1000;
+}
+
+auto ExperienceAmount(int level) -> int64_t {
+	level = std::clamp(level, 1, 99);
+	if (level >= 99) {
+		return 0;
+	}
+	return (static_cast<int64_t>(data::Experience[level]) - data::Experience[level - 1]) * 15 / 100;
+}
+
+auto ShrineId(std::mt19937& random) -> int {
+	// Refilling, Armor, Combat, the four resistances, Skill, Mana Recharge, Experience, Gem.
+	static constexpr int Shrines[] = { 1, 6, 7, 8, 9, 10, 11, 12, 13, 15, 18 };
+	return Shrines[random() % std::size(Shrines)];
+}
+
+auto AmbushMonster(int act, std::mt19937& random) -> const char* {
+	static constexpr const char* Monsters[5][4] = {
+		{ "fallen1", "skeleton1", "zombie1", "brute1" },
+		{ "sandraider1", "mummy1", "clawviper1", "scarab1" },
+		{ "fetish1", "thornhulk1", "batdemon1", "fetish1" },
+		{ "doomknight1", "megademon1", "regurgitator1", "doomknight1" },
+		{ "reanimatedhorde1", "deathmauler1", "snowyeti1", "minion1" },
+	};
+	return Monsters[std::clamp(act, 0, 4)][random() % 4];
+}
+
+auto CommandsFor(Loot loot, int level, int act, std::mt19937& random) -> Commands {
+	switch (loot) {
+		// Spawns go to D2RCore's spawn location; "loc player" puts it on the player.
+		case Loot::RandomShrine:     return { { "loc player", "shrine " + std::to_string(ShrineId(random)) }, "a shrine appears at your feet." };
+		case Loot::AmbushTrap:
+			return { { "loc player", std::string("mspawn ") + AmbushMonster(act, random) + ",6" }, "it's a trap! An ambush!", true };
+		case Loot::PoisonCloudTrap:  return { { "pcloud" }, "it's a trap! Poison gas!", true };
+		case Loot::FirestormTrap:    return { { "fstorm" }, "it's a trap! Firestorm!", true };
+		case Loot::ManaDrainTrap:    return { { "depletemana 0" }, "it's a trap! Your mana drains away.", true };
+		case Loot::TaxCollectorTrap: {
+			const int amount = GoldAmount(level);
+			return { { "gold -" + std::to_string(amount) }, "it's a trap! The tax collector takes up to " + std::to_string(amount) + " gold.", true };
+		}
+		case Loot::MercenaryDownTrap: return { { "killhirable" }, "it's a trap! Your mercenary falls.", true };
+		default:                      return {};
 	}
 }
 

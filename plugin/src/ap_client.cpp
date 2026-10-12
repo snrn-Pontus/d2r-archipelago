@@ -4,8 +4,10 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <chrono>
 #include <random>
+#include <utility>
 
 using json = nlohmann::json;
 
@@ -228,6 +230,39 @@ void Client::Handle(const std::string& text) {
 			slotData_.levelChecks = data.value("level_checks", true);
 			slotData_.levelStep = data.value("level_step", 5);
 			slotData_.levelCap = data.value("level_cap", 30);
+			slotData_.superUniqueChecks = data.value("superunique_checks", false);
+			slotData_.deathLink = data.value("death_link", false);
+			slotData_.cowLevelChecks = data.value("cow_level_checks", false);
+			slotData_.runeChecks = data.value("rune_checks", 0);
+			slotData_.gemChecks = data.value("gem_checks", false);
+			slotData_.setChecks = data.value("set_checks", false);
+			slotData_.specialItemChecks = data.value("special_item_checks", false);
+			slotData_.questItemChecks = data.value("quest_item_checks", false);
+			slotData_.shopChecks = data.value("shop_checks", 0);
+			slotData_.uberChecks = data.value("uber_checks", false);
+			slotData_.killCountChecks = data.value("kill_count_checks", false);
+			slotData_.findCountChecks = data.value("find_count_checks", false);
+			slotData_.enforceActKeys = data.value("enforce_act_keys", false);
+			slotData_.hints.clear();
+			for (const json& hint : data.value("hints", json::array())) {
+				if (hint.is_array() && hint.size() == 3) {
+					slotData_.hints.push_back({ hint[0].get<int64_t>(), hint[1].get<int>(), hint[2].get<int64_t>() });
+				}
+			}
+			slotData_.hintBalance = data.value("hint_balance", 0);
+			const json sources = data.value("hint_sources", json::object());
+			slotData_.cainHints = sources.value("cain", false);
+			slotData_.pageHintChance = sources.value("page_chance", 0);
+			slotData_.prophecyShop = sources.value("prophecy_shop", false);
+			const json locks = data.value("locks", json::object());
+			slotData_.locks = {
+				.cube = locks.value("cube", false),
+				.townPortal = locks.value("town_portal", false),
+				.potions = locks.value("potions", false),
+				.stash = locks.value("stash", false),
+				.merchants = locks.value("merchants", false),
+				.waypoints = locks.value("waypoints", false),
+			};
 			const json randomizer = data.value("randomizer", json::object());
 			slotData_.randomizer.seed = randomizer.value("seed", 0U);
 			slotData_.randomizer.monsters = static_cast<randomizer::Shuffle>(randomizer.value("monster_shuffle", 0));
@@ -239,10 +274,23 @@ void Client::Handle(const std::string& text) {
 			slotData_.randomizer.monsterDensity = randomizer.value("monster_density", 100);
 			slotData_.randomizer.championPacks = randomizer.value("champion_packs", 100);
 			slotData_.randomizer.betterDrops = randomizer.value("better_drops", 100);
+			slotData_.randomizer.superUniqueChecks = slotData_.superUniqueChecks;
 			state_ = ConnectionState::Connected;
 			status_ = "Connected as " + slot_ + ".";
 			++sessionGeneration_;
 			messages_.push_back("Archipelago: connected as " + slot_ + ".");
+			deaths_.clear();
+			// Learn what our unchecked locations hold, for hints about other players' items.
+			scouted_.clear();
+			const json missing = packet.value("missing_locations", json::array());
+			if (!missing.empty()) {
+				Send(json::array({ json { { "cmd", "LocationScouts" }, { "locations", missing }, { "create_as_hint", 0 } } }).dump());
+			}
+			if (slotData_.deathLink) {
+				// The tag can only be set once slot_data says DeathLink is on.
+				Send(R"([{"cmd":"ConnectUpdate","tags":["DeathLink"]}])");
+				messages_.push_back("Archipelago: DeathLink is on.");
+			}
 		} else if (cmd == "ConnectionRefused") {
 			std::string reasons;
 			for (const json& error : packet.value("errors", json::array())) {
@@ -284,6 +332,26 @@ void Client::Handle(const std::string& text) {
 					playerNames_[player.value("slot", 0)] = player.value("alias", player.value("name", ""));
 				}
 			}
+		} else if (cmd == "LocationInfo") {
+			std::lock_guard lock(mutex_);
+			for (const json& item : packet.value("locations", json::array())) {
+				const int64_t location = item.value("location", int64_t { 0 });
+				scouted_[location] = { item.value("item", int64_t { 0 }), location, item.value("player", 0), item.value("flags", 0) };
+			}
+		} else if (cmd == "Bounced") {
+			const json tags = packet.value("tags", json::array());
+			if (std::ranges::find(tags, json("DeathLink")) == tags.end()) {
+				continue;
+			}
+			const json data = packet.value("data", json::object());
+			const std::string source = data.value("source", "");
+			const std::string cause = data.value("cause", "");
+			std::lock_guard lock(mutex_);
+			// The server bounces our own deaths back to us too.
+			if (!slotData_.deathLink || source == slot_) {
+				continue;
+			}
+			deaths_.push_back(!cause.empty() ? cause : (source.empty() ? "Someone" : source) + " died.");
 		} else if (cmd == "DataPackage") {
 			std::lock_guard lock(mutex_);
 			// Bind each sub-object before calling items(): value() returns a
@@ -394,6 +462,47 @@ void Client::SendGoal() {
 	}
 }
 
+void Client::CreateHint(int64_t location, int player) {
+	if (State() == ConnectionState::Connected) {
+		Send(json::array({ json { { "cmd", "CreateHints" }, { "locations", { location } }, { "player", player } } }).dump());
+	}
+}
+
+void Client::HintOwnLocation(int64_t location) {
+	if (State() == ConnectionState::Connected) {
+		// 2: broadcast only if it's a new hint.
+		Send(json::array({ json { { "cmd", "LocationScouts" }, { "locations", { location } }, { "create_as_hint", 2 } } }).dump());
+	}
+}
+
+auto Client::MySlot() const -> int {
+	std::lock_guard lock(mutex_);
+	return mySlot_;
+}
+
+auto Client::Scouted() const -> std::map<int64_t, NetworkItem> {
+	std::lock_guard lock(mutex_);
+	return scouted_;
+}
+
+void Client::SendDeath(const std::string& cause) {
+	std::string slot;
+	{
+		std::lock_guard lock(mutex_);
+		if (state_ != ConnectionState::Connected || !slotData_.deathLink) {
+			return;
+		}
+		slot = slot_;
+	}
+	const double now = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+	const json bounce {
+		{ "cmd", "Bounce" },
+		{ "tags", { "DeathLink" } },
+		{ "data", { { "time", now }, { "source", slot }, { "cause", cause } } },
+	};
+	Send(json::array({ bounce }).dump());
+}
+
 void Client::Say(const std::string& text) {
 	if (State() == ConnectionState::Connected) {
 		Send(json::array({ json { { "cmd", "Say" }, { "text", text } } }).dump());
@@ -453,6 +562,11 @@ auto Client::ItemsGeneration() const -> uint64_t {
 auto Client::Items() const -> std::vector<NetworkItem> {
 	std::lock_guard lock(mutex_);
 	return items_;
+}
+
+auto Client::TakeDeaths() -> std::vector<std::string> {
+	std::lock_guard lock(mutex_);
+	return std::exchange(deaths_, {});
 }
 
 auto Client::TakeMessages() -> std::vector<std::string> {

@@ -8,6 +8,11 @@ namespace ap::data {
 struct Skill { uint16_t id; const char* name; const char* cls; };
 struct Area { uint16_t id; uint8_t act; const char* name; };
 struct Quest { uint8_t flag; uint8_t act; const char* name; };
+struct SuperUnique { uint8_t id; uint8_t act; const char* name; };
+struct Collectible { const char* code; const char* unique; const char* name; };
+struct ItemSet { const char* name; const char* pieces[8]; };
+struct QuestItem { const char* code; uint8_t act; bool everyDifficulty; const char* name; };
+struct Uber { uint16_t monster; const char* name; };
 enum Kind : uint8_t { Weapon, Armor, Jewelry };
 // record is the UniqueItems/SetItems *ID; code is the base item.
 struct QualityItem { uint16_t record; const char* code; uint8_t itemLevel; uint8_t reqLevel; Kind kind; const char* name; };
@@ -333,6 +338,202 @@ inline constexpr Quest Quests[] = {
 	{ 38, 4, "Betrayal of Harrogath" },
 	{ 39, 4, "Rite of Passage" },
 	{ 40, 4, "Eve of Destruction" },
+};
+
+// The field superuniques (SuperUniques row, act, name), one check each per difficulty.
+inline constexpr SuperUnique SuperUniques[] = {
+	{ 0, 0, "Bishibosh" },
+	{ 1, 0, "Bonebreak" },
+	{ 2, 0, "Coldcrow" },
+	{ 3, 0, "Rakanishu" },
+	{ 4, 0, "Treehead WoodFist" },
+	{ 5, 0, "Griswold" },
+	{ 7, 0, "Pitspawn Fouldog" },
+	{ 8, 0, "Flamespike the Crawler" },
+	{ 9, 0, "Boneash" },
+	{ 11, 1, "Bloodwitch the Wild" },
+	{ 12, 1, "Fangskin" },
+	{ 13, 1, "Beetleburst" },
+	{ 14, 1, "Leatherarm" },
+	{ 15, 1, "Coldworm the Burrower" },
+	{ 16, 1, "Fire Eye" },
+	{ 17, 1, "Dark Elder" },
+	{ 19, 1, "Ancient Kaa the Soulless" },
+	{ 21, 2, "Web Mage the Burning" },
+	{ 22, 2, "Witch Doctor Endugu" },
+	{ 23, 2, "Stormtree" },
+	{ 24, 2, "Sarina the Battlemaid" },
+	{ 25, 2, "Icehawk Riftwing" },
+	{ 32, 3, "Winged Death" },
+	{ 33, 3, "The Tormentor" },
+	{ 34, 3, "Taintbreeder" },
+	{ 35, 3, "Riftwraith the Cannibal" },
+	{ 40, 0, "Corpsefire" },
+	{ 46, 4, "Axe Dweller" },
+	{ 47, 4, "Bonesaw Breaker" },
+	{ 48, 4, "Dac Farren" },
+	{ 49, 4, "Megaflow Rectifier" },
+	{ 50, 4, "Eyeback Unleashed" },
+	{ 51, 4, "Threash Socket" },
+	{ 52, 4, "Pindleskin" },
+	{ 53, 4, "Snapchip Shatter" },
+	{ 54, 4, "Anodized Elite" },
+	{ 55, 4, "Vinvear Molech" },
+	{ 56, 4, "Sharp Tooth Sayer" },
+	{ 57, 4, "Magma Torquer" },
+	{ 58, 4, "Blaze Ripper" },
+	{ 59, 4, "Frozenstein" },
+};
+
+// Collection checks. Runes are r01..r33; Gems and Specials go by base code,
+// and a Special with a unique name must be that unique.
+inline constexpr Collectible Gems[] = {
+	{ "gcv", nullptr, "Chipped Amethyst" },
+	{ "gfv", nullptr, "Flawed Amethyst" },
+	{ "gsv", nullptr, "Amethyst" },
+	{ "gzv", nullptr, "Flawless Amethyst" },
+	{ "gpv", nullptr, "Perfect Amethyst" },
+	{ "gcy", nullptr, "Chipped Topaz" },
+	{ "gfy", nullptr, "Flawed Topaz" },
+	{ "gsy", nullptr, "Topaz" },
+	{ "gly", nullptr, "Flawless Topaz" },
+	{ "gpy", nullptr, "Perfect Topaz" },
+	{ "gcb", nullptr, "Chipped Sapphire" },
+	{ "gfb", nullptr, "Flawed Sapphire" },
+	{ "gsb", nullptr, "Sapphire" },
+	{ "glb", nullptr, "Flawless Sapphire" },
+	{ "gpb", nullptr, "Perfect Sapphire" },
+	{ "gcg", nullptr, "Chipped Emerald" },
+	{ "gfg", nullptr, "Flawed Emerald" },
+	{ "gsg", nullptr, "Emerald" },
+	{ "glg", nullptr, "Flawless Emerald" },
+	{ "gpg", nullptr, "Perfect Emerald" },
+	{ "gcr", nullptr, "Chipped Ruby" },
+	{ "gfr", nullptr, "Flawed Ruby" },
+	{ "gsr", nullptr, "Ruby" },
+	{ "glr", nullptr, "Flawless Ruby" },
+	{ "gpr", nullptr, "Perfect Ruby" },
+	{ "gcw", nullptr, "Chipped Diamond" },
+	{ "gfw", nullptr, "Flawed Diamond" },
+	{ "gsw", nullptr, "Diamond" },
+	{ "glw", nullptr, "Flawless Diamond" },
+	{ "gpw", nullptr, "Perfect Diamond" },
+	{ "skc", nullptr, "Chipped Skull" },
+	{ "skf", nullptr, "Flawed Skull" },
+	{ "sku", nullptr, "Skull" },
+	{ "skl", nullptr, "Flawless Skull" },
+	{ "skz", nullptr, "Perfect Skull" },
+};
+
+inline constexpr Collectible Specials[] = {
+	{ "pk1", nullptr, "Key of Terror" },
+	{ "pk2", nullptr, "Key of Hate" },
+	{ "pk3", nullptr, "Key of Destruction" },
+	{ "mbr", nullptr, "Mephisto's Brain" },
+	{ "dhn", nullptr, "Diablo's Horn" },
+	{ "bey", nullptr, "Baal's Eye" },
+	{ "toa", nullptr, "Token of Absolution" },
+	{ "tes", nullptr, "Twisted Essence of Suffering" },
+	{ "ceh", nullptr, "Charged Essence of Hatred" },
+	{ "bet", nullptr, "Burning Essence of Terror" },
+	{ "fed", nullptr, "Festering Essence of Destruction" },
+	{ "cm2", "Hellfire Torch", "Hellfire Torch" },
+	{ "cm1", "Annihilus", "Annihilus" },
+};
+
+// Lord of Destruction sets: a check once every piece is on the character.
+inline constexpr ItemSet Sets[] = {
+	{ "Civerb's Vestments", { "Civerb's Ward", "Civerb's Icon", "Civerb's Cudgel" } },
+	{ "Hsarus' Defense", { "Hsarus' Iron Heel", "Hsarus' Iron Fist", "Hsarus' Iron Stay" } },
+	{ "Cleglaw's Brace", { "Cleglaw's Tooth", "Cleglaw's Claw", "Cleglaw's Pincers" } },
+	{ "Iratha's Finery", { "Iratha's Collar", "Iratha's Cuff", "Iratha's Coil", "Iratha's Cord" } },
+	{ "Isenhart's Armory", { "Isenhart's Lightbrand", "Isenhart's Parry", "Isenhart's Case", "Isenhart's Horns" } },
+	{ "Vidala's Rig", { "Vidala's Barb", "Vidala's Fetlock", "Vidala's Ambush", "Vidala's Snare" } },
+	{ "Milabrega's Regalia", { "Milabrega's Orb", "Milabrega's Rod", "Milabrega's Diadem", "Milabrega's Robe" } },
+	{ "Cathan's Traps", { "Cathan's Rule", "Cathan's Mesh", "Cathan's Visage", "Cathan's Sigil", "Cathan's Seal" } },
+	{ "Tancred's Battlegear", { "Tancred's Crowbill", "Tancred's Spine", "Tancred's Hobnails", "Tancred's Weird", "Tancred's Skull" } },
+	{ "Sigon's Complete Steel", { "Sigon's Gage", "Sigon's Visor", "Sigon's Shelter", "Sigon's Sabot", "Sigon's Wrap", "Sigon's Guard" } },
+	{ "Infernal Tools", { "Infernal Cranium", "Infernal Torch", "Infernal Sign" } },
+	{ "Berserker's Garb", { "Berserker's Headgear", "Berserker's Hauberk", "Berserker's Hatchet" } },
+	{ "Death's Disguise", { "Death's Hand", "Death's Guard", "Death's Touch" } },
+	{ "Angelical Raiment", { "Angelic Sickle", "Angelic Mantle", "Angelic Halo", "Angelic Wings" } },
+	{ "Arctic Gear", { "Arctic Horn", "Arctic Furs", "Arctic Binding", "Arctic Mitts" } },
+	{ "Arcanna's Tricks", { "Arcanna's Sign", "Arcanna's Deathwand", "Arcanna's Head", "Arcanna's Flesh" } },
+	{ "Natalya's Odium", { "Natalya's Totem", "Natalya's Mark", "Natalya's Shadow", "Natalya's Soul" } },
+	{ "Aldur's Watchtower", { "Aldur's Stony Gaze", "Aldur's Deception", "Aldur's Gauntlet", "Aldur's Advance" } },
+	{ "Immortal King", { "Immortal King's Will", "Immortal King's Soul Cage", "Immortal King's Detail", "Immortal King's Forge", "Immortal King's Pillar", "Immortal King's Stone Crusher" } },
+	{ "Tal Rasha's Wrappings", { "Tal Rasha's Fire-Spun Cloth", "Tal Rasha's Adjudication", "Tal Rasha's Lidless Eye", "Tal Rasha's Howling Wind", "Tal Rasha's Horadric Crest" } },
+	{ "Griswold's Legacy", { "Griswold's Valor", "Griswold's Heart", "Griswolds's Redemption", "Griswold's Honor" } },
+	{ "Trang-Oul's Avatar", { "Trang-Oul's Guise", "Trang-Oul's Scales", "Trang-Oul's Wing", "Trang-Oul's Claws", "Trang-Oul's Girth" } },
+	{ "M'avina's Battle Hymn", { "M'avina's True Sight", "M'avina's Embrace", "M'avina's Icy Clutch", "M'avina's Tenet", "M'avina's Caster" } },
+	{ "The Disciple", { "Telling of Beads", "Laying of Hands", "Rite of Passage", "Spiritual Custodian", "Credendum" } },
+	{ "Heaven's Brethren", { "Dangoon's Teaching", "Heaven's Taebaek", "Haemosu's Adament", "Ondal's Almighty" } },
+	{ "Orphan's Call", { "Guillaume's Face", "Wilhelm's Pride", "Magnus' Skin", "Wihtstan's Guard" } },
+	{ "Hwanin's Majesty", { "Hwanin's Splendor", "Hwanin's Refuge", "Hwanin's Seal", "Hwanin's Justice" } },
+	{ "Sazabi's Grand Tribute", { "Sazabi's Cobalt Redeemer", "Sazabi's Ghost Liberator", "Sazabi's Mental Sheath" } },
+	{ "Bul-Kathos' Children", { "Bul-Kathos' Sacred Charge", "Bul-Kathos' Tribal Guardian" } },
+	{ "Cow King's Leathers", { "Cow King's Horns", "Cow King's Hide", "Cow King's Hoofs" } },
+	{ "Naj's Ancient Set", { "Naj's Puzzler", "Naj's Light Plate", "Naj's Circlet" } },
+	{ "McAuley's Folly", { "McAuley's Paragon", "McAuley's Riprap", "McAuley's Taboo", "McAuley's Superstition" } },
+};
+
+// Quest items worth a check, per difficulty unless everyDifficulty is false.
+inline constexpr QuestItem QuestItems[] = {
+	{ "bks", 0, true, "Scroll of Inifuss" },
+	{ "leg", 0, true, "Wirt's Leg" },
+	{ "box", 1, false, "Horadric Cube" },
+	{ "tr1", 1, true, "Horadric Scroll" },
+	{ "msf", 1, true, "Staff of Kings" },
+	{ "ass", 1, true, "Book of Skill" },
+	{ "qey", 2, true, "Khalim's Eye" },
+	{ "qhr", 2, true, "Khalim's Heart" },
+	{ "qbr", 2, true, "Khalim's Brain" },
+	{ "qf1", 2, true, "Khalim's Flail" },
+	{ "g34", 2, true, "The Golden Bird" },
+	{ "xyz", 2, true, "Potion of Life" },
+	{ "mss", 3, true, "Mephisto's Soulstone" },
+	{ "hfh", 3, true, "Hellforge Hammer" },
+	{ "tr2", 4, true, "Scroll of Resistance" },
+};
+
+// Pandemonium's uber bosses (MonStats rows).
+inline constexpr Uber Ubers[] = {
+	{ 707, "Lilith" },
+	{ 708, "Uber Duriel" },
+	{ 706, "Uber Izual" },
+	{ 704, "Uber Mephisto" },
+	{ 705, "Uber Diablo" },
+	{ 709, "Uber Baal" },
+};
+
+// The act of each level id (0-4), 255 for none.
+inline constexpr uint8_t LevelActs[] = {
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2,
+	2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+	2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+	4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+};
+
+// The Secret Cow Level and its monster rows.
+inline constexpr uint16_t CowLevel = 39;
+inline constexpr uint16_t CowMonster = 179;
+inline constexpr uint16_t CowKingMonster = 735;
+
+// Experience needed for character levels 1..99.
+inline constexpr uint32_t Experience[] = {
+	0, 500, 1500, 3750, 7875, 14175, 22680, 32886, 44396, 57715,
+	72144, 90180, 112725, 140906, 176132, 220165, 275207, 344008, 430010, 537513,
+	671891, 839864, 1049830, 1312287, 1640359, 2050449, 2563061, 3203826, 3902260, 4663553,
+	5493363, 6397855, 7383752, 8458379, 9629723, 10906488, 12298162, 13815086, 15468534, 17270791,
+	19235252, 21376515, 23710491, 26254525, 29027522, 32050088, 35344686, 38935798, 42850109, 47116709,
+	51767302, 56836449, 62361819, 68384473, 74949165, 82104680, 89904191, 98405658, 107672256, 117772849,
+	128782495, 140783010, 153863570, 168121381, 183662396, 200602101, 219066380, 239192444, 261129853, 285041630,
+	311105466, 339515048, 370481492, 404234916, 441026148, 481128591, 524840254, 572485967, 624419793, 681027665,
+	742730244, 809986056, 883294891, 963201521, 1050299747, 1145236814, 1248718217, 1361512946, 1484459201, 1618470619,
+	1764543065, 1923762030, 2097310703, 2286478756, 2492671933, 2717422497, 2962400612, 3229426756, 3520485254,
 };
 
 inline constexpr QualityItem Uniques[] = {

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
@@ -26,6 +27,13 @@ struct NetworkItem {
 
 enum class ConnectionState { Idle, Connecting, Connected, Refused };
 
+// One of this player's important items, for hints found in game.
+struct HintEntry {
+	int64_t location = 0;
+	int     player   = 0; // whose world it's in
+	int64_t item     = 0;
+};
+
 struct SlotData {
 	// The apworld version that generated the seed ("0.2.0"), or empty.
 	std::string worldVersion;
@@ -42,6 +50,34 @@ struct SlotData {
 	bool levelChecks = true;
 	int  levelStep   = 5;
 	int  levelCap    = 30;
+	// Field superunique kills are checks.
+	bool superUniqueChecks = false;
+	bool cowLevelChecks = false;
+	// Runes El..this one are checks (0 = none).
+	int  runeChecks = 0;
+	bool gemChecks = false;
+	bool setChecks = false;
+	bool specialItemChecks = false;
+	bool questItemChecks = false;
+	int  shopChecks = 0;
+	bool uberChecks = false;
+	bool killCountChecks = false;
+	bool findCountChecks = false;
+	// Walking into a locked act warps you back to town.
+	bool enforceActKeys = false;
+	// Hints found in game: where this player's items are (in order), and the
+	// share (percent) that point at other players' items in this world instead.
+	std::vector<HintEntry> hints;
+	int  hintBalance = 0;
+	bool cainHints = false;
+	int  pageHintChance = 0;
+	bool prophecyShop = false;
+	// What's blocked until its lock item arrives.
+	struct Locks {
+		bool cube = false, townPortal = false, potions = false, stash = false, merchants = false, waypoints = false;
+	} locks;
+	// Deaths are shared with the other DeathLink players.
+	bool deathLink   = false;
 	randomizer::Settings randomizer;
 };
 
@@ -60,6 +96,13 @@ public:
 	void SendChecks(const std::vector<int64_t>& locations);
 	void SendGoal();
 	void Say(const std::string& text);
+	// Registers a hint for a location holding one of our items (any world, or
+	// our own), without spending hint points.
+	void CreateHint(int64_t location, int player);
+	// Announces our own location's item as a hint to whoever it belongs to.
+	void HintOwnLocation(int64_t location);
+	// Tells the other DeathLink players that we died.
+	void SendDeath(const std::string& cause);
 
 	auto State() const -> ConnectionState;
 	auto StatusText() const -> std::string;
@@ -75,7 +118,14 @@ public:
 	auto ItemsGeneration() const -> uint64_t;
 	auto Items() const -> std::vector<NetworkItem>;
 	auto TakeMessages() -> std::vector<std::string>;
+	// Deaths from other DeathLink players since the last call, as messages.
+	auto TakeDeaths() -> std::vector<std::string>;
 	auto ItemName(int64_t item, int player) const -> std::string;
+	auto PlayerName(int slot) const -> std::string;
+	auto LocationName(int64_t location, int player) const -> std::string;
+	auto MySlot() const -> int;
+	// What our own unchecked locations hold, scouted when we connect.
+	auto Scouted() const -> std::map<int64_t, NetworkItem>;
 
 	// Processes one server message. The network thread calls it; tests feed it
 	// packets directly.
@@ -87,9 +137,7 @@ private:
 	void Send(const std::string& text);
 	void Notify(const std::string& message);
 	auto Render(const void* printJson) const -> std::string;
-	auto PlayerName(int slot) const -> std::string;
 	auto GameOf(int slot) const -> std::string;
-	auto LocationName(int64_t location, int player) const -> std::string;
 
 	LogFn log_;
 	WebSocket socket_;
@@ -113,6 +161,8 @@ private:
 	std::vector<NetworkItem> items_;
 	uint64_t itemsGeneration_ = 0;
 	std::deque<std::string> messages_;
+	std::vector<std::string> deaths_;
+	std::map<int64_t, NetworkItem> scouted_;
 	std::unordered_map<int, std::string> playerNames_;
 	std::unordered_map<int, std::string> playerGames_;
 	std::unordered_map<std::string, std::unordered_map<int64_t, std::string>> itemNames_;

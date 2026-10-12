@@ -12,9 +12,34 @@ class TestDefaults(D2RTestBase):
         world = self.world
         self.assertEqual(world.location_name_to_id["Normal: Den of Evil"], LOCATION_BASE + 1)
         self.assertEqual(world.location_name_to_id["Hell: Eve of Destruction"], LOCATION_BASE + 240)
-        self.assertEqual(world.location_name_to_id["Enter Tristram"], LOCATION_BASE + 1038)
+        self.assertEqual(world.location_name_to_id["Normal: Enter Tristram"], LOCATION_BASE + 1038)
+        self.assertEqual(world.location_name_to_id["Hell: Enter The Worldstone Chamber"], LOCATION_BASE + 1532)
         self.assertEqual(world.location_name_to_id["Reach Character Level 30"], LOCATION_BASE + 2030)
+        self.assertEqual(world.location_name_to_id["Normal: Kill Bishibosh"], LOCATION_BASE + 3000)
+        self.assertEqual(world.location_name_to_id["Hell: Kill Frozenstein"], LOCATION_BASE + 3259)
+        self.assertEqual(world.location_name_to_id["Find Zod Rune"], LOCATION_BASE + 5033)
+        self.assertEqual(world.location_name_to_id["Find Perfect Skull"], LOCATION_BASE + 5134)
+        self.assertEqual(world.location_name_to_id["Complete Civerb's Vestments"], LOCATION_BASE + 5200)
+        self.assertEqual(world.location_name_to_id["Find Annihilus"], LOCATION_BASE + 5312)
+        self.assertEqual(world.location_name_to_id["Nightmare: Kill 100 Cows"], LOCATION_BASE + 5412)
+        self.assertEqual(world.item_name_to_id["Random Jewel"], ITEM_BASE + 1015)
+        self.assertEqual(world.item_name_to_id["Act V Waypoints"], ITEM_BASE + 989)
+        self.assertEqual(world.location_name_to_id["Act V: Buy Archipelago Parcel 5"], LOCATION_BASE + 5544)
+        self.assertEqual(world.location_name_to_id["Kill Uber Baal"], LOCATION_BASE + 5605)
+        self.assertEqual(world.location_name_to_id["Find 50 Unique Items"], LOCATION_BASE + 5804)
+        self.assertEqual(world.location_name_to_id["Find 1 Set Item"], LOCATION_BASE + 5810)
+        self.assertEqual(world.location_name_to_id["Hell: Find Scroll of Resistance"], LOCATION_BASE + 5954)
+        self.assertEqual(world.location_name_to_id["Hell: Kill 500 Monsters in Act V"], LOCATION_BASE + 6242)
+        self.assertNotIn("Nightmare: Find Horadric Cube", world.location_name_to_id)
         self.assertEqual(world.item_name_to_id["Teleport (Sorceress)"], ITEM_BASE + 54)
+
+    def test_default_quest_items_and_shops(self) -> None:
+        names = {location.name for location in self.multiworld.get_locations(self.player)}
+        self.assertIn("Normal: Find Horadric Cube", names)
+        self.assertIn("Act IV: Buy Archipelago Parcel 3", names)
+        self.assertNotIn("Act IV: Buy Archipelago Parcel 4", names)
+        self.assertNotIn("Act V: Buy Archipelago Parcel 1", names)
+        self.assertFalse(any("Waypoints" in item.name or "Access" in item.name for item in self.multiworld.itempool))
 
     def test_starting_skills_precollected(self) -> None:
         self.assertEqual(len(self.multiworld.precollected_items[self.player]), 2)
@@ -61,7 +86,8 @@ class TestSingleClass(D2RTestBase):
 
 
 class TestLoot(D2RTestBase):
-    options = {"goal": "nightmare", "goal_act": 5, "codex_empowerments": 4, "junk_trap_percentage": 20}
+    options = {"goal": "nightmare", "goal_act": 5, "codex_empowerments": 4, "trap_percentage": 20,
+               "scale_with_length": False}
 
     def test_boss_quests_hold_uniques(self) -> None:
         for difficulty in ("Normal", "Nightmare"):
@@ -73,7 +99,9 @@ class TestLoot(D2RTestBase):
     def test_empowerments_and_traps(self) -> None:
         names = [item.name for item in self.multiworld.itempool if item.player == self.player]
         self.assertEqual(names.count("Codex Empowerment"), 4)
-        self.assertGreater(names.count("Junk Backpack"), 0)
+        traps = [name for name in names if name == "Junk Backpack" or name.endswith(" Trap")]
+        self.assertGreater(len(traps), 0)
+        self.assertNotIn("Mercenary Down Trap", traps)
 
     def test_pool_matches_locations(self) -> None:
         locations = [loc for loc in self.multiworld.get_locations(self.player) if loc.address is not None]
@@ -83,6 +111,8 @@ class TestLoot(D2RTestBase):
 
 class TestOnlyBasicLoot(D2RTestBase):
     options = {"unique_weight": 0, "set_item_weight": 0, "high_rune_weight": 0, "socketed_base_weight": 0,
+               "gold_weight": 0, "experience_weight": 0, "charm_weight": 0, "shrine_weight": 0, "trap_percentage": 0,
+               "prophecy_weight": 0,
                "basic_loot_weight": 0, "boss_quests_give_uniques": False}
 
     def test_falls_back_to_basic_loot(self) -> None:
@@ -143,17 +173,151 @@ class TestShortGame(D2RTestBase):
         names = {location.name for location in self.multiworld.get_locations(self.player)}
         self.assertIn("Normal: The Seven Tombs", names)
         self.assertNotIn("Normal: Lam Esen's Tome", names)
-        self.assertIn("Enter Lut Gholein", names)
-        self.assertNotIn("Enter Kurast Docktown", names)
+        self.assertIn("Normal: Enter Lut Gholein", names)
+        self.assertNotIn("Normal: Enter Kurast Docktown", names)
+        self.assertNotIn("Nightmare: Enter Cold Plains", names)
         self.assertIn("Reach Character Level 10", names)
         self.assertNotIn("Reach Character Level 15", names)
         self.assertIn("Defeat Duriel", names)
+        self.assertIn("Normal: Kill Ancient Kaa the Soulless", names)
+        self.assertNotIn("Normal: Kill Stormtree", names)
+        self.assertNotIn("Nightmare: Kill Bishibosh", names)
 
     def test_slot_data(self) -> None:
         data = self.world.fill_slot_data()
         self.assertEqual(data["goal_quest"], 14)
         self.assertEqual(data["level_cap"], 10)
         self.assertEqual(data["randomizer"]["monster_shuffle"], 1)
+        self.assertTrue(data["superunique_checks"])
+        self.assertFalse(data["death_link"])
+        self.assertEqual(data["hint_sources"], {"cain": True, "page_chance": 25, "prophecy_shop": True})
+
+    def test_hint_list(self) -> None:
+        from Fill import distribute_items_restrictive
+        distribute_items_restrictive(self.multiworld)
+        # Hints: this player's items, act keys first, in act order.
+        hints = self.world.fill_slot_data()["hints"]
+        self.assertGreater(len(hints), 0)
+        self.assertEqual(hints[0][2], self.world.item_name_to_id["Normal Act II Key"])
+        for location_id, player, item_id in hints:
+            location = self.multiworld.get_location(
+                self.multiworld.worlds[player].location_id_to_name[location_id], player)
+            self.assertEqual((location.item.player, location.item.code), (self.player, item_id))
+
+
+class TestNoSuperUniqueChecks(D2RTestBase):
+    options = {"superunique_checks": False, "death_link": True}
+
+    def test_no_superunique_locations(self) -> None:
+        names = {location.name for location in self.multiworld.get_locations(self.player)}
+        self.assertFalse(any(": Kill " in name for name in names))
+        data = self.world.fill_slot_data()
+        self.assertFalse(data["superunique_checks"])
+        self.assertTrue(data["death_link"])
+
+
+class TestHellSuperUniques(D2RTestBase):
+    options = {"goal": "hell", "goal_act": 5, "skill_pool_size": 40}
+
+    def test_every_difficulty(self) -> None:
+        names = {location.name for location in self.multiworld.get_locations(self.player)}
+        # 41 superuniques per difficulty, plus The Cow King and the cows on Normal and Nightmare.
+        self.assertEqual(sum(1 for name in names if ": Kill " in name), 3 * 41 + 2 * 2)
+        self.assertEqual(sum(1 for name in names if ": Enter " in name), 3 * 46 + 2)
+
+
+class TestCollections(D2RTestBase):
+    options = {"goal": "hell", "goal_act": 5, "skill_pool_size": 40, "rune_checks": 33, "gem_checks": True,
+               "set_checks": True, "special_item_checks": True, "unique_weight": 100, "high_rune_weight": 100}
+
+    def test_collection_locations(self) -> None:
+        from BaseClasses import LocationProgressType
+        locations = {location.name: location for location in self.multiworld.get_locations(self.player)}
+        collected = [location for name, location in locations.items() if name.startswith(("Find ", "Complete "))]
+        self.assertEqual(len(collected), 33 + 35 + 32 + 13)
+        for location in collected:
+            self.assertEqual(location.progress_type, LocationProgressType.EXCLUDED)
+        # Enough plain filler for every filler-only location, even with useful loot weighted up.
+        plain = [item for item in self.multiworld.itempool
+                 if item.player == self.player and not item.advancement and not item.useful]
+        self.assertGreaterEqual(len(plain), len(collected))
+        # Cow level on the two difficulties finished before the goal.
+        self.assertIn("Nightmare: Kill The Cow King", locations)
+        self.assertNotIn("Hell: Enter the Secret Cow Level", locations)
+        data = self.world.fill_slot_data()
+        self.assertEqual(data["rune_checks"], 33)
+        self.assertTrue(data["special_item_checks"] and data["cow_level_checks"])
+
+
+class TestSpecialsNeedHell(D2RTestBase):
+    options = {"goal": "nightmare", "special_item_checks": True, "rune_checks": 5}
+
+    def test_no_specials_without_hell(self) -> None:
+        names = {location.name for location in self.multiworld.get_locations(self.player)}
+        self.assertNotIn("Find Key of Terror", names)
+        self.assertIn("Find Eth Rune", names)
+        self.assertNotIn("Find Ith Rune", names)
+        self.assertIn("Normal: Enter the Secret Cow Level", names)
+        self.assertFalse(self.world.fill_slot_data()["special_item_checks"])
+
+
+class TestScaleWithLength(D2RTestBase):
+    options = {"goal": "hell", "goal_act": 5}
+
+    def test_more_skills_and_empowerments(self) -> None:
+        names = [item.name for item in self.multiworld.itempool if item.player == self.player]
+        # 16 skills and 2 empowerments for four acts; a full Hell run has 15.
+        self.assertEqual(len(self.world.skill_pool), 60)
+        self.assertEqual(names.count("Codex Empowerment"), 8)
+
+
+class TestNoTraps(D2RTestBase):
+    options = {"trap_percentage": 0}
+
+    def test_no_traps(self) -> None:
+        names = [item.name for item in self.multiworld.itempool if item.player == self.player]
+        self.assertFalse(any(name == "Junk Backpack" or name.endswith(" Trap") for name in names))
+
+
+class TestLocks(D2RTestBase):
+    options = {"cube_lock": True, "town_portal_lock": True, "potion_lock": True, "stash_lock": True, "merchant_lock": True,
+               "waypoint_lock": True, "goal_act": 3, "act_keys": False}
+
+    def test_lock_items(self) -> None:
+        names = [item.name for item in self.multiworld.itempool if item.player == self.player]
+        for name in ("Horadric Cube Access", "Town Portal Access", "Potion Access", "Stash Access", "Merchant Access",
+                     "Act I Waypoints", "Act III Waypoints"):
+            self.assertEqual(names.count(name), 1, name)
+        self.assertNotIn("Act IV Waypoints", names)
+        self.assertTrue(self.world.create_item("Horadric Cube Access").advancement)
+        self.assertTrue(self.world.create_item("Merchant Access").advancement)
+        self.assertFalse(self.world.create_item("Stash Access").advancement)
+        self.assertEqual(self.world.fill_slot_data()["locks"]["cube"], True)
+
+    def test_cube_gates_duriel(self) -> None:
+        self.collect_all_but(["Horadric Cube Access"])
+        self.assertFalse(self.can_reach_location("Normal: The Seven Tombs"))
+        self.assertTrue(self.can_reach_location("Normal: Radament's Lair"))
+        self.assertFalse(self.can_reach_region("Normal Act III"))
+        self.collect_by_name("Horadric Cube Access")
+        self.assertTrue(self.can_reach_location("Normal: The Seven Tombs"))
+        self.assertTrue(self.can_reach_region("Normal Act III"))
+
+    def test_shops_need_merchants(self) -> None:
+        self.collect_all_but(["Merchant Access"])
+        self.assertFalse(self.can_reach_location("Act I: Buy Archipelago Parcel 1"))
+
+
+class TestEndgameChecks(D2RTestBase):
+    options = {"goal": "hell", "goal_act": 5, "uber_checks": True, "kill_count_checks": True, "find_count_checks": True}
+
+    def test_endgame_locations(self) -> None:
+        from BaseClasses import LocationProgressType
+        locations = {location.name: location for location in self.multiworld.get_locations(self.player)}
+        for name in ("Kill Lilith", "Kill Uber Baal", "Hell: Kill 500 Monsters in Act V", "Find 50 Unique Items", "Find 25 Set Items"):
+            self.assertEqual(locations[name].progress_type, LocationProgressType.EXCLUDED, name)
+        self.assertEqual(sum(1 for name in locations if " Monsters in " in name), 15 * 3)
+        self.assertIn("Hell: Find Hellforge Hammer", locations)
 
 
 class TestAct1Only(D2RTestBase):

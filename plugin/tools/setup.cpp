@@ -6,6 +6,7 @@
 //   d2r-ap-setup --connect <server> <slot> [--password <pw>]
 //   d2r-ap-setup --offline                         skill lock only, no seed
 //   d2r-ap-setup --extract <folder>                copy the raw tables for tools/gen_data.py
+//   d2r-ap-setup --dump <game path> <file>         copy one game file, e.g. data\hd\items\items.json
 //
 // Options for all of them: --game <D2R folder>, --mod <name>, --out <mods folder>.
 
@@ -25,6 +26,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -38,7 +40,7 @@ namespace rnd = ap::randomizer;
 
 // The tables tools/gen_data.py reads, from the RotW bank.
 const char* const ExtractTables[] = { "skills.txt", "levels.txt", "uniqueitems.txt", "setitems.txt", "weapons.txt", "armor.txt", "misc.txt",
-	"superuniques.txt", "runes.txt", "monlvl.txt", "monstats.txt", "magicprefix.txt", "magicsuffix.txt", "automagic.txt" };
+	"superuniques.txt", "runes.txt", "monlvl.txt", "monstats.txt", "magicprefix.txt", "magicsuffix.txt", "automagic.txt", "experience.txt" };
 
 // RotW tables live in excel/, the Classic and LoD tables in excel/base/.
 const char* const Banks[] = { "", "base\\" };
@@ -51,6 +53,7 @@ struct Options {
 	std::string mod = "Archipelago";
 	std::string out;
 	std::string extract;
+	std::string dumpPath, dumpFile;
 	std::string server, slot, password;
 	bool offline = false;
 };
@@ -101,6 +104,9 @@ auto ParseArgs(int argc, char** argv) -> Options {
 			options.out = next();
 		} else if (arg == "--extract") {
 			options.extract = next();
+		} else if (arg == "--dump") {
+			options.dumpPath = next();
+			options.dumpFile = next();
 		} else if (arg == "--connect") {
 			options.server = next();
 			options.slot = next();
@@ -172,10 +178,10 @@ auto PatchTable(HANDLE storage, const fs::path& excel, const std::string& bank, 
 	return true;
 }
 
-// Gives the Codex unique a name: D2R shows "An Evil Force" for a unique whose
-// name has no string. Appends an "Archipelago Codex" entry, in every
-// language, to the game's own item-names.json.
-auto AddCodexName(HANDLE storage, const fs::path& mpq) -> bool {
+// Names the items this tool adds: D2R shows "An Evil Force" for a unique whose
+// name has no string. Appends an entry per name, the same in every language,
+// to the game's own item-names.json.
+auto AddItemNames(HANDLE storage, const fs::path& mpq, const std::vector<std::string>& names) -> bool {
 	constexpr const char* Path = "data\\local\\lng\\strings\\item-names.json";
 	std::string text;
 	if (!ReadCascFile(storage, Path, text)) {
@@ -187,22 +193,68 @@ auto AddCodexName(HANDLE storage, const fs::path& mpq) -> bool {
 		return false;
 	}
 	int maxId = 0;
+	std::set<std::string> keys;
 	for (const auto& entry : strings) {
 		maxId = std::max(maxId, entry.value("id", 0));
-		if (entry.value("Key", "") == "Archipelago Codex") {
-			return true;
-		}
+		keys.insert(entry.value("Key", ""));
 	}
-	nlohmann::json codex = { { "id", maxId + 1 }, { "Key", "Archipelago Codex" } };
-	for (const auto& [key, value] : strings.front().items()) {
-		if (key != "id" && key != "Key" && value.is_string()) {
-			codex[key] = "Archipelago Codex";
+	for (const std::string& name : names) {
+		if (keys.contains(name)) {
+			continue;
 		}
+		nlohmann::json added = { { "id", ++maxId }, { "Key", name } };
+		for (const auto& [key, value] : strings.front().items()) {
+			if (key != "id" && key != "Key" && value.is_string()) {
+				added[key] = name;
+			}
+		}
+		strings.push_back(added);
 	}
-	strings.push_back(codex);
 	const fs::path target = mpq / "data" / "local" / "lng" / "strings" / "item-names.json";
 	fs::create_directories(target.parent_path());
 	std::ofstream(target, std::ios::binary | std::ios::trunc) << (bom ? "\xEF\xBB\xBF" : "") << strings.dump(2);
+	return true;
+}
+
+// Gives the shop parcel an HD picture: items.json maps each item code to a
+// sprite, and a code without one shows nothing. The parcel borrows the
+// Standard of Heroes' flag, like its misc.txt row.
+auto AddParcelGraphics(HANDLE storage, const fs::path& mpq) -> bool {
+	constexpr const char* Path = "data\\hd\\items\\items.json";
+	std::string text;
+	if (!ReadCascFile(storage, Path, text)) {
+		return false;
+	}
+	const bool bom = text.rfind("\xEF\xBB\xBF", 0) == 0;
+	auto items = nlohmann::json::parse(bom ? text.substr(3) : text, nullptr, false);
+	if (!items.is_array()) {
+		return false;
+	}
+	// Parcels borrow the Standard of Heroes' flag, Scrolls of Prophecy the Scroll of Inifuss.
+	nlohmann::json graphics, scroll;
+	for (const auto& entry : items) {
+		if (entry.contains(rnd::ParcelCodes[0])) {
+			return true;
+		}
+		if (entry.contains("std")) {
+			graphics = entry["std"];
+		}
+		if (entry.contains("bks")) {
+			scroll = entry["bks"];
+		}
+	}
+	if (graphics.is_null()) {
+		return false;
+	}
+	for (const char* code : rnd::ParcelCodes) {
+		items.push_back({ { code, graphics } });
+	}
+	for (const char* code : rnd::ProphecyCodes) {
+		items.push_back({ { code, scroll.is_null() ? graphics : scroll } });
+	}
+	const fs::path target = mpq / "data" / "hd" / "items" / "items.json";
+	fs::create_directories(target.parent_path());
+	std::ofstream(target, std::ios::binary | std::ios::trunc) << (bom ? "\xEF\xBB\xBF" : "") << items.dump(2);
 	return true;
 }
 
@@ -227,8 +279,11 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	}
 	std::error_code error;
 	fs::remove_all(excel, error);
-	if (!AddCodexName(storage, mpq)) {
+	if (!AddItemNames(storage, mpq, { "Archipelago Codex", rnd::ParcelName, rnd::ProphecyName })) {
 		std::printf("  couldn't add the Codex's name; it will show as \"An Evil Force\"\n");
+	}
+	if (!AddParcelGraphics(storage, mpq)) {
+		std::printf("  couldn't give the shop parcel a picture\n");
 	}
 
 	const rnd::Settings settings = seed != nullptr ? seed->settings : rnd::Settings {};
@@ -255,14 +310,22 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			PatchTable(storage, excel, bank, "itemratio.txt", [&](Table& t) { rnd::BoostDrops(t, settings.betterDrops); });
 			std::printf("  %s: uniques, sets and rares drop at %d%%\n", label, settings.betterDrops);
 		}
-		if (settings.superUniques != rnd::Shuffle::Off) {
+		if (settings.superUniques != rnd::Shuffle::Off || settings.superUniqueChecks) {
 			std::string stats;
 			ReadCascFile(storage, "data\\global\\excel\\" + bank + "monstats.txt", stats);
-			const Table monstats = Table::Parse(stats);
-			int changed = 0;
+			Table monstats = Table::Parse(stats);
+			int changed = 0, linked = 0;
 			auto random = TableRandom(settings.seed, "superuniques");
-			PatchTable(storage, excel, bank, "superuniques.txt", [&](Table& t) { changed = rnd::ShuffleSuperUniques(t, monstats, settings.superUniques, random); });
-			std::printf("  %s: %d superuniques changed shape\n", label, changed);
+			PatchTable(storage, excel, bank, "superuniques.txt", [&](Table& t) {
+				changed = rnd::ShuffleSuperUniques(t, monstats, settings.superUniques, random);
+				if (settings.superUniqueChecks) {
+					linked = rnd::AddSuperUniqueMonsters(monstats, t);
+				}
+			});
+			if (settings.superUniqueChecks) {
+				PatchTable(storage, excel, bank, "monstats.txt", [&](Table& t) { t = monstats; });
+			}
+			std::printf("  %s: %d superuniques changed shape, %d count as checks\n", label, changed, linked);
 		}
 		if (settings.runewords) {
 			auto random = TableRandom(settings.seed, "runes");
@@ -279,11 +342,20 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 		}
 		const bool clearRequirements = !settings.itemLevelRequirements || !settings.itemStatRequirements;
 		if (clearRequirements) {
-			for (const char* table : { "weapons.txt", "armor.txt", "misc.txt", "setitems.txt" }) {
+			for (const char* table : { "weapons.txt", "armor.txt", "setitems.txt" }) {
 				PatchTable(storage, excel, bank, table, [&](Table& t) { rnd::ClearRequirements(t, !settings.itemLevelRequirements, !settings.itemStatRequirements); });
 			}
 			std::printf("  %s: item requirements cleared\n", label);
 		}
+		// Misc gets the shop parcel, plus cleared requirements if asked.
+		int parcels = 0;
+		PatchTable(storage, excel, bank, "misc.txt", [&](Table& t) {
+			if (clearRequirements) {
+				rnd::ClearRequirements(t, !settings.itemLevelRequirements, !settings.itemStatRequirements);
+			}
+			parcels = rnd::AddShopParcels(t) + rnd::AddProphecyScrolls(t);
+		});
+		std::printf("  %s: %s\n", label, parcels > 0 ? "each act's potion seller sells an Archipelago Parcel" : "couldn't add the shop parcels");
 		// UniqueItems gets the Codex charm, plus cleared requirements if asked.
 		PatchTable(storage, excel, bank, "uniqueitems.txt", [&](Table& t) {
 			if (clearRequirements) {
@@ -330,6 +402,18 @@ int main(int argc, char** argv) {
 		const int result = Extract(storage, options);
 		CascCloseStorage(storage);
 		return result;
+	}
+	if (!options.dumpPath.empty()) {
+		std::string contents;
+		const bool found = ReadCascFile(storage, options.dumpPath, contents);
+		CascCloseStorage(storage);
+		if (!found) {
+			std::printf("%s: not found\n", options.dumpPath.c_str());
+			return 1;
+		}
+		std::ofstream(options.dumpFile, std::ios::binary | std::ios::trunc) << contents;
+		std::printf("Wrote %zu bytes to %s\n", contents.size(), options.dumpFile.c_str());
+		return 0;
 	}
 
 	// Without --connect, use what the plugin saved after ap-connect.

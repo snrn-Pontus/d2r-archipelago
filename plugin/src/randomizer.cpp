@@ -1,7 +1,10 @@
 #include "randomizer.h"
 
+#include "game_data.h"
+
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 #include <unordered_map>
 
@@ -14,17 +17,12 @@ const std::set<std::string> ClassCodes = { "ama", "sor", "nec", "pal", "bar", "d
 // The Cow Level and the Pandemonium (uber) levels keep their monsters.
 const std::set<int> FixedLevels = { 39, 133, 134, 135, 136 };
 
-// Superuniques that roam the field. Quest bosses (Radament, the Summoner, the
-// Council, the Countess, Shenk, Nihlathak, the Ancients), the Chaos Sanctuary
-// seal bosses and Baal's minion waves are scripted, so they stay as they are.
-const std::set<std::string> FieldSuperUniques = {
-	"Bishibosh", "Bonebreak", "Coldcrow", "Rakanishu", "Treehead WoodFist", "Griswold", "Pitspawn Fouldog", "Flamespike the Crawler", "Boneash",
-	"Corpsefire", "Bloodwitch the Wild", "Fangskin", "Beetleburst", "Leatherarm", "Coldworm the Burrower", "Fire Eye", "Dark Elder",
-	"Ancient Kaa the Soulless", "Web Mage the Burning", "Witch Doctor Endugu", "Stormtree", "Sarina the Battlemaid", "Icehawk Riftwing",
-	"Winged Death", "The Tormentor", "Taintbreeder", "Riftwraith the Cannibal", "Axe Dweller", "Bonesaw Breaker", "Dac Farren",
-	"Megaflow Rectifier", "Eyeback Unleashed", "Threash Socket", "Pindleskin", "Snapchip Shatter", "Anodized Elite", "Vinvear Molech",
-	"Sharp Tooth Sayer", "Magma Torquer", "Blaze Ripper", "Frozenstein",
-};
+// Superuniques that roam the field (gen_data.py's list). Quest bosses, the
+// Chaos Sanctuary seal bosses and Baal's minion waves are scripted, so they
+// stay as they are.
+auto IsFieldSuperUnique(const std::string& name) -> bool {
+	return std::ranges::any_of(data::SuperUniques, [&](const auto& entry) { return name == entry.name; });
+}
 
 // Anywhere: an area takes a line-up only if every monster in it has a
 // variant at most this many levels above the area's level.
@@ -51,14 +49,15 @@ void Permute(std::vector<T>& values, std::mt19937& random) {
 
 auto Settings::Any() const -> bool {
 	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != 100 || !itemLevelRequirements || !itemStatRequirements
-	    || monsterDensity != 100 || championPacks != 100 || betterDrops != 100;
+	    || monsterDensity != 100 || championPacks != 100 || betterDrops != 100 || superUniqueChecks;
 }
 
 auto Settings::Stamp() const -> std::string {
 	return "seed=" + std::to_string(seed) + " monsters=" + std::to_string(static_cast<int>(monsters)) + " superuniques="
 	     + std::to_string(static_cast<int>(superUniques)) + " runewords=" + (runewords ? "1" : "0") + " xp=" + std::to_string(xpPercent)
 	     + " levelreqs=" + (itemLevelRequirements ? "1" : "0") + " statreqs=" + (itemStatRequirements ? "1" : "0") + " density="
-	     + std::to_string(monsterDensity) + " packs=" + std::to_string(championPacks) + " drops=" + std::to_string(betterDrops);
+	     + std::to_string(monsterDensity) + " packs=" + std::to_string(championPacks) + " drops=" + std::to_string(betterDrops)
+	     + (superUniqueChecks ? " superunique_checks=1" : "");
 }
 
 auto BlockClassSkills(Table& skills) -> int {
@@ -276,7 +275,7 @@ auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mod
 	}
 	std::vector<size_t> rows;
 	for (size_t row = 0; row < superUniques.Rows().size(); ++row) {
-		if (FieldSuperUniques.contains(superUniques.Cell(row, key)) && !superUniques.Cell(row, cls).empty()) {
+		if (IsFieldSuperUnique(superUniques.Cell(row, key)) && !superUniques.Cell(row, cls).empty()) {
 			rows.push_back(row);
 		}
 	}
@@ -338,6 +337,55 @@ auto ShuffleRunewords(Table& runes, std::mt19937& random) -> std::vector<std::st
 	return recipes;
 }
 
+auto AddSuperUniqueMonsters(Table& monstats, Table& superUniques) -> int {
+	const int id = monstats.Column("Id");
+	const int index = monstats.Column("*hcIdx");
+	const int minion = monstats.Column("minion1");
+	const int key = superUniques.Column("Superunique");
+	const int cls = superUniques.Column("Class");
+	if (id < 0 || minion < 0 || key < 0 || cls < 0 || monstats.Rows().empty()) {
+		return 0;
+	}
+	std::unordered_map<std::string, size_t> monsterRow;
+	for (size_t row = 0; row < monstats.Rows().size(); ++row) {
+		monsterRow.emplace(monstats.Cell(row, id), row);
+	}
+	std::unordered_map<std::string, size_t> superUniqueRow;
+	for (size_t row = 0; row < superUniques.Rows().size(); ++row) {
+		superUniqueRow.emplace(superUniques.Cell(row, key), row);
+	}
+	int linked = 0;
+	for (const auto& entry : data::SuperUniques) {
+		// Every entry gets a row, so the plugin finds each one at a fixed
+		// distance from the end of the table. One without a superunique copies
+		// the first monster, which then never spawns.
+		const auto found = superUniqueRow.find(entry.name);
+		const std::string original = found != superUniqueRow.end() ? superUniques.Cell(found->second, cls) : "";
+		const auto source = monsterRow.find(original);
+		std::vector<std::string> copy = monstats.Rows()[source != monsterRow.end() ? source->second : 0];
+		const std::string name = std::string(SuperUniqueMonsterPrefix) + std::to_string(entry.id);
+		// *hcIdx is only a comment; continue the numbering (divider rows have none).
+		const int previous = index >= 0 ? ParseInt(monstats.Cell(monstats.Rows().size() - 1, index), -1) : -1;
+		monstats.Rows().push_back(std::move(copy));
+		const size_t row = monstats.Rows().size() - 1;
+		monstats.Set(row, id, name);
+		if (index >= 0) {
+			monstats.Set(row, index, previous >= 0 ? std::to_string(previous + 1) : "");
+		}
+		if (source == monsterRow.end()) {
+			continue;
+		}
+		// Minions come from minion1 if it's set and are copies of the boss
+		// otherwise; they stay the original monster, so only the boss counts.
+		if (monstats.Cell(row, minion).empty()) {
+			monstats.Set(row, minion, original);
+		}
+		superUniques.Set(found->second, cls, name);
+		++linked;
+	}
+	return linked;
+}
+
 void AddCodexUnique(Table& uniques, uint32_t record) {
 	const int index = uniques.Column("index");
 	if (index < 0) {
@@ -364,6 +412,79 @@ void AddCodexUnique(Table& uniques, uint32_t record) {
 	if (last >= 0 && uniques.Rows()[row].size() < static_cast<size_t>(last) + 1) {
 		uniques.Rows()[row].resize(static_cast<size_t>(last) + 1);
 	}
+}
+
+auto AddShopParcels(Table& misc) -> int {
+	const int code = misc.Column("code");
+	if (code < 0) {
+		return 0;
+	}
+	std::optional<size_t> templateRow;
+	for (size_t row = 0; row < misc.Rows().size(); ++row) {
+		if (misc.Cell(row, code) == ParcelCodes[0]) {
+			return 0;
+		}
+		if (misc.Cell(row, code) == "std") {
+			templateRow = row;
+		}
+	}
+	if (!templateRow) {
+		return 0;
+	}
+	for (size_t act = 0; act < std::size(ParcelCodes); ++act) {
+		misc.Rows().push_back(misc.Rows()[*templateRow]);
+		const size_t row = misc.Rows().size() - 1;
+		const std::string vendor = ParcelVendors[act];
+		const std::pair<std::string, std::string> values[] = {
+			{ "name", ParcelName }, { "code", ParcelCodes[act] }, { "namestr", ParcelName }, { "cost", std::to_string(ParcelCosts[act]) },
+			{ "gamble cost", "0" }, { "level", "0" }, { "levelreq", "0" }, { "unique", "0" }, { "spawnable", "0" }, { "PermStoreItem", "1" },
+			{ vendor + "Min", "1" }, { vendor + "Max", "1" }, { "multibuy", "0" },
+		};
+		for (const auto& [name, value] : values) {
+			if (const int column = misc.Column(name); column >= 0) {
+				misc.Set(row, column, value);
+			}
+		}
+	}
+	return static_cast<int>(std::size(ParcelCodes));
+}
+
+auto AddProphecyScrolls(Table& misc) -> int {
+	const int code = misc.Column("code");
+	if (code < 0) {
+		return 0;
+	}
+	std::optional<size_t> templateRow;
+	for (size_t row = 0; row < misc.Rows().size(); ++row) {
+		if (misc.Cell(row, code) == ProphecyCodes[0]) {
+			return 0;
+		}
+		if (misc.Cell(row, code) == "std") {
+			templateRow = row;
+		}
+	}
+	if (!templateRow) {
+		return 0;
+	}
+	for (size_t tier = 0; tier < std::size(ProphecyCodes); ++tier) {
+		misc.Rows().push_back(misc.Rows()[*templateRow]);
+		const size_t row = misc.Rows().size() - 1;
+		std::vector<std::pair<std::string, std::string>> values = {
+			{ "name", ProphecyName }, { "code", ProphecyCodes[tier] }, { "namestr", ProphecyName }, { "cost", std::to_string(ProphecyCosts[tier]) },
+			{ "gamble cost", "0" }, { "level", "0" }, { "levelreq", "0" }, { "unique", "0" }, { "spawnable", "0" }, { "PermStoreItem", "1" },
+			{ "multibuy", "0" },
+		};
+		for (const char* vendor : ParcelVendors) {
+			values.emplace_back(std::string(vendor) + "Min", "1");
+			values.emplace_back(std::string(vendor) + "Max", "1");
+		}
+		for (const auto& [name, value] : values) {
+			if (const int column = misc.Column(name); column >= 0) {
+				misc.Set(row, column, value);
+			}
+		}
+	}
+	return static_cast<int>(std::size(ProphecyCodes));
 }
 
 void ScaleDensity(Table& levels, int densityPercent, int packsPercent) {

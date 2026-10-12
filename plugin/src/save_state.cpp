@@ -1,12 +1,14 @@
 #include "save_state.h"
 
+#include <cstdlib>
 #include <fstream>
 #include <string>
 #include <system_error>
 
 namespace ap {
 
-// One "key value" pair per line: "check <id>", "fillers <count>", "goal 1", "level <n>".
+// One "key value" pair per line: "check <id>", "fillers <count>", "goal 1", "level <n>",
+// "kills_<difficulty * 10 + act> <count>", "unique <seed>", "set <seed>".
 bool SaveState::Load(const std::filesystem::path& path) {
 	std::ifstream file(path);
 	if (!file) {
@@ -25,6 +27,18 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			level = static_cast<int>(value);
 		} else if (key == "class") {
 			playerClass = static_cast<int>(value);
+		} else if (key.rfind("kills_", 0) == 0) {
+			kills[std::atoi(key.c_str() + 6)] = static_cast<int>(value);
+		} else if (key == "unique") {
+			foundUniques.insert(static_cast<uint32_t>(value));
+		} else if (key == "set") {
+			foundSets.insert(static_cast<uint32_t>(value));
+		} else if (key == "hint") {
+			ownHints.insert(static_cast<int>(value));
+		} else if (key == "otherhint") {
+			otherHints.insert(value);
+		} else if (key == "prophecies") {
+			prophecies = static_cast<int>(value);
 		}
 	}
 	return true;
@@ -45,6 +59,22 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		for (const int64_t check : checks) {
 			file << "check " << check << "\n";
 		}
+		for (const auto& [key, count] : kills) {
+			file << "kills_" << key << " " << count << "\n";
+		}
+		for (const uint32_t seed : foundUniques) {
+			file << "unique " << seed << "\n";
+		}
+		for (const uint32_t seed : foundSets) {
+			file << "set " << seed << "\n";
+		}
+		for (const int hint : ownHints) {
+			file << "hint " << hint << "\n";
+		}
+		for (const int64_t location : otherHints) {
+			file << "otherhint " << location << "\n";
+		}
+		file << "prophecies " << prophecies << "\n";
 		if (!file.flush()) {
 			return false;
 		}
