@@ -3,8 +3,10 @@
 An [Archipelago](https://archipelago.gg/) multiworld integration for Diablo II: Resurrected 3.x, built as a
 [D2RLoader](https://www.nexusmods.com/diablo2resurrected/mods/1119) plugin.
 
-Every class skill (all eight classes, 240 skills) is shuffled into the multiworld. You can't spend skill
-points on the normal trees; instead each skill you receive is added to your **Archipelago Codex**, a small
+Every class skill (all eight classes, 240 skills) is shuffled into the multiworld, or in tree mode the 30
+skills of your class's tree (optionally a tree dealt from every class's skills, with icons and synergies
+to match), each unlocked when its item arrives. In Codex mode (the default) you can't spend
+skill points on the trees; instead each skill you receive is added to your **Archipelago Codex**, a small
 charm that grants every skill you've found (D2's `oskill` property, which works for any class), at a
 level set by copies found, Codex Empowerments and your character level.
 

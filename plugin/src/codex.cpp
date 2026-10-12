@@ -36,6 +36,26 @@ auto Entries(const std::vector<NetworkItem>& items, int characterLevel, int scal
 	return entries;
 }
 
+auto PlanTreeDelivery(const std::vector<NetworkItem>& items, const std::set<uint32_t>& unlocked, int pointsGiven) -> TreeDelivery {
+	TreeDelivery delivery;
+	std::set<uint32_t> seen;
+	int points = 0;
+	for (const auto& item : items) {
+		if (item.item == ids::SkillPointItem) {
+			++points;
+		} else if (ids::IsSkillItem(item.item)) {
+			const uint32_t skill = ids::SkillOf(item.item);
+			if (!seen.insert(skill).second) {
+				++points;
+			} else if (!unlocked.contains(skill)) {
+				delivery.unlock.push_back(skill);
+			}
+		}
+	}
+	delivery.points = std::max(points - pointsGiven, 0);
+	return delivery;
+}
+
 auto Fingerprint(const std::vector<Entry>& entries, size_t first, size_t count, int playerClass) -> uint32_t {
 	uint32_t hash = 2166136261U;
 	auto mix = [&](uint32_t value) {
@@ -51,12 +71,16 @@ auto Fingerprint(const std::vector<Entry>& entries, size_t first, size_t count, 
 	return (hash ^ (hash >> 16)) & 0xFFFF;
 }
 
-auto Chunks(const std::vector<Entry>& entries, std::string_view playerClass, size_t perChunk) -> std::vector<std::vector<Entry>> {
+auto Chunks(const std::vector<Entry>& entries, std::string_view playerClass, size_t perChunk, const randomizer::SkillTree& tree)
+	-> std::vector<std::vector<Entry>> {
 	std::vector<std::vector<Entry>> chunks(ChunkCount);
 	uint32_t own = 0, other = OtherClassChunk;
 	for (const auto& entry : entries) {
+		// The tree slot's original owner tells the class.
+		const auto dealt = std::ranges::find_if(tree, [&](const auto& pair) { return pair.first == entry.skill; });
+		const uint32_t owner = dealt != tree.end() ? dealt->second : entry.skill;
 		const bool mine = !playerClass.empty() && std::ranges::any_of(data::Skills, [&](const data::Skill& skill) {
-			return skill.id == entry.skill && skill.cls == playerClass;
+			return skill.id == owner && skill.cls == playerClass;
 		});
 		uint32_t& chunk = mine ? own : other;
 		if (chunks[chunk].size() == perChunk) {

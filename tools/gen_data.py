@@ -82,6 +82,10 @@ JEWELRY_CODES = {"rin", "amu", "jew"}
 EXCLUDED_CODES = {"cm1", "cm2", "cm3"}
 
 
+# The Druid's shapeshifts stay with the Druid in a skill tree shuffle.
+PINNED_SKILLS = {"Wearwolf", "Wearbear", "Shape Shifting"}
+
+
 def read_table(path: Path):
     with path.open(newline="", encoding="utf-8", errors="replace") as handle:
         return list(csv.DictReader(handle, delimiter="\t"))
@@ -99,6 +103,19 @@ def main() -> None:
             if row.get("reqlevel") == "1" and row.get("passive") != "1":
                 starters.append(int(row["*Id"]))
     skills.sort()
+
+    # Tree slots for the skill tree shuffle: (skill id, tree page, row, column, pinned). The Warlock
+    # (Reign of the Warlock only) and skills without a tree place stay out; the Druid's forms and the
+    # attacks that need one (restrict 2) are pinned to the Druid.
+    descs = {row["skilldesc"]: row for row in read_table(excel / "skilldesc.txt")}
+    skill_slots = []
+    for row in read_table(excel / "skills.txt"):
+        cls = row.get("charclass", "")
+        desc = descs.get(row.get("skilldesc", ""), {})
+        if cls in CLASSES and cls != "war" and row.get("*Id", "").isdigit() and desc.get("SkillPage", "0") not in ("", "0"):
+            pinned = row["skill"] in PINNED_SKILLS or row.get("restrict") == "2"
+            skill_slots.append((int(row["*Id"]), int(desc["SkillPage"]), int(desc["SkillRow"]), int(desc["SkillColumn"]), pinned))
+    skill_slots.sort()
 
     areas = []
     # The act of every level id, for counting kills per act.
@@ -233,6 +250,9 @@ def main() -> None:
           f"CLASSES = {CLASSES!r}", "", "# (skill id, name, class code)", "SKILLS = ["]
     py += [f"    ({sid}, {name!r}, {cls!r})," for sid, name, cls in skills]
     py += ["]", "", "# Active skills with a vanilla level requirement of 1.", f"STARTER_SKILLS = frozenset({sorted(starters)!r})"]
+    py += ["", "# (skill id, tree page, row, column, pinned): class skills' tree places, for the skill tree shuffle.", "SKILL_SLOTS = ["]
+    py += [f"    ({sid}, {page}, {row}, {column}, {pinned})," for sid, page, row, column, pinned in skill_slots]
+    py += ["]"]
     py += ["", "# (level id, act index, name)", "AREAS = ["]
     py += [f"    ({lid}, {act}, {name!r})," for lid, act, name in areas]
     py += ["]", "", "# (quest flag id, act index, name)", "QUESTS = ["]

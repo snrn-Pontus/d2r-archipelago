@@ -30,6 +30,10 @@ struct SaveState {
 	int prophecies = 0;
 	// Whether the character got its Archipelago Ledger (ap-ledger makes another).
 	bool ledgerGiven = false;
+	// Tree mode: skills unlocked in the tree (skadd sets a level, so each only
+	// once), and skill points handed out for extra copies and Skill Points.
+	std::set<uint32_t> unlockedSkills;
+	int skillPointsGiven = 0;
 
 	bool Load(const std::filesystem::path& path);
 	bool Save(const std::filesystem::path& path) const;

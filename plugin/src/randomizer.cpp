@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <map>
@@ -52,7 +53,19 @@ void Permute(std::vector<T>& values, std::mt19937& random) {
 
 auto Settings::Any() const -> bool {
 	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != 100 || !itemLevelRequirements || !itemStatRequirements
-	    || monsterDensity != 100 || championPacks != 100 || betterDrops != 100 || superUniqueChecks;
+	    || monsterDensity != 100 || championPacks != 100 || betterDrops != 100 || superUniqueChecks || !skillTree.empty() || treeMode;
+}
+
+// A short fingerprint of a skill tree deal, for the mod's stamp.
+auto TreeStamp(const SkillTree& tree) -> std::string {
+	uint32_t hash = 2166136261U;
+	for (const auto& [skill, slot] : tree) {
+		hash = (hash ^ skill) * 16777619U;
+		hash = (hash ^ slot) * 16777619U;
+	}
+	char text[16];
+	std::snprintf(text, sizeof(text), "%08x", hash);
+	return text;
 }
 
 auto Settings::Stamp() const -> std::string {
@@ -60,10 +73,11 @@ auto Settings::Stamp() const -> std::string {
 	     + std::to_string(static_cast<int>(superUniques)) + " runewords=" + (runewords ? "1" : "0") + " xp=" + std::to_string(xpPercent)
 	     + " levelreqs=" + (itemLevelRequirements ? "1" : "0") + " statreqs=" + (itemStatRequirements ? "1" : "0") + " density="
 	     + std::to_string(monsterDensity) + " packs=" + std::to_string(championPacks) + " drops=" + std::to_string(betterDrops)
-	     + (superUniqueChecks ? " superunique_checks=1" : "") + (skillTrees ? " skill_trees=1" : "");
+	     + (superUniqueChecks ? " superunique_checks=1" : "") + (skillTree.empty() ? "" : " skill_tree=" + TreeStamp(skillTree))
+	     + (treeMode ? " tree_mode=1" : "");
 }
 
-auto BlockClassSkills(Table& skills) -> int {
+auto BlockClassSkills(Table& skills, bool keepLevels) -> int {
 	const int name = skills.Column("skill");
 	const int charclass = skills.Column("charclass");
 	const int reqlevel = skills.Column("reqlevel");
@@ -76,7 +90,9 @@ auto BlockClassSkills(Table& skills) -> int {
 		if (!ClassCodes.contains(skills.Cell(row, charclass))) {
 			continue;
 		}
-		skills.Set(row, reqlevel, "0");
+		if (!keepLevels) {
+			skills.Set(row, reqlevel, "0");
+		}
 		skills.Set(row, reqskill[0], skills.Cell(row, name));
 		skills.Set(row, reqskill[1], "");
 		skills.Set(row, reqskill[2], "");
@@ -193,63 +209,61 @@ void RemapSynergies(Table& skills, Table& skilldesc, const std::map<std::string,
 	}
 }
 
-auto ShuffleSkillTrees(Table& skills, Table& skilldesc, std::mt19937& random) -> TreeShuffle {
-	const int name = skills.Column("skill");
+auto ApplySkillTrees(Table& skills, Table& skilldesc, const SkillTree& tree) -> TreeShuffle {
+	const int id = skills.Column("*Id");
 	const int charclass = skills.Column("charclass");
+	const int reqlevel = skills.Column("reqlevel");
 	const int descOf = skills.Column("skilldesc");
-	const int restrict = skills.Column("restrict");
 	const int descName = skilldesc.Column("skilldesc");
 	const int page = skilldesc.Column("SkillPage");
 	const int rowColumn = skilldesc.Column("SkillRow");
 	const int column = skilldesc.Column("SkillColumn");
 	const int listRow = skilldesc.Column("ListRow");
 	const int iconCel = skilldesc.Column("IconCel");
-	if (name < 0 || charclass < 0 || descOf < 0 || descName < 0 || page < 0 || rowColumn < 0 || column < 0 || listRow < 0 || iconCel < 0) {
+	if (id < 0 || charclass < 0 || descOf < 0 || descName < 0 || page < 0 || rowColumn < 0 || column < 0 || listRow < 0 || iconCel < 0
+	    || tree.empty()) {
 		return {};
 	}
-	// The Druid's forms, and the attacks that only work in one (restrict 2), stay together.
-	const std::set<std::string> pinned = { "Wearwolf", "Wearbear", "Shape Shifting" };
 	std::map<std::string, size_t> descRows;
 	for (size_t row = 0; row < skilldesc.Rows().size(); ++row) {
 		descRows.emplace(skilldesc.Cell(row, descName), row);
 	}
+	// Every class skill's slot before the deal, by skill id: its class and level, and its place and icon.
 	struct Slot {
-		std::string cls, page, row, column, listRow, iconCel;
+		size_t      row = 0, desc = 0;
+		std::string cls, reqlevel, page, treeRow, column, listRow, iconCel;
 	};
-	// Per tree row: the skills that can move (skills.txt row, skilldesc row) and their slots.
-	std::map<std::string, std::vector<std::pair<size_t, size_t>>> movable;
-	std::map<std::string, std::vector<Slot>> slots;
+	std::map<uint32_t, Slot> slots;
 	for (size_t row = 0; row < skills.Rows().size(); ++row) {
-		const std::string cls = skills.Cell(row, charclass);
 		const auto desc = descRows.find(skills.Cell(row, descOf));
-		if (!ClassCodes.contains(cls) || cls == "war" || desc == descRows.end() || pinned.contains(skills.Cell(row, name))
-		    || (restrict >= 0 && skills.Cell(row, restrict) == "2")) {
-			continue;
+		if (ClassCodes.contains(skills.Cell(row, charclass)) && desc != descRows.end()) {
+			const size_t d = desc->second;
+			slots[static_cast<uint32_t>(ParseInt(skills.Cell(row, id)))] = { row, d, skills.Cell(row, charclass),
+				reqlevel >= 0 ? skills.Cell(row, reqlevel) : "", skilldesc.Cell(d, page), skilldesc.Cell(d, rowColumn), skilldesc.Cell(d, column),
+				skilldesc.Cell(d, listRow), skilldesc.Cell(d, iconCel) };
 		}
-		const size_t d = desc->second;
-		const std::string treeRow = skilldesc.Cell(d, rowColumn);
-		if (skilldesc.Cell(d, page).empty() || skilldesc.Cell(d, page) == "0" || treeRow.empty()) {
-			continue;
-		}
-		movable[treeRow].emplace_back(row, d);
-		slots[treeRow].push_back({ cls, skilldesc.Cell(d, page), treeRow, skilldesc.Cell(d, column), skilldesc.Cell(d, listRow), skilldesc.Cell(d, iconCel) });
 	}
 	const auto before = ClassSkillPlaces(skills, skilldesc);
 	TreeShuffle result;
-	for (auto& [treeRow, entries] : movable) {
-		auto& rowSlots = slots[treeRow];
-		std::ranges::shuffle(rowSlots, random);
-		for (size_t i = 0; i < entries.size(); ++i) {
-			const auto [row, d] = entries[i];
-			const Slot& slot = rowSlots[i];
-			result.moved += skills.Cell(row, charclass) != slot.cls ? 1 : 0;
-			result.icons.push_back({ skills.Cell(row, charclass), ParseInt(skilldesc.Cell(d, iconCel)), slot.cls, ParseInt(slot.iconCel) });
-			skills.Set(row, charclass, slot.cls);
-			skilldesc.Set(d, iconCel, slot.iconCel);
-			skilldesc.Set(d, page, slot.page);
-			skilldesc.Set(d, column, slot.column);
-			skilldesc.Set(d, listRow, slot.listRow);
+	for (const auto& [skill, owner] : tree) {
+		const auto from = slots.find(skill);
+		const auto to = slots.find(owner);
+		if (from == slots.end() || to == slots.end()) {
+			continue;
 		}
+		const Slot& mine = from->second;
+		const Slot& slot = to->second;
+		result.moved += mine.cls != slot.cls ? 1 : 0;
+		result.icons.push_back({ mine.cls, ParseInt(mine.iconCel), slot.cls, ParseInt(slot.iconCel) });
+		skills.Set(mine.row, charclass, slot.cls);
+		if (reqlevel >= 0) {
+			skills.Set(mine.row, reqlevel, slot.reqlevel);
+		}
+		skilldesc.Set(mine.desc, page, slot.page);
+		skilldesc.Set(mine.desc, rowColumn, slot.treeRow);
+		skilldesc.Set(mine.desc, column, slot.column);
+		skilldesc.Set(mine.desc, listRow, slot.listRow);
+		skilldesc.Set(mine.desc, iconCel, slot.iconCel);
 	}
 	RemapSynergies(skills, skilldesc, before);
 	return result;

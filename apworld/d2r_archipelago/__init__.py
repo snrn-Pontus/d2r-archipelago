@@ -4,10 +4,10 @@ from BaseClasses import Item, ItemClassification, Location, LocationProgressType
 from worlds.AutoWorld import WebWorld, World
 from worlds.generic.Rules import add_rule
 
-from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SKILLS, SPECIAL_ITEMS, STARTER_SKILLS,
-                   SUPERUNIQUES, UBERS)
+from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SKILL_SLOTS, SKILLS, SPECIAL_ITEMS,
+                   STARTER_SKILLS, SUPERUNIQUES, UBERS)
 from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, KILL_COUNTS, LEVEL_CAPS,
-                  LEVEL_STEP, LOCKS, MERCHANT_ACCESS, SET_FINDS, TRAPS, UNIQUE_FINDS, UNIQUE_LOOT, act_key_name, area_location_name,
+                  LEVEL_STEP, LOCKS, MERCHANT_ACCESS, SET_FINDS, SKILL_POINT, TRAPS, UNIQUE_FINDS, UNIQUE_LOOT, act_key_name, area_location_name,
                   cow_location_name, find_count_location_name, find_location_name, item_name_to_id, kill_location_name,
                   level_location_name, location_name_to_id, quest_item_location_name, quest_location_name,
                   set_location_name, shop_location_name, skill_item_name, skill_names_by_class,
@@ -20,10 +20,25 @@ BOSS_UNIQUE = "Random Unique"
 # Quest flags of the act boss kills: Andariel, Duriel, Mephisto, Diablo, Baal.
 BOSS_QUESTS = (6, 14, 22, 26, 40)
 BOSS_NAMES = ("Andariel", "Duriel", "Mephisto", "Diablo", "Baal")
-USEFUL_LOOT = {BOSS_UNIQUE, *UNIQUE_LOOT, "Random Set Item", "High Rune", EMPOWERMENT}
+USEFUL_LOOT = {BOSS_UNIQUE, *UNIQUE_LOOT, "Random Set Item", "High Rune", EMPOWERMENT, SKILL_POINT}
 # With the Cube Lock, these need the Horadric Cube (the Horadric Staff and Khalim's Will), on every difficulty.
 CUBE_QUESTS = ("The Horadric Staff", "The Seven Tombs", "Khalim's Will", "The Blackened Temple", "The Guardian")
 CUBE_AREAS = ("Duriel's Lair", "Durance of Hate Level 2", "Durance of Hate Level 3")
+
+
+def deal_skill_trees(random) -> dict[int, int]:
+    """The skill tree shuffle: every unpinned class skill takes the tree slot of a random skill from the
+    same row (so the same level) of any class. Returns skill id -> id of the skill whose slot it takes."""
+    rows: dict[int, list[int]] = {}
+    for skill_id, _page, row, _column, pinned in SKILL_SLOTS:
+        if not pinned:
+            rows.setdefault(row, []).append(skill_id)
+    dealt = {}
+    for row in sorted(rows):
+        slots = list(rows[row])
+        random.shuffle(slots)
+        dealt.update(zip(rows[row], slots))
+    return dealt
 
 
 class D2RItem(Item):
@@ -76,6 +91,14 @@ class D2RWorld(World):
         self.skill_cap = 1 << 30
         self.skill_pool: list[str] = []
         self.starting: list[str] = []
+        self.tree_mode = self.options.skill_mode == self.options.skill_mode.option_tree
+        # Tree mode needs a class: with "any", the seed picks one (the Warlock only with Include Warlock).
+        self.class_choice = self.options.character_class.value
+        if self.tree_mode and self.class_choice == self.options.character_class.option_any:
+            self.class_choice = self.random.choice([value for value in range(1, len(CLASSES) + 1)
+                                                    if value != self.options.character_class.option_warlock
+                                                    or self.options.include_warlock])
+        self.skill_tree = deal_skill_trees(self.random) if self.options.skill_tree_shuffle else {}
 
     def act_region_name(self, index: int) -> str:
         return f"{DIFFICULTIES[index // len(ACTS)]} {ACTS[index % len(ACTS)]}"
@@ -229,6 +252,8 @@ class D2RWorld(World):
             # Warlock skills need the Reign of the Warlock expansion.
             allowed = (allowed - {"Warlock"}) or set(CLASSES.values()) - {"Warlock"}
         candidates = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if CLASSES[cls] in allowed]
+        if self.tree_mode:
+            candidates = self.tree_skills()
         keys = [self.create_item(act_key_name(index)) for index in range(1, self.act_count)] if self.options.act_keys else []
         keys += [self.create_item(name) for name in self.lock_items()]
         unfilled = self.multiworld.get_unfilled_locations(self.player)
@@ -238,18 +263,22 @@ class D2RWorld(World):
         starting = min(self.options.starting_skills.value, len(candidates))
         copies, distinct = self.options.skill_copies.value, self.options.skill_pool_size.value
         empowerments = self.options.codex_empowerments.value
-        if self.options.scale_with_length:
+        if self.tree_mode:
+            # Every skill in the tree, whatever the pool options say.
+            distinct, empowerments = len(candidates), 0
+        elif self.options.scale_with_length:
             # The options are for a four-act game (Normal to Diablo).
             distinct = round(distinct * self.act_count / 4)
             empowerments = round(empowerments * self.act_count / 4)
-        if self.options.skill_focus == self.options.skill_focus.option_few_but_deep:
+        if self.options.skill_focus == self.options.skill_focus.option_few_but_deep and not self.tree_mode:
             copies, distinct = max(copies, 3), max(5, distinct // 3)
         distinct = min(distinct, len(candidates) - starting, location_count // copies)
         # Logic needs every act's skill count to be reachable from the pool plus starting skills.
         needed = self.required_skills(self.act_count - 1) - starting
         if distinct * copies < needed:
             distinct = min(len(candidates) - starting, location_count // copies, -(-needed // copies))
-        self.starting = self.pick_starting_skills(starting, candidates)
+        self.starting = (self.pick_tree_starting_skills(starting, candidates) if self.tree_mode
+                         else self.pick_starting_skills(starting, candidates))
         rest = [name for name in candidates if name not in self.starting]
         self.skill_pool = self.pick_skill_pool(rest, distinct)
         for name in self.starting:
@@ -258,9 +287,12 @@ class D2RWorld(World):
         self.skill_cap = len(self.starting) + len(self.skill_pool) * copies
         pool = [self.create_item(name) for name in self.skill_pool for _ in range(copies)]
         empowerments = min(empowerments, location_count - len(pool))
+        # Skill Points are useful, so like skills they need locations that aren't filler-only.
+        points = min(self.options.skill_points.value, location_count - len(pool) - empowerments) if self.tree_mode else 0
         location_count += len(keys) + filler_only
         pool = keys + pool
         pool += [self.create_item(EMPOWERMENT) for _ in range(empowerments)]
+        pool += [self.create_item(SKILL_POINT) for _ in range(points)]
 
         remaining = location_count - len(pool)
         trap_weights = {name: getattr(self.options, option).value for name, option in TRAPS.items()}
@@ -289,9 +321,27 @@ class D2RWorld(World):
 
     def class_name(self) -> str:
         """The chosen class's name ("Barbarian"), or "" for any."""
-        if self.options.character_class.value == 0:
+        if self.class_choice == 0:
             return ""
-        return list(CLASSES.values())[self.options.character_class.value - 1]
+        return list(CLASSES.values())[self.class_choice - 1]
+
+    def tree_skills(self) -> list[str]:
+        """The skills in the class's tree (after the tree shuffle), as item names."""
+        code = next(code for code, name in CLASSES.items() if name == self.class_name())
+        slot_class = {skill_id: cls for skill_id, _name, cls in SKILLS}
+        return [skill_item_name(skill_id, name, cls) for skill_id, name, cls in SKILLS
+                if slot_class[self.skill_tree.get(skill_id, skill_id)] == code]
+
+    def pick_tree_starting_skills(self, count: int, candidates: list[str]) -> list[str]:
+        """Tree mode: starting skills from the tree's top row, active level-1 skills first."""
+        row_of = {skill_id: row for skill_id, _page, row, _column, _pinned in SKILL_SLOTS}
+        id_of = {skill_item_name(skill_id, name, cls): skill_id for skill_id, name, cls in SKILLS}
+        top = [name for name in candidates if row_of.get(self.skill_tree.get(id_of[name], id_of[name])) == 1]
+        active = [name for name in top if id_of[name] in STARTER_SKILLS]
+        rest = [name for name in candidates if name not in active]
+        self.random.shuffle(active)
+        self.random.shuffle(rest)
+        return (active + rest)[:count]
 
     def pick_starting_skills(self, count: int, candidates: list[str]) -> list[str]:
         """Starting skills: the chosen class's level-1 skills first, then the rest of its skills.
@@ -310,7 +360,7 @@ class D2RWorld(World):
     def pick_skill_pool(self, rest: list[str], count: int) -> list[str]:
         """The pool's distinct skills. class_weighted takes half from the chosen class."""
         own = self.class_name()
-        if self.options.skill_focus != self.options.skill_focus.option_class_weighted or not own:
+        if self.options.skill_focus != self.options.skill_focus.option_class_weighted or not own or self.tree_mode:
             return self.random.sample(rest, count)
         mine = [name for name in rest if name in self.item_name_groups[own]]
         others = [name for name in rest if name not in self.item_name_groups[own]]
@@ -381,6 +431,7 @@ class D2RWorld(World):
             "goal": self.options.goal.value,
             "goal_act": self.options.goal_act.value,
             "character_class": self.class_name(),
+            "skill_mode": "tree" if self.tree_mode else "codex",
             "act_keys": bool(self.options.act_keys),
             "skill_scaling": self.options.skill_level_scaling.value,
             "skill_scaling_cap": self.options.skill_scaling_cap.value,
@@ -417,7 +468,10 @@ class D2RWorld(World):
                 "monster_shuffle": self.options.monster_shuffle.value,
                 "superunique_shuffle": self.options.superunique_shuffle.value,
                 "runeword_shuffle": bool(self.options.runeword_shuffle),
-                "skill_trees": bool(self.options.skill_tree_shuffle),
+                # Skill tree shuffle: [skill id, id of the skill whose tree slot it takes], for moved skills.
+                "skill_tree": sorted([skill, slot] for skill, slot in self.skill_tree.items() if skill != slot),
+                # Tree mode keeps the trees' level requirements (the Codex needs them at 0).
+                "tree_mode": self.tree_mode,
                 "xp_multiplier": self.options.experience_multiplier.value,
                 "item_level_requirements": bool(self.options.item_level_requirements),
                 "item_stat_requirements": bool(self.options.item_stat_requirements),

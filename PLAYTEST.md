@@ -14,6 +14,16 @@ from the server console: `/send <slot> <item name>` (for example `/send Snrn Act
       second one's skills don't work, but your class's still do.
 - [ ] Codex skill levels: copies + Empowerments + 1 per 5 character levels, the last part stopping at +10.
 
+## 0b. Tree mode
+
+`skill_mode: tree`, `skill_tree_shuffle: true`, `character_class: barbarian`.
+
+- [ ] No Codex. The starting skills have a point in the tree, and the chat says each one is unlocked.
+- [ ] A skill found later gets its first point; after that, skill points go into it as usual. Locked
+      skills refuse points.
+- [ ] A second copy and `/send Snrn Skill Point` each give an unspent skill point.
+- [ ] After Save and Exit and rejoining, nothing is unlocked twice and no points are given again.
+
 ## 1. Tracking: Ledger and ap-missing
 
 Any seed with the defaults.

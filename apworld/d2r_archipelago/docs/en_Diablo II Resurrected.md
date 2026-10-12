@@ -13,6 +13,18 @@ Empowerments, plus one for every few character levels (`skill_level_scaling`, de
 `skill_scaling_cap`, default +10), so skills found early keep up. `skill_focus` picks the pool: any skills, half from your class, or fewer skills
 with more copies each.
 
+### Tree mode
+
+With `skill_mode: tree`, there's no Codex. Your skills are the 30 in your class's skill tree, each one
+locked until its item arrives. When it does, the skill gets its first point in the tree and from then on
+you spend skill points on it as usual, prerequisites aside (there are none). Extra copies of a skill and
+**Skill Point** items (`skill_points`) give unspent skill points. With `character_class: any`, the seed
+picks your class; the client tells you which.
+
+`skill_tree_shuffle` deals every class's tree out of skills from all classes, each in a row of its own
+level, with icons and synergies to match: a synergy names a skill in the same tree. The Druid keeps its
+shapeshifts. It works in both modes; in tree mode, the shuffled tree is the one you unlock.
+
 ## What counts as a location?
 
 - Completing each story quest, on every difficulty up to your goal.

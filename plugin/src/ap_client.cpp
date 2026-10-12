@@ -278,7 +278,13 @@ void Client::Handle(const std::string& text) {
 			slotData_.randomizer.monsterDensity = randomizer.value("monster_density", 100);
 			slotData_.randomizer.championPacks = randomizer.value("champion_packs", 100);
 			slotData_.randomizer.betterDrops = randomizer.value("better_drops", 100);
-			slotData_.randomizer.skillTrees = randomizer.value("skill_trees", false);
+			slotData_.randomizer.skillTree.clear();
+			for (const json& pair : randomizer.value("skill_tree", json::array())) {
+				if (pair.is_array() && pair.size() == 2) {
+					slotData_.randomizer.skillTree.emplace_back(pair[0].get<uint32_t>(), pair[1].get<uint32_t>());
+				}
+			}
+			slotData_.randomizer.treeMode = randomizer.value("tree_mode", false);
 			slotData_.randomizer.superUniqueChecks = slotData_.superUniqueChecks;
 			state_ = ConnectionState::Connected;
 			status_ = "Connected as " + slot_ + ".";

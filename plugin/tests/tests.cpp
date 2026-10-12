@@ -71,6 +71,18 @@ void TestCodexLevels() {
 	EXPECT(small[0].size() == 1 && small[1].size() == 1 && small[ap::codex::OtherClassChunk + 1].size() == 1);
 	const auto unknown = ap::codex::Chunks(mixed, "", 60);
 	EXPECT(unknown[0].empty() && unknown[ap::codex::OtherClassChunk].size() == 4);
+	// After a tree shuffle, Teleport (54) sits in Bash's (126) slot: it's a Barbarian skill now, and Bash isn't.
+	const auto dealt = ap::codex::Chunks(mixed, "Barbarian", 60, { { 54, 126 }, { 126, 54 } });
+	EXPECT((dealt[0] == std::vector<ap::codex::Entry> { { 54, 3 }, { 132, 1 } }));
+
+	// Tree mode: Teleport twice, Bash once and two Skill Points; Bash was unlocked and one point given before.
+	const std::vector<ap::NetworkItem> received = {
+		{ ap::ids::ItemBase + 54, 0, 1, 0 }, { ap::ids::ItemBase + 126, 0, 1, 0 }, { ap::ids::SkillPointItem, 0, 1, 0 },
+		{ ap::ids::ItemBase + 54, 0, 1, 0 }, { ap::ids::SkillPointItem, 0, 1, 0 }, { ap::ids::EmpowermentItem, 0, 1, 0 },
+	};
+	const auto plan = ap::codex::PlanTreeDelivery(received, { 126 }, 1);
+	EXPECT(plan.unlock == std::vector<uint32_t> { 54 } && plan.points == 2);
+	EXPECT(ap::codex::PlanTreeDelivery(received, { 54, 126 }, 3).unlock.empty() && ap::codex::PlanTreeDelivery(received, { 54, 126 }, 9).points == 0);
 }
 
 void TestQuestTriggers() {
@@ -135,6 +147,8 @@ void TestSaveStateRoundTrip() {
 	state.otherHints = { 2425500 };
 	state.prophecies = 2;
 	state.ledgerGiven = true;
+	state.unlockedSkills = { 126, 54 };
+	state.skillPointsGiven = 3;
 	EXPECT(state.Save(path));
 	ap::SaveState loaded;
 	EXPECT(loaded.Load(path));
@@ -143,7 +157,8 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.goalReached);
 	EXPECT(loaded.playerClass == 4);
 	EXPECT(loaded.kills == state.kills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
-	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven);
+	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven
+	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3);
 	std::filesystem::remove_all(path.parent_path());
 }
 
@@ -530,52 +545,35 @@ void TestSprite() {
 
 void TestSkillTreeShuffle() {
 	// Warmth has a synergy with Fire Bolt.
-	auto skills = ap::Table::Parse("skill\t*Id\tcharclass\tskilldesc\trestrict\tcalc1\r\nAttack\t0\t\tattack\t\t\r\n"
-	                               "Fire Bolt\t36\tsor\tfire bolt\t\t\r\nWarmth\t37\tsor\twarmth\t\tskill('Fire Bolt'.blvl)*par8\r\n"
-	                               "Inferno\t41\tsor\tinferno\t\t\r\nBash\t126\tbar\tbash\t\t\r\nHowl\t130\tbar\thowl\t\t\r\n"
-	                               "Leap\t132\tbar\tleap\t\t\r\nWearwolf\t223\tdru\twearwolf\t1\t\r\nFury\t248\tdru\tfury\t2\t\r\n");
-	auto desc = ap::Table::Parse("skilldesc\tSkillPage\tSkillRow\tSkillColumn\tListRow\tIconCel\r\nattack\t0\t0\t0\t0\t0\r\n"
-	                             "fire bolt\t1\t1\t2\t1\t0\r\nwarmth\t1\t1\t3\t1\t2\r\ninferno\t1\t2\t1\t1\t4\r\nbash\t1\t1\t2\t1\t0\r\n"
-	                             "howl\t3\t1\t1\t3\t2\r\nleap\t1\t2\t1\t1\t4\r\nwearwolf\t2\t1\t1\t2\t0\r\nfury\t2\t2\t1\t2\t2\r\n");
-	bool mixed = false;
-	for (uint32_t seed = 1; seed < 20; ++seed) {
-		auto s = skills;
-		auto d = desc;
-		std::mt19937 random(seed);
-		const auto shuffle = ap::randomizer::ShuffleSkillTrees(s, d, random);
-		// Row 1 holds Fire Bolt, Warmth, Bash and Howl in some order: two Sorceress and two Barbarian slots.
-		int sorceressRow1 = 0;
-		for (size_t row : { 1U, 2U, 4U, 5U }) {
-			EXPECT(d.Cell(row + 0, 2) == "1");
-			sorceressRow1 += s.Cell(row, 2) == "sor" ? 1 : 0;
-		}
-		EXPECT(sorceressRow1 == 2);
-		// Inferno and Leap trade places or stay; the Druid's skills and Attack never move.
-		EXPECT(d.Cell(3, 2) == "2" && d.Cell(6, 2) == "2");
-		EXPECT(s.Cell(7, 2) == "dru" && s.Cell(8, 2) == "dru" && s.Cell(0, 2).empty() && d.Cell(7, 1) == "2");
-		mixed = mixed || shuffle.moved > 0;
-		// Warmth's synergy names a skill in Warmth's new tree.
-		const std::string synergy = s.Cell(2, 5);
-		const size_t partner = synergy.find("Fire Bolt") != std::string::npos ? 1 : synergy.find("Bash") != std::string::npos ? 4
-		                     : synergy.find("Howl") != std::string::npos ? 5 : synergy.find("Inferno") != std::string::npos ? 3 : 6;
-		EXPECT(synergy.ends_with(".blvl)*par8") && partner != 2 && s.Cell(partner, 2) == s.Cell(2, 2));
-		// Each skill takes its slot's icon frame and brings its own icon: every class's
-		// frames are still used once, and each icon comes from the skill's old frame.
-		EXPECT(shuffle.icons.size() == 6);
-		std::map<std::string, std::set<int>> cels;
-		for (const auto& icon : shuffle.icons) {
-			cels[icon.toClass].insert(icon.toCel);
-		}
-		EXPECT((cels["sor"] == std::set<int> { 0, 2, 4 }) && (cels["bar"] == std::set<int> { 0, 2, 4 }));
-		for (size_t row = 1; row <= 6; ++row) {
-			// The skill's new frame and class, and the frame and class it had before.
-			const auto icon = std::ranges::find_if(shuffle.icons, [&](const auto& i) {
-				return d.Cell(row, 5) == std::to_string(i.toCel) && s.Cell(row, 2) == i.toClass;
-			});
-			EXPECT(icon != shuffle.icons.end() && std::to_string(icon->fromCel) == desc.Cell(row, 5) && icon->fromClass == skills.Cell(row, 2));
-		}
-	}
-	EXPECT(mixed);
+	const auto skills = ap::Table::Parse("skill\t*Id\tcharclass\tskilldesc\treqlevel\tcalc1\r\nAttack\t0\t\tattack\t\t\r\n"
+	                                     "Fire Bolt\t36\tsor\tfire bolt\t1\t\r\nWarmth\t37\tsor\twarmth\t1\tskill('Fire Bolt'.blvl)*par8\r\n"
+	                                     "Inferno\t41\tsor\tinferno\t6\t\r\nBash\t126\tbar\tbash\t1\t\r\nHowl\t130\tbar\thowl\t1\t\r\n"
+	                                     "Leap\t132\tbar\tleap\t6\t\r\n");
+	const auto desc = ap::Table::Parse("skilldesc\tSkillPage\tSkillRow\tSkillColumn\tListRow\tIconCel\tstr name\r\nattack\t0\t0\t0\t0\t0\t\r\n"
+	                                   "fire bolt\t1\t1\t2\t1\t0\tskillname36\r\nwarmth\t1\t1\t3\t1\t2\tskillname37\r\n"
+	                                   "inferno\t1\t2\t1\t1\t4\tskillname41\r\nbash\t1\t1\t2\t1\t0\tskillname126\r\n"
+	                                   "howl\t3\t1\t1\t3\t2\tskillname130\r\nleap\t1\t2\t1\t1\t4\tskillname132\r\n");
+	auto s = skills;
+	auto d = desc;
+	// Warmth and Bash trade slots, and so do Inferno and Leap.
+	const ap::randomizer::SkillTree tree = { { 37, 126 }, { 126, 37 }, { 41, 132 }, { 132, 41 } };
+	const auto shuffle = ap::randomizer::ApplySkillTrees(s, d, tree);
+	EXPECT(shuffle.moved == 4 && shuffle.icons.size() == 4);
+	// Warmth now sits in Bash's slot: Barbarian, tree 1, row 1, column 2, icon frame 0.
+	EXPECT(s.Cell(2, 2) == "bar" && s.Cell(2, 4) == "1" && d.Cell(2, 1) == "1" && d.Cell(2, 3) == "2" && d.Cell(2, 5) == "0");
+	EXPECT(s.Cell(4, 2) == "sor" && d.Cell(4, 3) == "3" && d.Cell(4, 5) == "2");
+	EXPECT(s.Cell(3, 2) == "bar" && s.Cell(3, 4) == "6" && s.Cell(6, 2) == "sor");
+	// Fire Bolt and Howl stay; Warmth's icon comes from the Sorceress sheet's frame 2.
+	EXPECT(s.Cell(1, 2) == "sor" && s.Cell(5, 2) == "bar" && s.Cell(0, 2).empty());
+	const auto warmth = std::ranges::find_if(shuffle.icons, [](const auto& icon) { return icon.toClass == "bar" && icon.toCel == 0; });
+	EXPECT(warmth != shuffle.icons.end() && warmth->fromClass == "sor" && warmth->fromCel == 2);
+	// Fire Bolt is out of Warmth's new tree, so the synergy moves to the Barbarian skill nearest
+	// Fire Bolt's old place on Warmth's tab: Inferno, now in Leap's slot.
+	EXPECT(s.Cell(2, 5) == "skill('Inferno'.blvl)*par8");
+	// No deal, no change.
+	auto unchanged = skills;
+	auto unchangedDesc = desc;
+	EXPECT(ap::randomizer::ApplySkillTrees(unchanged, unchangedDesc, {}).moved == 0 && unchanged.Format() == skills.Format());
 }
 
 void TestShopParcels() {

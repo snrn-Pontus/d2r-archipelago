@@ -3,6 +3,7 @@
 #include "ap_client.h"
 
 #include <cstdint>
+#include <set>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -26,6 +27,15 @@ auto Entries(const std::vector<NetworkItem>& items, int characterLevel, int scal
 // so the plugin can tell whether a charm is up to date.
 auto Fingerprint(const std::vector<Entry>& entries, size_t first, size_t count, int playerClass) -> uint32_t;
 
+// Tree mode: what the received items still owe the character. Each skill's
+// first copy unlocks it in the tree (once: skadd sets the skill's level); every
+// later copy and every Skill Point item is an unspent skill point.
+struct TreeDelivery {
+	std::vector<uint32_t> unlock;
+	int                   points = 0;
+};
+auto PlanTreeDelivery(const std::vector<NetworkItem>& items, const std::set<uint32_t>& unlocked, int pointsGiven) -> TreeDelivery;
+
 // Codex charms hold chunks of skills: your class's on chunks 0.., other
 // classes' on OtherClassChunk.., since D2 adds 6 to an oskill's level
 // requirement when its class isn't yours, and one such skill would switch off
@@ -34,7 +44,9 @@ inline constexpr uint32_t OtherClassChunk = 8;
 inline constexpr uint32_t ChunkCount      = 16;
 
 // Splits the entries into ChunkCount chunks of at most perChunk skills each.
-// An empty class name puts every skill with the other classes'.
-auto Chunks(const std::vector<Entry>& entries, std::string_view playerClass, size_t perChunk) -> std::vector<std::vector<Entry>>;
+// A skill's class is the one whose tree it sits in after the seed's skill tree
+// shuffle. An empty class name puts every skill with the other classes'.
+auto Chunks(const std::vector<Entry>& entries, std::string_view playerClass, size_t perChunk, const randomizer::SkillTree& tree = {})
+	-> std::vector<std::vector<Entry>>;
 
 } // namespace ap::codex

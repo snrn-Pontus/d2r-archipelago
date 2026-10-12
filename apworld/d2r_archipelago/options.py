@@ -44,6 +44,28 @@ class CharacterClass(Choice):
     default = 0
 
 
+class SkillMode(Choice):
+    """How skills reach you.
+    codex: every skill you receive goes on your Archipelago Codex charms, from any class, at a level set
+    by copies, Codex Empowerments and your character level.
+    tree: the skills are the 30 in your class's skill tree (shuffled with Skill Tree Shuffle). Each one
+    stays locked until its item arrives; then you spend skill points on it as usual. Extra copies and
+    Skill Points give skill points. Skill Pool Size, Skill Focus, Skill Classes, Skill Level Scaling and
+    Codex Empowerments don't apply. With "any" class, the seed picks one."""
+    display_name = "Skill Mode"
+    option_codex = 0
+    option_tree = 1
+    default = 0
+
+
+class SkillPoints(Range):
+    """Tree mode: Skill Point items in the pool, each worth one skill point."""
+    display_name = "Skill Points"
+    range_start = 0
+    range_end = 30
+    default = 6
+
+
 class ActKeys(DefaultOnToggle):
     """Each act after the first needs its key ("Normal Act II Key" and so on), which can be anywhere in the
     multiworld. You can still walk into a locked act, but the checks you complete there are held and only
@@ -505,8 +527,9 @@ class BetterDrops(Range):
 
 
 class SkillTreeShuffle(Toggle):
-    """Every class's skill tree is dealt skills from all classes, each in a row of its own level. The Druid's
-    shapeshifts stay with the Druid. Skills still arrive on the Codex; the shuffled tree shows where they sit."""
+    """Every class's skill tree is dealt skills from all classes, each in a row of its own level, with
+    synergies pointing at skills in the same tree. The Druid's shapeshifts stay with the Druid, and the
+    Warlock's tree stays as it is. With Skill Mode tree, your tree's skills are the ones you find."""
     display_name = "Skill Tree Shuffle"
 
 
@@ -539,6 +562,8 @@ class D2ROptions(PerGameCommonOptions):
     goal: Goal
     goal_act: GoalAct
     character_class: CharacterClass
+    skill_mode: SkillMode
+    skill_points: SkillPoints
     act_keys: ActKeys
     skill_pool_size: SkillPoolSize
     skill_copies: SkillCopies
@@ -610,7 +635,7 @@ class D2ROptions(PerGameCommonOptions):
 # Sections for the Options Creator, the options web page and the template YAML.
 OPTION_GROUPS = [
     OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, SkillsPerAct]),
-    OptionGroup("Skills and Codex", [CharacterClass, SkillPoolSize, SkillCopies, SkillFocus, ScaleWithLength, StartingSkills,
+    OptionGroup("Skills and Codex", [CharacterClass, SkillMode, SkillTreeShuffle, SkillPoints, SkillPoolSize, SkillCopies, SkillFocus, ScaleWithLength, StartingSkills,
                                      SkillClasses, IncludeWarlock, SkillLevelScaling, SkillScalingCap, CodexEmpowerments]),
     OptionGroup("Checks", [AreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, CowLevelChecks]),
     OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,
@@ -622,7 +647,7 @@ OPTION_GROUPS = [
                 start_collapsed=True),
     OptionGroup("Traps", [TrapPercentage, JunkBackpackWeight, AmbushWeight, PoisonCloudWeight, FirestormWeight, ManaDrainWeight,
                           TaxCollectorWeight, MercenaryDownWeight], start_collapsed=True),
-    OptionGroup("Game Changes", [MonsterShuffle, SuperUniqueShuffle, RunewordShuffle, SkillTreeShuffle, MonsterDensity, ChampionPacks, BetterDrops,
+    OptionGroup("Game Changes", [MonsterShuffle, SuperUniqueShuffle, RunewordShuffle, MonsterDensity, ChampionPacks, BetterDrops,
                                  ExperienceMultiplier, ItemLevelRequirements, ItemStatRequirements]),
     OptionGroup("Multiworld", [DeathLink]),
 ]

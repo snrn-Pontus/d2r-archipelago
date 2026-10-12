@@ -10,6 +10,8 @@ inline constexpr int64_t ItemBase     = 2'430'000;
 inline constexpr int64_t LocationBase = 2'420'000;
 // Skills are ItemBase + skill id (all below 900).
 inline constexpr int64_t EmpowermentItem = ItemBase + 900;
+// Tree mode: one unspent skill point.
+inline constexpr int64_t SkillPointItem  = ItemBase + 901;
 // Act keys: KeyBase + act index (1 = Normal Act II ... 14 = Hell Act V).
 inline constexpr int64_t KeyBase         = ItemBase + 950;
 // Locks: LockBase + Lock (Waypoints + act for each act's waypoints).

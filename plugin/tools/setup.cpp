@@ -404,23 +404,22 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	for (const std::string bank : Banks) {
 		const char* label = bank.empty() ? "RotW" : "Classic/LoD";
 		int blocked = 0;
-		if (settings.skillTrees) {
+		if (!settings.skillTree.empty()) {
 			// The trees span two tables: skills.txt holds each skill's class, skilldesc.txt its place.
 			std::string descText;
 			ReadCascFile(storage, "data\\global\\excel\\" + bank + "skilldesc.txt", descText);
 			Table skilldesc = Table::Parse(descText);
 			int moved = 0;
-			auto random = TableRandom(settings.seed, "skilltrees");
 			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) {
-				auto shuffle = rnd::ShuffleSkillTrees(t, skilldesc, random);
+				auto shuffle = rnd::ApplySkillTrees(t, skilldesc, settings.skillTree);
 				moved = shuffle.moved;
 				icons = std::move(shuffle.icons);
-				blocked = rnd::BlockClassSkills(t);
+				blocked = rnd::BlockClassSkills(t, settings.treeMode);
 			});
 			PatchTable(storage, excel, bank, "skilldesc.txt", [&](Table& t) { t = skilldesc; });
 			std::printf("  %s: %d skills moved to another class's tree\n", label, moved);
 		} else {
-			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) { blocked = rnd::BlockClassSkills(t); });
+			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) { blocked = rnd::BlockClassSkills(t, settings.treeMode); });
 		}
 		std::printf("  %s: locked %d class skills\n", label, blocked);
 

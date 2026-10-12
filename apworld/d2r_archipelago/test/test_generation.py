@@ -334,3 +334,41 @@ class TestHellAct3(D2RTestBase):
     def test_level_cap_between_nightmare_and_hell(self) -> None:
         self.assertEqual(self.world.level_cap, 75)
         self.assertEqual(self.world.fill_slot_data()["goal_quest"], 22)
+
+
+class TestTreeMode(D2RTestBase):
+    options = {"skill_mode": "tree", "character_class": "barbarian", "skill_copies": 2, "skill_points": 5}
+
+    def test_pool_is_the_barbarian_tree(self) -> None:
+        barbarian = self.world.item_name_groups["Barbarian"]
+        self.assertTrue(all(name in barbarian for name in self.world.skill_pool + self.world.starting))
+        self.assertEqual(len(self.world.skill_pool) + len(self.world.starting), 30)
+        names = [item.name for item in self.multiworld.itempool]
+        self.assertEqual(names.count("Skill Point"), 5)
+        self.assertEqual(names.count("Codex Empowerment"), 0)
+
+    def test_slot_data(self) -> None:
+        data = self.world.fill_slot_data()
+        self.assertEqual(data["skill_mode"], "tree")
+        self.assertTrue(data["randomizer"]["tree_mode"])
+        self.assertEqual(data["randomizer"]["skill_tree"], [])
+
+
+class TestTreeShuffle(D2RTestBase):
+    options = {"skill_mode": "tree", "character_class": "any", "skill_tree_shuffle": True}
+
+    def test_tree_has_thirty_skills_from_many_classes(self) -> None:
+        from ..data import SKILL_SLOTS, SKILLS
+        tree = self.world.tree_skills()
+        self.assertEqual(len(tree), 30)
+        self.assertEqual(sorted(self.world.skill_pool + self.world.starting), sorted(tree))
+        self.assertNotEqual(self.world.class_name(), "")
+        self.assertGreater(len({name.split(" (")[1] for name in tree}), 2)
+        # The deal is a permutation within each row, and pinned skills stay put.
+        row = {skill: slot_row for skill, _page, slot_row, _column, _pinned in SKILL_SLOTS}
+        pinned = {skill for skill, *_rest, is_pinned in SKILL_SLOTS if is_pinned}
+        dealt = self.world.skill_tree
+        self.assertEqual(sorted(dealt.values()), sorted(dealt))
+        self.assertTrue(all(row[skill] == row[slot] for skill, slot in dealt.items()))
+        self.assertFalse(pinned & set(dealt))
+        self.assertTrue(all(cls != "war" for skill, _name, cls in SKILLS if skill in dealt))

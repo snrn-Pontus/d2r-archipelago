@@ -8,12 +8,16 @@
 #include <cstdint>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ap::randomizer {
 
 // Must match the apworld's MonsterShuffle and SuperUniqueShuffle choices.
 enum class Shuffle : int { Off = 0, Nearby = 1, Anywhere = 2 };
+
+// The skill tree shuffle: (skill id, id of the skill whose tree slot it takes).
+using SkillTree = std::vector<std::pair<uint32_t, uint32_t>>;
 
 struct Settings {
 	uint32_t seed = 0;
@@ -29,8 +33,10 @@ struct Settings {
 	int      betterDrops = 100;
 	// Field superuniques get monster rows of their own, so their kills are checks.
 	bool     superUniqueChecks = false;
-	// Every class's skill tree gets skills from all classes.
-	bool     skillTrees = false;
+	// The skill tree shuffle: (skill id, id of the skill whose tree slot it takes).
+	SkillTree skillTree;
+	// Tree mode: skills are unlocked in the tree, so the trees keep their level requirements.
+	bool     treeMode = false;
 
 	auto Any() const -> bool;
 	// One line describing the settings, stored with the mod so the plugin can
@@ -43,8 +49,9 @@ struct Settings {
 // Level requirements drop to 0, because an item granting a skill inherits
 // that skill's requirement (plus 6 for another class's skill), so the Codex
 // works from level 6 whatever it holds.
+// keepLevels leaves the level requirements (tree mode, where you spend points).
 // Returns how many skills it locked.
-auto BlockClassSkills(Table& skills) -> int;
+auto BlockClassSkills(Table& skills, bool keepLevels = false) -> int;
 
 // A skill's icon after a tree shuffle: frame `fromCel` of its old class's icon
 // sheet belongs at frame `toCel` (and the pressed frames after each) of the new one.
@@ -61,13 +68,11 @@ struct TreeShuffle {
 	std::vector<IconMove> icons;
 };
 
-// Deals the class skills out to every class's tree slots (tree, row, column,
-// icon), a skill only moving to a row of its own level, so low-level skills
-// stay at the top. The Druid's shapeshifts, the skills that need a form and the
-// Warlock (whose tree only Reign of the Warlock has) stay put, so the Classic/LoD
-// and RotW tables shuffle alike from the same seed and share the icon sheets.
-// Moves the skill to the slot's class (skills.txt) and place and icon (skilldesc.txt).
-auto ShuffleSkillTrees(Table& skills, Table& skilldesc, std::mt19937& random) -> TreeShuffle;
+// Applies the seed's skill tree shuffle (dealt by the apworld): each skill takes
+// the tree slot its pair names, with the slot's class and level requirement
+// (skills.txt) and tab, place and icon (skilldesc.txt). Synergies then point at
+// skills in each skill's new tree.
+auto ApplySkillTrees(Table& skills, Table& skilldesc, const SkillTree& tree) -> TreeShuffle;
 
 // Swaps whole monster line-ups (normal, nightmare/hell and unique lists move
 // together) between areas: Nearby within each act, Anywhere across all of

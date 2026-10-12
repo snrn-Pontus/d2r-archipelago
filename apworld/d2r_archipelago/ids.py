@@ -52,6 +52,9 @@ TRAPS = {
 # Each copy adds +1 to every skill in the Codex.
 EMPOWERMENT = "Codex Empowerment"
 EMPOWERMENT_ID = ITEM_BASE + 900
+# Tree mode: one unspent skill point each.
+SKILL_POINT = "Skill Point"
+SKILL_POINT_ID = ITEM_BASE + 901
 # Act keys unlock acts 2..15 (Normal Act II through Hell Act V): ITEM_BASE + 950 + act index.
 KEY_BASE = ITEM_BASE + 950
 
@@ -138,6 +141,7 @@ for skill_id, name, cls in SKILLS:
 for index, name in enumerate(LOOT):
     item_name_to_id[name] = ITEM_BASE + 1000 + index
 item_name_to_id[EMPOWERMENT] = EMPOWERMENT_ID
+item_name_to_id[SKILL_POINT] = SKILL_POINT_ID
 for index in range(1, len(DIFFICULTIES) * len(ACTS)):
     item_name_to_id[act_key_name(index)] = KEY_BASE + index
 for index, name in enumerate(LOCKS):

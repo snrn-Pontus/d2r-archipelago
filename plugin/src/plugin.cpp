@@ -41,7 +41,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 // Must share major.minor with apworld/d2r_archipelago/archipelago.json.
-constexpr const char* PluginVersion = "0.4.0";
+constexpr const char* PluginVersion = "0.5.0";
 
 constexpr D2RL::PluginInfo Info {
 	.infoSize    = D2RL::PluginInfoSize,
@@ -838,7 +838,7 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& a
 		return false;
 	}
 	const auto chunks = ap::codex::Chunks(allSkills, playerClass >= 0 && playerClass < static_cast<int>(std::size(ClassNames)) ? ClassNames[playerClass] : "",
-		CodexMaxSkills);
+		CodexMaxSkills, gClient->Slots().randomizer.skillTree);
 	// Charms from older recipes count as chunk 0, so each is replaced once.
 	auto chunkOf = [](uint32_t seed) { return (seed & CodexMarkerMask) == CodexMarker ? (seed >> 16) & 0xF : 0U; };
 	bool ok = true;
@@ -1225,6 +1225,34 @@ void GiveLedger(D2RL::PlayerHandle player) {
 	gSave.Save(gSavePath);
 }
 
+// Tree mode: unlocks each received skill in the tree with D2RCore's skadd (its
+// first point; the tree's self-prerequisite lock then lets you spend more), and
+// hands out extra copies and Skill Points as unspent skill points.
+void DeliverTreeSkills(const std::vector<ap::NetworkItem>& items) {
+	std::vector<std::string> news;
+	{
+		std::lock_guard lock(gMutex);
+		const auto plan = ap::codex::PlanTreeDelivery(items, gSave.unlockedSkills, gSave.skillPointsGiven);
+		if (plan.unlock.empty() && plan.points == 0) {
+			return;
+		}
+		for (const uint32_t skill : plan.unlock) {
+			gCommandQueue.push_back("skadd " + SkillName(skill) + ",1");
+			gSave.unlockedSkills.insert(skill);
+			news.push_back("Archipelago: " + SkillName(skill) + " is unlocked in your skill tree.");
+		}
+		if (plan.points > 0) {
+			gCommandQueue.push_back("skillpoints " + std::to_string(plan.points));
+			gSave.skillPointsGiven += plan.points;
+			news.push_back("Archipelago: +" + std::to_string(plan.points) + (plan.points == 1 ? " skill point." : " skill points."));
+		}
+		gSave.Save(gSavePath);
+	}
+	for (const auto& line : news) {
+		Feed(line);
+	}
+}
+
 void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	gWorkQueued = false;
 	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
@@ -1291,7 +1319,12 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	if (playerClass < 0) {
 		playerClass = ClassIndex(gClient->Slots().characterClass);
 	}
-	const bool codexOk = SyncCodex(player, skills, playerClass, config);
+	// Tree mode unlocks skills in the tree instead of building a Codex.
+	const bool treeMode = gClient->Slots().randomizer.treeMode;
+	if (treeMode) {
+		DeliverTreeSkills(items);
+	}
+	const bool codexOk = treeMode || SyncCodex(player, skills, playerClass, config);
 
 	std::mt19937 random(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
 	const int characterLevel = EffectiveLevel();
