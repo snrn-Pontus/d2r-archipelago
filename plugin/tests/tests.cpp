@@ -145,6 +145,7 @@ void TestSaveStateRoundTrip() {
 	state.goalReached = true;
 	state.playerClass = 4;
 	state.kills = { { 3, 120 }, { 24, 7 } };
+	state.cowKills = { { 1, 64 } };
 	state.foundUniques = { 11, 4000000000U };
 	state.foundSets = { 5 };
 	state.ownHints = { 0, 3 };
@@ -160,7 +161,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.fillersDelivered == 7);
 	EXPECT(loaded.goalReached);
 	EXPECT(loaded.playerClass == 4);
-	EXPECT(loaded.kills == state.kills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
+	EXPECT(loaded.kills == state.kills && loaded.cowKills == state.cowKills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3);
 	std::filesystem::remove_all(path.parent_path());
@@ -173,6 +174,9 @@ void TestIdsMatchApworld() {
 	EXPECT(ap::ids::AreaLocation(0, 38) == 2'421'038);
 	EXPECT(ap::ids::AreaLocation(2, 132) == 2'421'532);
 	EXPECT(ap::ids::LevelLocation(30) == 2'422'030);
+	// Level milestones' acts, as the apworld places them: Normal to Diablo (4 acts, cap 30), all of Hell (15, 90).
+	EXPECT(ap::ids::LevelAct(5, 4, 30) == 0 && ap::ids::LevelAct(10, 4, 30) == 1 && ap::ids::LevelAct(30, 4, 30) == 3);
+	EXPECT(ap::ids::LevelAct(80, 15, 90) == 13 && ap::ids::LevelAct(90, 15, 90) == 14);
 	EXPECT(ap::ids::SuperUniqueLocation(0, 0) == 2'423'000);
 	EXPECT(ap::ids::SuperUniqueLocation(2, 59) == 2'423'259);
 	EXPECT(ap::ids::RuneLocation(33) == 2'425'033);

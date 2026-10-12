@@ -20,6 +20,8 @@ struct SaveState {
 	int playerClass = -1;
 	// Monster kills per difficulty * 10 + act, for the kill-count checks.
 	std::map<int, int> kills;
+	// Secret Cow Level cow kills per difficulty.
+	std::map<int, int> cowKills;
 	// Item seeds of the uniques and set items you found (not rewards), for the find-count checks.
 	std::set<uint32_t> foundUniques;
 	std::set<uint32_t> foundSets;

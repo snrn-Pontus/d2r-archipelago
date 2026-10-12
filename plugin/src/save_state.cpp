@@ -8,7 +8,7 @@
 namespace ap {
 
 // One "key value" pair per line: "check <id>", "fillers <count>", "goal 1", "level <n>",
-// "kills_<difficulty * 10 + act> <count>", "unique <seed>", "set <seed>".
+// "kills_<difficulty * 10 + act> <count>", "cows_<difficulty> <count>", "unique <seed>", "set <seed>".
 bool SaveState::Load(const std::filesystem::path& path) {
 	std::ifstream file(path);
 	if (!file) {
@@ -29,6 +29,8 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			playerClass = static_cast<int>(value);
 		} else if (key.rfind("kills_", 0) == 0) {
 			kills[std::atoi(key.c_str() + 6)] = static_cast<int>(value);
+		} else if (key.rfind("cows_", 0) == 0) {
+			cowKills[std::atoi(key.c_str() + 5)] = static_cast<int>(value);
 		} else if (key == "unique") {
 			foundUniques.insert(static_cast<uint32_t>(value));
 		} else if (key == "set") {
@@ -67,6 +69,9 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		}
 		for (const auto& [key, count] : kills) {
 			file << "kills_" << key << " " << count << "\n";
+		}
+		for (const auto& [difficulty, count] : cowKills) {
+			file << "cows_" << difficulty << " " << count << "\n";
 		}
 		for (const uint32_t seed : foundUniques) {
 			file << "unique " << seed << "\n";

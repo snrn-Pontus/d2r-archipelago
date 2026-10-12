@@ -30,12 +30,13 @@ shapeshifts. It works in both modes; in tree mode, the shuffled tree is the one 
 - Completing each story quest, on every difficulty up to your goal.
 - Entering each waypoint area, plus a few landmarks (Den of Evil, Tristram, the Chaos Sanctuary and more),
   for the first time, on every difficulty up to your goal.
-- Reaching every fifth character level.
+- Reaching every fifth character level. Past level 70 these only hold filler.
 - Killing each of the 41 superuniques that roam the field (Bishibosh, Rakanishu, Pindleskin and the rest), on
   every difficulty up to your goal (`superunique_checks`). Quest bosses and the Chaos Sanctuary seal bosses
   don't count.
 - The Secret Cow Level, on each difficulty you finish before the goal (`cow_level_checks`): entering it,
-  killing The Cow King, and killing 100 cows in one session. The King closes the portal, so kill him last.
+  killing The Cow King, and killing 100 cows. The King closes the portal, so kill him last; the 100 cows
+  only hold filler, in case you don't.
 - Optional collections, which only ever hold filler: each rune up to `rune_checks`, every gem (`gem_checks`),
   every complete Lord of Destruction set (`set_checks`), and with a Hell goal the Pandemonium keys, organs,
   essences, Token of Absolution, Hellfire Torch and Annihilus (`special_item_checks`). Items count anywhere on
@@ -54,7 +55,7 @@ shapeshifts. It works in both modes; in tree mode, the shuffled tree is the one 
 ## Keeping track
 
 You start with an **Archipelago Ledger**, a small item whose tooltip shows the checks done in each act out of
-its total, with the act you're in marked, and the ones not tied to an act (level milestones, collections,
+its total, with the act you're in marked, and the ones not tied to an act (collections,
 find counts). In the console, `ap-missing` lists the checks left in your current act and `ap-missing all`
 counts them per act.
 
@@ -74,7 +75,7 @@ Hardcore characters: a DeathLink death is a real one.
 With `act_keys` (on by default), every act after the first needs its key, such as "Normal Act II Key", and
 the keys are shuffled into the multiworld. You can still walk into a locked act, but the quests and areas
 you complete there (and the superuniques you kill) are only recorded; they're sent, all at once, when the key arrives. Level milestones
-aren't held. The defaults (Normal to Diablo, with a little more experience and loot) aim at a 4 to 6 hour
+count toward the act they're spread over (level 30 toward Act IV on a Normal goal), and are held the same way. The defaults (Normal to Diablo, with a little more experience and loot) aim at a 4 to 6 hour
 game.
 
 ## Hints you find in the game

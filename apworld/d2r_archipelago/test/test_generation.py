@@ -226,6 +226,17 @@ class TestHellSuperUniques(D2RTestBase):
         self.assertEqual(sum(1 for name in names if ": Kill " in name), 3 * 41 + 2 * 2)
         self.assertEqual(sum(1 for name in names if ": Enter " in name), 3 * 46 + 2)
 
+    def test_missable_and_grind_checks_hold_filler(self) -> None:
+        from BaseClasses import LocationProgressType
+        excluded = {location.name for location in self.multiworld.get_locations(self.player)
+                    if location.progress_type == LocationProgressType.EXCLUDED}
+        # The Cow King can close the level before the 100th cow.
+        self.assertIn("Normal: Kill 100 Cows", excluded)
+        self.assertNotIn("Normal: Kill The Cow King", excluded)
+        # Past level 70 the milestones are a long grind.
+        self.assertIn("Reach Character Level 75", excluded)
+        self.assertNotIn("Reach Character Level 70", excluded)
+
 
 class TestCollections(D2RTestBase):
     options = {"goal": "hell", "goal_act": 5, "skill_pool_size": 40, "rune_checks": 33, "gem_checks": True,

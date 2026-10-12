@@ -24,6 +24,8 @@ USEFUL_LOOT = {BOSS_UNIQUE, *UNIQUE_LOOT, "Random Set Item", "High Rune", EMPOWE
 # With the Cube Lock, these need the Horadric Cube (the Horadric Staff and Khalim's Will), on every difficulty.
 CUBE_QUESTS = ("The Horadric Staff", "The Seven Tombs", "Khalim's Will", "The Blackened Temple", "The Guardian")
 CUBE_AREAS = ("Duriel's Lair", "Durance of Hate Level 2", "Durance of Hate Level 3")
+# Level milestones above this take hours of grinding, so they only hold filler.
+GRIND_LEVEL = 70
 # Waypoint Lock covers Acts I to III, the acts you can leave backwards without a waypoint.
 WAYPOINT_LOCK_ACTS = 3
 
@@ -150,7 +152,9 @@ class D2RWorld(World):
             # The cow portal opens once Baal is dead, so only difficulties finished before the goal.
             for difficulty in range(self.options.goal.value):
                 for check in range(len(COW_CHECKS)):
-                    add(acts[difficulty * len(ACTS) + 4], cow_location_name(difficulty, check))
+                    # Killing The Cow King first closes the level for good, so the 100 cows can be missed.
+                    add(acts[difficulty * len(ACTS) + 4], cow_location_name(difficulty, check),
+                        filler_only=COW_CHECKS[check] == "Kill 100 Cows")
         # Collections can take a long time (or luck), so they only hold filler.
         for _number, name in RUNES[:self.options.rune_checks.value]:
             add(acts[0], find_location_name(name), filler_only=True)
@@ -194,8 +198,10 @@ class D2RWorld(World):
         if self.options.level_checks:
             cap = self.level_cap
             for level in range(LEVEL_STEP, cap + 1, LEVEL_STEP):
-                # Spread the milestones over the acts in proportion to the level cap.
-                add(acts[min(self.act_count - 1, (level - 1) * self.act_count // cap)], level_location_name(level))
+                # Spread the milestones over the acts in proportion to the level cap. The plugin holds
+                # each one for its act's key the same way (ids::LevelAct).
+                add(acts[min(self.act_count - 1, (level - 1) * self.act_count // cap)], level_location_name(level),
+                    filler_only=level > GRIND_LEVEL)
 
         # Locations open before each act, not counting the boss quests' locked uniques.
         boss_locked = {quest_location_name(d, name) for d in range(3) for flag, _act, name in QUESTS if flag in BOSS_QUESTS} \

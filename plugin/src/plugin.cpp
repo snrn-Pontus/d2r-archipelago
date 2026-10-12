@@ -108,9 +108,9 @@ int                   gSuperUniqueBase[2] = { -1, -1 };
 bool                  gSuperUniqueMod = false;
 
 // Secret Cow Level checks (server thread), as difficulty * 10 + check, and cow
-// kills per difficulty this session.
+// kills per difficulty while no save is bound (the save keeps them otherwise).
 std::set<int>         gCowQueue;
-uint32_t              gCowKills[3] = {};
+int                   gCowKills[3] = {};
 // Collection checks found by the item scan (game thread).
 std::vector<int64_t>  gCollectionQueue;
 // D2RCore console commands to run on the UI thread (gold, experience, shrines),
@@ -339,7 +339,7 @@ auto ActLabel(int act) -> std::string {
 
 // The act (0 = Normal Act I ... 14 = Hell Act V) a location belongs to, or -1
 // for checks that aren't tied to an act (level milestones).
-auto ActOfLocation(int64_t location) -> int {
+auto ActOfLocation(int64_t location, const ap::SlotData& slots) -> int {
 	const int64_t offset = location - ap::ids::LocationBase;
 	if (offset >= 0 && offset < 300) {
 		for (const auto& quest : ap::data::Quests) {
@@ -353,6 +353,8 @@ auto ActOfLocation(int64_t location) -> int {
 				return static_cast<int>((offset - 1000) / 200) * 5 + area.act;
 			}
 		}
+	} else if (offset >= 2000 && offset < 2100) {
+		return ap::ids::LevelAct(static_cast<int>(offset - 2000), slots.goal * 5 + slots.goalAct, slots.levelCap);
 	} else if (offset >= 5400 && offset < 5430) {
 		return static_cast<int>((offset - 5400) / 10) * 5 + 4;
 	} else if (offset >= 5500 && offset < 5550) {
@@ -401,7 +403,7 @@ void SendReady() {
 			return;
 		}
 		for (const int64_t check : gSave.checks) {
-			if (!server.contains(check) && !gSent.contains(check) && open(ActOfLocation(check))) {
+			if (!server.contains(check) && !gSent.contains(check) && open(ActOfLocation(check, slots))) {
 				ready.push_back(check);
 				gSent.insert(check);
 			}
@@ -426,7 +428,7 @@ void AddChecks(const std::vector<int64_t>& locations) {
 		for (const int64_t location : locations) {
 			if (gBoundSession != 0 ? gSave.checks.insert(location).second : gUnbound.insert(location).second) {
 				added = true;
-				const int act = ActOfLocation(location);
+				const int act = ActOfLocation(location, slots);
 				if (slots.actKeys && act > 0 && !unlocked.contains(act) && gWarnedActs.insert(act).second) {
 					locked.push_back(act);
 				}
@@ -2133,6 +2135,7 @@ auto LedgerText() -> std::string {
 	if (gClient->State() != ap::ConnectionState::Connected) {
 		return "Archipelago: not connected";
 	}
+	const ap::SlotData slots = gClient->Slots();
 	std::set<int64_t> found;
 	int here = 0;
 	{
@@ -2143,13 +2146,13 @@ auto LedgerText() -> std::string {
 	// Per act (-1 for none): checks done and total.
 	std::map<int, std::pair<size_t, size_t>> acts;
 	for (const int64_t location : gClient->Checked()) {
-		auto& [done, total] = acts[ActOfLocation(location)];
+		auto& [done, total] = acts[ActOfLocation(location, slots)];
 		++done;
 		++total;
 	}
 	size_t held = 0;
 	for (const int64_t location : gClient->Missing()) {
-		auto& [done, total] = acts[ActOfLocation(location)];
+		auto& [done, total] = acts[ActOfLocation(location, slots)];
 		++total;
 		if (found.contains(location)) {
 			++done;
@@ -2316,8 +2319,14 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 	}
 	if (monster == ap::data::CowKingMonster) {
 		gCowQueue.insert(difficulty * 10 + 1);
-	} else if (monster == ap::data::CowMonster && ++gCowKills[difficulty] == ap::ids::CowKills) {
-		gCowQueue.insert(difficulty * 10 + 2);
+	} else if (monster == ap::data::CowMonster) {
+		int& cows = gBoundSession != 0 ? gSave.cowKills[difficulty] : gCowKills[difficulty];
+		if (++cows == static_cast<int>(ap::ids::CowKills)) {
+			gCowQueue.insert(difficulty * 10 + 2);
+		}
+		if (gBoundSession != 0 && cows % 25 == 0) {
+			gSave.Save(gSavePath);
+		}
 	}
 	for (const int base : gSuperUniqueBase) {
 		if (gSuperUniqueMod && base >= 0 && monster >= base && monster - base < static_cast<int>(std::size(ap::data::SuperUniques))) {
@@ -2539,6 +2548,7 @@ auto CommandMissing(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 	}
 	const auto args = SplitArgs(command);
 	const bool all = !args.empty() && args[0] == "all";
+	const ap::SlotData slots = gClient->Slots();
 	std::set<int64_t> found;
 	int here = 0;
 	{
@@ -2550,7 +2560,7 @@ auto CommandMissing(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 	std::map<int, std::vector<int64_t>> left;
 	std::map<int, int> held;
 	for (const int64_t location : gClient->Missing()) {
-		const int act = ActOfLocation(location);
+		const int act = ActOfLocation(location, slots);
 		if (found.contains(location)) {
 			++held[act];
 		} else {

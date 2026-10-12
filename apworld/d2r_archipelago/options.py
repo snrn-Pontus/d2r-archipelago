@@ -159,7 +159,7 @@ class AreaChecks(DefaultOnToggle):
 
 class LevelChecks(DefaultOnToggle):
     """Reaching every fifth character level is a check, up to a cap set by the goal
-    (30 on Normal, 60 on Nightmare, 90 on Hell)."""
+    (30 on Normal, 60 on Nightmare, 90 on Hell). Past level 70 they only hold filler."""
     display_name = "Level Checks"
 
 
