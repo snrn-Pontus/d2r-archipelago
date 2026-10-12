@@ -13,7 +13,9 @@
 //
 // Options for all of them: --game <D2R folder>, --mod <name>, --out <mods folder>.
 // Writing the mod also installs D2RLoader if it's missing, and the plugin
-// (d2rl-archipelago.dll next to this tool, or --plugin <file>) into the mod.
+// (d2rl-archipelago.dll next to this tool, or --plugin <file>) into the mod,
+// and saves the server and slot so the plugin connects on its own. --play then
+// starts the game with the mod (the Archipelago Launcher's button uses it).
 
 #include "ap_client.h"
 #include "config.h"
@@ -81,6 +83,7 @@ struct Options {
 	bool offline = false;
 	bool soundsOnly = false;
 	bool updateLoader = false;
+	bool play = false;
 };
 
 auto FindGameFolder() -> std::string {
@@ -448,6 +451,8 @@ auto ParseArgs(int argc, char** argv) -> Options {
 			options.plugin = next();
 		} else if (arg == "--update-loader") {
 			options.updateLoader = true;
+		} else if (arg == "--play") {
+			options.play = true;
 		}
 	}
 	return options;
@@ -851,10 +856,37 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	return 0;
 }
 
-} // namespace
+// Saves the server and slot in the plugin's config in the mod, so it connects
+// as soon as the game starts. The player's other settings are kept.
+void SaveConnection(const Options& options) {
+	const fs::path path = ModRoot(options) / "d2rloader" / "config" / ConfigFile;
+	ap::Config config = ap::ParseConfig(ReadFile(path));
+	config.server = options.server;
+	config.slot = options.slot;
+	config.password = options.password;
+	config.autoConnect = true;
+	std::error_code error;
+	fs::create_directories(path.parent_path(), error);
+	std::ofstream(path, std::ios::binary | std::ios::trunc) << ap::FormatConfig(config);
+}
 
-int main(int argc, char** argv) {
-	Options options = ParseArgs(argc, argv);
+// Starts D2RLoader with the mod, the way its own menu would.
+auto Play(const Options& options) -> bool {
+	const fs::path game = options.game;
+	std::wstring command = L"\"" + (game / LoaderFile).wstring() + L"\" -mod " + fs::path(options.mod).wstring() + L" -txt";
+	STARTUPINFOW startup { .cb = sizeof(startup) };
+	PROCESS_INFORMATION process {};
+	if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, 0, nullptr, game.c_str(), &startup, &process)) {
+		std::printf("Couldn't start %s (error %lu).\n", (game / LoaderFile).string().c_str(), GetLastError());
+		return false;
+	}
+	CloseHandle(process.hThread);
+	CloseHandle(process.hProcess);
+	std::printf("Starting Diablo II: Resurrected with the %s mod.\n", options.mod.c_str());
+	return true;
+}
+
+int Run(Options options) {
 	std::printf("Diablo II: Resurrected folder: %s\n", options.game.c_str());
 
 	HANDLE storage = nullptr;
@@ -931,6 +963,13 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 		std::printf("Seed %s, slot %s: %s\n", seed.name.c_str(), seed.slot.c_str(), seed.settings.Stamp().c_str());
+		if (options.out.empty()) {
+			SaveConnection(options);
+		}
+	} else if (options.play) {
+		CascCloseStorage(storage);
+		std::printf("No server to connect to. Click your name on the room page, or use --connect <server> <slot>.\n");
+		return 1;
 	} else {
 		std::printf("No server given, so only the skill lock is written. Use --connect <server> <slot> for a seed's randomization.\n");
 	}
@@ -938,4 +977,22 @@ int main(int argc, char** argv) {
 	WriteSounds(storage, options);
 	CascCloseStorage(storage);
 	return result;
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+	const Options options = ParseArgs(argc, argv);
+	const int result = Run(options);
+	if (!options.play) {
+		return result;
+	}
+	if (result == 0 && Play(options)) {
+		return 0;
+	}
+	// Opened from the Archipelago Launcher, the window would close before the
+	// player could read what went wrong.
+	std::printf("\nPress Enter to close.\n");
+	std::getchar();
+	return 1;
 }

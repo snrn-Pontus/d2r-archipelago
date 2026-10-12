@@ -1,9 +1,11 @@
-from typing import Any
+from typing import Any, ClassVar
 
 from BaseClasses import Item, ItemClassification, Location, LocationProgressType, Region, Tutorial
+from settings import Group, OptionalUserFolderPath
 from worlds.AutoWorld import WebWorld, World
 from worlds.generic.Rules import add_rule
 
+from . import client  # noqa: F401  (adds the Launcher button)
 from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SKILL_SLOTS, SKILLS, SPECIAL_ITEMS,
                    STARTER_SKILLS, SUPERUNIQUES, UBERS)
 from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, KILL_COUNTS, LEVEL_CAPS,
@@ -59,12 +61,19 @@ class D2RWeb(WebWorld):
     options_presets = OPTION_PRESETS
     tutorials = [Tutorial(
         "Multiworld Setup Guide",
-        "Install the D2RLoader plugin and connect Diablo II: Resurrected to a multiworld.",
+        "Play Diablo II: Resurrected in a multiworld from the Archipelago Launcher.",
         "English",
         "setup_en.md",
         "setup/en",
         ["snrn"],
     )]
+
+
+class D2RSettings(Group):
+    class GameFolder(OptionalUserFolderPath):
+        """The Diablo II: Resurrected folder, with D2R.exe. Leave it empty to find the Battle.net install."""
+
+    game_folder: GameFolder = GameFolder("")
 
 
 class D2RWorld(World):
@@ -73,6 +82,7 @@ class D2RWorld(World):
 
     game = GAME
     web = D2RWeb()
+    settings: ClassVar[D2RSettings]
     options_dataclass = D2ROptions
     options: D2ROptions
     topology_present = True

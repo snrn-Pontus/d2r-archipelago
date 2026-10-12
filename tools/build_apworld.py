@@ -2,6 +2,7 @@
 so the .apworld manifest and the options template are exactly what a multiworld host expects.
 
 The Archipelago source checkout must have worlds/d2r_archipelago (a link to apworld/d2r_archipelago).
+The built d2r-ap-setup.exe and plugin go into the apworld's bin/ for its Launcher button, so build the plugin first.
 
     python -I tools/build_apworld.py <archipelago-folder>
 """
@@ -12,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 GAME = "Diablo II Resurrected"
+TOOLS = ("d2r-ap-setup.exe", "d2rl-archipelago.dll")
 
 TEMPLATE_SCRIPT = """
 import sys
@@ -25,6 +27,13 @@ generate_yaml_templates('build/templates', False)
 
 def main() -> None:
     archipelago = Path(sys.argv[1]).resolve()
+    bin = ROOT / "apworld" / "d2r_archipelago" / "bin"
+    bin.mkdir(exist_ok=True)
+    for name in TOOLS:
+        built = ROOT / "plugin" / "build" / name
+        if not built.exists():
+            sys.exit(f"{built} is missing; build the plugin first (plugin/build.cmd).")
+        shutil.copy2(built, bin / name)
     python = archipelago / ".venv" / "Scripts" / "python.exe"
     if not python.exists():
         python = Path(sys.executable)

@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 plugin/build-config.log
 dist/
+apworld/d2r_archipelago/bin/

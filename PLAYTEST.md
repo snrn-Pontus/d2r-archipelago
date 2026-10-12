@@ -26,6 +26,10 @@ from the server console: `/send <slot> <item name>` (for example `/send Snrn Act
 - [ ] A character from before the move keeps its checks (save state stays in `d2rloader\archipelago\`),
       and the banners still play sounds.
 - [ ] TCP/IP with a second player: joining works when both ran the new setup tool.
+- [ ] With the built `.apworld` installed in a release Archipelago: clicking your name on a room page opens
+      the Launcher, **Diablo II Resurrected** sets up in its own window and starts the game, and the plugin
+      connects without `ap-connect`. The Launcher's button alone does the same with the last server and slot.
+- [ ] With the game still running, the setup window says to close it and waits for Enter.
 
 ## 0. Codex charms
 

@@ -2,7 +2,7 @@
 
     d2r-ap-setup.exe            writes the seed's mod, installs D2RLoader and the plugin next to it
     d2rl-archipelago.dll        the in-game client
-    d2r_archipelago.apworld     for whoever generates the multiworld
+    d2r_archipelago.apworld     the world, with the setup tool and plugin for its Launcher button
     Diablo II Resurrected.yaml  the options template
     README.md                   the setup guide
 

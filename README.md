@@ -63,15 +63,17 @@ python -m pytest worlds/d2r_archipelago/test
 
 ## Playing in a multiworld
 
-Only whoever generates the multiworld needs this project: build `dist/d2r_archipelago.apworld` and the
-options template with `python -I tools/build_apworld.py <archipelago-checkout>`, and give the host the
-`.apworld` and your YAML. Custom worlds can't be generated on archipelago.gg, so the host generates locally
-and can upload the seed there to host it. The other players need nothing extra.
-
 `python -I tools/package_release.py <archipelago-checkout>` builds and tests the plugin, builds the
-apworld and template, and packs the player download, `dist/D2R-Archipelago-<version>.zip`: the setup tool
-and the plugin side by side (the setup tool installs the plugin and D2RLoader), the apworld, the template
-and the setup guide. The plugin's version must match the world's.
+apworld and options template (`tools/build_apworld.py`), and packs `dist/D2R-Archipelago-<version>.zip`
+with the setup tool and the plugin side by side, the apworld, the template and the setup guide. The
+plugin's version must match the world's.
+
+The `.apworld` is all a player needs. It carries `d2r-ap-setup.exe` and the plugin in `bin/` and adds a
+**Diablo II Resurrected** button to the Archipelago Launcher (`client.py`), which also opens from the
+`archipelago://` link on a room page: it unpacks the tool to `%LOCALAPPDATA%\d2r-archipelago\tools` and runs
+`d2r-ap-setup --play`, which installs D2RLoader and the plugin, writes the seed's mod, saves the connection
+for the plugin and starts the game. Custom worlds can't be generated on archipelago.gg, so the host
+generates locally with the `.apworld` and can upload the seed there to host it.
 
 `tools/fuzz_apworld.py <archipelago-checkout> [rounds]` generates random option sets, solo and with up to
 three players, and checks every seed fills and can be beaten.
