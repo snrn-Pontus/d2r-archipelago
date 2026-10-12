@@ -13,6 +13,8 @@ from the server console: `/send <slot> <item name>` (for example `/send Snrn Act
 - [ ] Your class's skills are on one Codex and other classes' skills on a second one. Below level 6 the
       second one's skills don't work, but your class's still do.
 - [ ] Codex skill levels: copies + Empowerments + 1 per 5 character levels, the last part stopping at +10.
+- [ ] With `skill_tree_shuffle` in Codex mode, skills dealt into your class's tree go on your-class Codex
+      and work from level 1; your class's original skills dealt elsewhere go on the other one.
 
 ## 0b. Tree mode
 
@@ -30,12 +32,27 @@ Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fana
 - [ ] After Save and Exit and rejoining, nothing is unlocked twice and no points are given again.
 - [ ] Moved-in skills work for a Barbarian: Plague Poppy (Poison Creeper) summons, Tiger Strike charges.
 
+## 0c. Skill tree shuffle
+
+`skill_tree_shuffle: true` (either skill mode).
+
+- [x] Your tree shows the dealt skills in their slots, with names and tooltips.
+- [x] Icons match the skills, in the tree and on the skill bar and hotkeys.
+- [x] No prerequisite arrows on the mouse skill panel.
+- [x] Synergies name skills in the same tree, and a point in a partner raises the bonus.
+- [x] A moved-in skill works for another class (Dragon Talon on a Barbarian).
+- [ ] Controller (gamepad) skill panel: no arrows, right icons.
+- [ ] Low graphics quality (the low-end sprites): icons and the arrow-free panel.
+- [ ] Legacy graphics (Alt): the old icon files aren't rebuilt, so note what shows.
+- [ ] Druid and Assassin skills dealt elsewhere: their tooltips list the new synergy partners.
+- [ ] A Reign of the Warlock character: the other classes' trees are dealt the same way, and the Warlock's
+      tree is unchanged.
+
 ## 1. Tracking: Ledger and ap-missing
 
 Any seed with the defaults.
 
-- [ ] A new character gets an **Archipelago Ledger** (Token of Absolution picture) next to the Codex, and the
-      chat says to hover over it.
+- [x] A new character gets an **Archipelago Ledger** next to the Codex, and the chat says to hover over it.
 - [ ] Its tooltip shows the total (`Archipelago: n/m checks`), one line per act in the seed with
       `done/total`, `> ` before the act you're in, and a "Not tied to an act" line.
 - [ ] Entering Cold Plains raises Normal Act I's count by one; the tooltip updates without reopening anything.
@@ -91,6 +108,7 @@ Any seed. Send each with `/send`, standing outside town for the traps.
 
 ## Found in testing
 
+- `ap-core <command>` runs any D2RCore command for testing, e.g. `ap-core skillpoints 3`.
 - D2RCore runs gold, experience, mspawn, pcloud, killme, skadd and the rest only as cheats
   (`cheat gold 100`); the plugin adds the prefix. Typed by hand they need `debug_mode`, but the plugin's
   calls work without it.
@@ -114,7 +132,8 @@ Add a second slot to the multiworld, `Players\Probe.yaml`: a copy of `Snrn.yaml`
 on `death_link: true` in both.
 
 - [ ] Dying sends a death: the server log shows a DeathLink from Snrn.
-- [ ] `ap_probe localhost:38281 Probe --death` kills your character, with the cause in chat.
+- [ ] `ap_probe localhost:38281 Probe --death` kills your character (through `cheat killme`), with the cause
+      in chat.
 - [ ] The death that DeathLink caused isn't sent back out.
 - [ ] Dying once sends one death, not one per frame or per resurrection.
 
