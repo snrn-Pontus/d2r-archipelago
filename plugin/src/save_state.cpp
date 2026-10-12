@@ -47,6 +47,8 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			unlockedSkills.insert(static_cast<uint32_t>(value));
 		} else if (key == "skillpoints") {
 			skillPointsGiven = static_cast<int>(value);
+		} else if (key == "notified") {
+			notifiedItems = static_cast<size_t>(value);
 		} else if (key == "portaltome") {
 			portalTomeGiven = value != 0;
 		}
@@ -87,7 +89,7 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		for (const int64_t location : otherHints) {
 			file << "otherhint " << location << "\n";
 		}
-		file << "prophecies " << prophecies << "\nledger " << (ledgerGiven ? 1 : 0) << "\nskillpoints " << skillPointsGiven << "\nportaltome " << (portalTomeGiven ? 1 : 0) << "\n";
+		file << "prophecies " << prophecies << "\nledger " << (ledgerGiven ? 1 : 0) << "\nskillpoints " << skillPointsGiven << "\nportaltome " << (portalTomeGiven ? 1 : 0) << "\nnotified " << notifiedItems << "\n";
 		for (const uint32_t skill : unlockedSkills) {
 			file << "unlocked " << skill << "\n";
 		}

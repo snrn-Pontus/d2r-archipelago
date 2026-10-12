@@ -122,6 +122,9 @@ void TestConfigRoundTrip() {
 	EXPECT(!ap::ParseConfig("").debugTools);
 	const ap::Config parsed = ap::ParseConfig(ap::FormatConfig(config));
 	EXPECT(parsed.debugTools);
+	EXPECT(ap::ParseConfig("").notifications);
+	config.notifications = false;
+	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).notifications);
 	EXPECT(parsed.server == config.server);
 	EXPECT(parsed.slot == config.slot);
 	EXPECT(parsed.password == config.password);
@@ -158,6 +161,7 @@ void TestSaveStateRoundTrip() {
 	state.unlockedSkills = { 126, 54 };
 	state.skillPointsGiven = 3;
 	state.portalTomeGiven = true;
+	state.notifiedItems = 12;
 	EXPECT(state.Save(path));
 	ap::SaveState loaded;
 	EXPECT(loaded.Load(path));
@@ -167,7 +171,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.playerClass == 4);
 	EXPECT(loaded.kills == state.kills && loaded.cowKills == state.cowKills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven
-	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven);
+	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12);
 	std::filesystem::remove_all(path.parent_path());
 }
 

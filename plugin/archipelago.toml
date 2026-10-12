@@ -6,6 +6,8 @@ password = ""
 auto_connect = true
 # Set by ap-debug on/off: the debug panel (F10) for testing.
 debug_tools = false
+# On-screen banners for items received and checks sent.
+notifications = true
 
 # The Codex charm that carries your received skills.
 codex_item = "cm1"

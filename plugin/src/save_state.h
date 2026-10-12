@@ -36,6 +36,8 @@ struct SaveState {
 	// once), and skill points handed out for extra copies and Skill Points.
 	std::set<uint32_t> unlockedSkills;
 	int skillPointsGiven = 0;
+	// How many received items have had an on-screen banner.
+	size_t notifiedItems = 0;
 	// Whether Town Portal Access has brought its Tome of Town Portal.
 	bool portalTomeGiven = false;
 

@@ -27,7 +27,7 @@ target_link_libraries(ap_core PUBLIC D2RLPlugin::D2RLPlugin winhttp)
 target_compile_definitions(ap_core PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(ap_core PUBLIC /W4 /utf-8 /EHsc)
 
-add_library(d2rl_archipelago SHARED src/plugin.cpp src/plugin.rc)
+add_library(d2rl_archipelago SHARED src/plugin.cpp src/notify.cpp src/plugin.rc)
 target_link_libraries(d2rl_archipelago PRIVATE ap_core)
 set_target_properties(d2rl_archipelago PROPERTIES OUTPUT_NAME "d2rl-archipelago")
 d2rlplugin_embed_config(TARGET d2rl_archipelago FILE "${CMAKE_CURRENT_SOURCE_DIR}/archipelago.toml")

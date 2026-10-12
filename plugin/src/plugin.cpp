@@ -11,6 +11,7 @@
 #include "game_data.h"
 #include "ids.h"
 #include "loot.h"
+#include "notify.h"
 #include "personalize.h"
 #include "quest_triggers.h"
 #include "randomizer.h"
@@ -190,6 +191,7 @@ void Log(const std::string& text) {
 // Messages waiting to be echoed to the D2RLoader console on the UI thread.
 std::vector<std::string> gConsoleQueue;
 std::atomic<bool>        gConsoleQueued;
+std::atomic<bool>        gBannerQueued;
 
 // The overlay doesn't render, so messages also go to D2R's chat through
 // D2RCore's DisplayServerChatMessage export. It isn't part of the plugin SDK:
@@ -419,9 +421,21 @@ void SendReady() {
 	}
 }
 
+// An on-screen banner, unless notifications are off in the config.
+void Banner(const std::string& text, ap::notify::Style style) {
+	{
+		std::lock_guard lock(gMutex);
+		if (!gConfig.notifications) {
+			return;
+		}
+	}
+	ap::notify::Show(text, style);
+}
+
 void AddChecks(const std::vector<int64_t>& locations) {
 	bool added = false;
 	std::vector<int> locked;
+	std::vector<std::pair<int64_t, bool>> announce; // new checks, and whether they're held
 	const ap::SlotData slots = gClient ? gClient->Slots() : ap::SlotData {};
 	const std::set<int> unlocked = gClient ? UnlockedActs() : std::set<int> { 0 };
 	{
@@ -430,6 +444,9 @@ void AddChecks(const std::vector<int64_t>& locations) {
 			if (gBoundSession != 0 ? gSave.checks.insert(location).second : gUnbound.insert(location).second) {
 				added = true;
 				const int act = ActOfLocation(location, slots);
+				if (gBoundSession != 0) {
+					announce.emplace_back(location, slots.actKeys && act > 0 && !unlocked.contains(act));
+				}
 				if (slots.actKeys && act > 0 && !unlocked.contains(act) && gWarnedActs.insert(act).second) {
 					locked.push_back(act);
 				}
@@ -441,6 +458,21 @@ void AddChecks(const std::vector<int64_t>& locations) {
 	}
 	for (const int act : locked) {
 		Feed("Archipelago: " + ActLabel(act) + " is locked; its checks are held until you find the " + ActLabel(act) + " Key.");
+	}
+	// A banner per check, naming what it held for another player (your own
+	// items get their own banner when they arrive).
+	if (announce.size() > 4) {
+		Banner("Checks sent: " + std::to_string(announce.size()), ap::notify::Style::Check);
+	} else if (!announce.empty()) {
+		const auto scouted = gClient->Scouted();
+		const int me = gClient->MySlot();
+		for (const auto& [location, held] : announce) {
+			std::string text = "Check: " + gClient->LocationName(location, me);
+			if (const auto found = scouted.find(location); found != scouted.end() && found->second.player != me) {
+				text += " - " + gClient->ItemName(found->second.item, found->second.player) + " for " + gClient->PlayerName(found->second.player);
+			}
+			Banner(text + (held ? " (held)" : ""), ap::notify::Style::Check);
+		}
 	}
 	if (added) {
 		SendReady();
@@ -1998,9 +2030,127 @@ void DrawText(const D2RL::Overlay::Frame* frame, float x, float y, const std::st
 
 
 
+// ---- Banners ------------------------------------------------------------------
+
+void __cdecl BannerWork(const D2RL::PluginContext*, void*) noexcept {
+	gBannerQueued = false;
+	ap::notify::Tick();
+}
+
+// A banner for each item received since the last one announced: act keys,
+// locks and skills in gold, traps in red.
+void AnnounceItems() {
+	static uint64_t seen = UINT64_MAX;
+	const uint64_t generation = gClient->ItemsGeneration();
+	size_t from = 0;
+	{
+		std::lock_guard lock(gMutex);
+		if (gBoundSession == 0 || generation == seen) {
+			return;
+		}
+		from = gSave.notifiedItems;
+	}
+	seen = generation;
+	const auto items = gClient->Items();
+	if (from >= items.size()) {
+		return;
+	}
+	const int me = gClient->MySlot();
+	if (items.size() - from > 4) {
+		Banner("Received " + std::to_string(items.size() - from) + " items", ap::notify::Style::Info);
+	} else {
+		for (size_t i = from; i < items.size(); ++i) {
+			const auto& item = items[i];
+			using ap::loot::Loot;
+			const auto loot = static_cast<Loot>(item.item - ap::ids::LootBase);
+			const bool trap = ap::ids::IsLootItem(item.item)
+			               && (loot == Loot::JunkBackpack || (loot >= Loot::AmbushTrap && loot <= Loot::MercenaryDownTrap));
+			const bool important = ap::ids::IsKeyItem(item.item) || ap::ids::IsLockItem(item.item) || ap::ids::IsSkillItem(item.item)
+			                    || item.item == ap::ids::EmpowermentItem || item.item == ap::ids::SkillPointItem;
+			std::string text = "Received: " + gClient->ItemName(item.item, me);
+			if (item.player > 0 && item.player != me) {
+				text += " from " + gClient->PlayerName(item.player);
+			}
+			Banner(text, trap ? ap::notify::Style::Trap : important ? ap::notify::Style::Important : ap::notify::Style::Info);
+		}
+	}
+	std::lock_guard lock(gMutex);
+	gSave.notifiedItems = items.size();
+	gSave.Save(gSavePath);
+}
+
+// ap-debug overlay: test shapes for finding out why the overlay doesn't show.
+// Each colour tests one idea; the log gets each draw call's result.
+std::atomic<bool> gOverlayTest;
+uint64_t          gOverlayTestLogged = 0;
+
+void DrawOverlayTest(const D2RL::Overlay::Frame* frame) {
+	const float w = frame->screenWidth, h = frame->screenHeight;
+	std::string results;
+	auto fill = [&](const char* name, D2RL::Overlay::Rect rect, D2RL::Overlay::Color color) {
+		const D2RL::Overlay::FilledRectangleRequest request {
+			.structSize = D2RL::Overlay::FilledRectangleRequestSize,
+			.canvas     = frame->canvas,
+			.rect       = rect,
+			.color      = color,
+		};
+		results += std::string(" ") + name + "=" + std::to_string(static_cast<uint32_t>(gOverlay->drawFilledRectangle(gContext, &request)));
+	};
+	// Inside a 32x32 window at the corner (the size imgui.ini had saved).
+	fill("white-corner", { 2, 2, 30, 30 }, { 1, 1, 1, 1 });
+	// Screen-relative pixels.
+	fill("red-relative", { w * 0.10F, h * 0.10F, w * 0.25F, h * 0.25F }, { 1, 0, 0, 1 });
+	// Fixed pixels.
+	fill("green-fixed", { 400, 400, 800, 800 }, { 0, 1, 0, 1 });
+	// 0..1 coordinates.
+	fill("blue-normalized", { 0.40F, 0.10F, 0.55F, 0.25F }, { 0, 0, 1, 1 });
+	// 0..255 colours.
+	fill("magenta-255", { w * 0.60F, h * 0.10F, w * 0.75F, h * 0.25F }, { 255, 0, 255, 255 });
+	const D2RL::Overlay::RectangleRequest border {
+		.structSize = D2RL::Overlay::RectangleRequestSize,
+		.canvas     = frame->canvas,
+		.rect       = { 10, 10, w - 10, h - 10 },
+		.color      = { 1, 0.5F, 0, 1 },
+		.thickness  = 8,
+	};
+	results += " orange-border=" + std::to_string(static_cast<uint32_t>(gOverlay->drawRectangle(gContext, &border)));
+	const std::string text = "ARCHIPELAGO OVERLAY TEST " + std::to_string(static_cast<int>(w)) + "x" + std::to_string(static_cast<int>(h));
+	const D2RL::Overlay::TextRequest request {
+		.structSize = D2RL::Overlay::TextRequestSize,
+		.canvas     = frame->canvas,
+		.position   = { w * 0.10F, h * 0.30F },
+		.color      = { 1, 1, 0, 1 },
+		.textSize   = 64,
+		.text       = text.data(),
+		.textLength = static_cast<uint32_t>(text.size()),
+	};
+	results += " yellow-text=" + std::to_string(static_cast<uint32_t>(gOverlay->drawText(gContext, &request)));
+	// The first frames after turning it on, then every 10 seconds or so.
+	if (gOverlayTestLogged < 3 || frame->frameNumber % 600 == 0) {
+		++gOverlayTestLogged;
+		D2RL::Overlay::Metrics metrics { .structSize = D2RL::Overlay::MetricsSize };
+		const auto metricsResult = gOverlay->getMetrics(gContext, &metrics);
+		Log("Archipelago: overlay test frame " + std::to_string(frame->frameNumber) + ", screen " + std::to_string(w) + "x" + std::to_string(h) + ", text size "
+		    + std::to_string(frame->defaultTextSize) + ", metrics " + std::to_string(static_cast<uint32_t>(metricsResult)) + " (" + std::to_string(metrics.screenWidth)
+		    + "x" + std::to_string(metrics.screenHeight) + "); results (0 = success):" + results);
+	}
+}
+
 void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* frame, void*) noexcept {
 	if (frame == nullptr || !gClient) {
 		return;
+	}
+	if (static bool first = true; first) {
+		first = false;
+		Log("Archipelago: first overlay frame: screen " + std::to_string(frame->screenWidth) + "x" + std::to_string(frame->screenHeight) + ", struct size "
+		    + std::to_string(frame->structSize) + ".");
+	}
+	if (gOverlayTest) {
+		DrawOverlayTest(frame);
+	}
+	AnnounceItems();
+	if (ap::notify::Busy() && !gBannerQueued.exchange(true) && gThreads->runOnUiThread(gContext, BannerWork, nullptr) != D2RL::Threads::Result::Success) {
+		gBannerQueued = false;
 	}
 	const uint64_t session = gClient->SessionGeneration();
 	bool bind = false;
@@ -2852,6 +3002,23 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 		TogglePanelWork(gContext, &gDebugPanel);
 		return D2RL::ConsoleCommandResult::Handled;
 	}
+	if (args[0] == "banner" && args.size() >= 2) {
+		static const std::map<std::string, ap::notify::Style> styles {
+			{ "important", ap::notify::Style::Important }, { "trap", ap::notify::Style::Trap }, { "check", ap::notify::Style::Check } };
+		const auto style = styles.find(args[1]);
+		std::string text;
+		for (size_t i = style == styles.end() ? 1 : 2; i < args.size(); ++i) {
+			text += (text.empty() ? "" : " ") + args[i];
+		}
+		ap::notify::Show(text.empty() ? "Archipelago banner test" : text, style == styles.end() ? ap::notify::Style::Info : style->second);
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	if (args[0] == "overlay") {
+		gOverlayTest = !gOverlayTest;
+		gOverlayTestLogged = 0;
+		Reply(gOverlayTest ? "Overlay test on: coloured shapes and a yellow line of text should show." : "Overlay test off.");
+		return D2RL::ConsoleCommandResult::Handled;
+	}
 	if (args[0] == "spawn" && args.size() >= 2 && args[1].size() >= 3 && args[1].size() <= 4) {
 		{
 			std::lock_guard lock(gMutex);
@@ -2863,7 +3030,7 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 		}
 		return D2RL::ConsoleCommandResult::Handled;
 	}
-	gContext->WriteConsoleMessage("Usage: ap-debug [on|off], or ap-debug spawn <item code> [unique]");
+	gContext->WriteConsoleMessage("Usage: ap-debug [on|off], ap-debug spawn <item code> [unique], ap-debug banner [important|trap|check] <text>, ap-debug overlay");
 	return D2RL::ConsoleCommandResult::InvalidArguments;
 }
 

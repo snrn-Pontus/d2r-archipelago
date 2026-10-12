@@ -98,6 +98,20 @@ Any seed, connected. Several of these D2RCore cheats haven't been tried yet; not
 - [ ] Items: each lands in the inventory and its check is sent; the unique ring counts for "Find 1 Unique".
 - [ ] From the Server: the chat shows "Cheat console: sending ..." and the item arrives.
 
+## 1d. Banners
+
+Any seed, connected. D2RLoader's overlay draws nothing (every call succeeds, nothing shows), so banners
+are a click-through window of the plugin's own over the game. `notifications = false` in the plugin
+config turns them off.
+
+- [x] A received item shows "Received: ..." near the top centre in Exocet, gold for keys, locks, skills,
+      Empowerments and Skill Points; clicks go through it.
+- [x] Traps show in red; ordinary rewards in white. (Still to see: "from <player>" for another slot's item.)
+- [ ] A check shows a grey "Check: ..." line, naming another player's item it held, and "(held)" in a
+      locked act. More than four at once become one "Checks sent: n" line.
+- [x] Alt-Tab away and back, and minimizing: the banner stays with the game and doesn't float over
+      other windows.
+
 ## 2. New checks
 
 Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: true`.
