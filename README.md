@@ -15,7 +15,7 @@ areas, each on every difficulty up to the goal, every fifth character level, and
 difficulties finished before the goal. Optional collection checks (runes, gems, complete sets, Hell's keys,
 organs, essences, the Torch and Annihilus) only hold filler, and so do uber, kill-count and find-count checks.
 Quest item pickups and Archipelago Parcels bought from each act's potion seller are checks too. Optional
-locks keep the Horadric Cube, Town Portal, potions, the stash, merchants and each act's waypoints closed until
+locks keep the Horadric Cube, Town Portal, potions, the stash, merchants and the waypoints of Acts I to III closed until
 their item arrives, and locked acts warp you back to town. Hints turn up in game too: from Deckard Cain after
 act bosses, torn pages from superuniques, and Scrolls of Prophecy sold at rising prices. DeathLink is optional. The goal is killing Baal on the chosen difficulty.
 

@@ -239,7 +239,8 @@ class MerchantLock(Toggle):
 
 
 class WaypointLock(Toggle):
-    """Each act's waypoints only work once you find that act's Waypoints item (Act I Waypoints...)."""
+    """The waypoints of Acts I to III only work once you find that act's Waypoints item (Act I Waypoints...).
+    Acts IV and V keep theirs, since a waypoint is the only way back to an earlier act from there."""
     display_name = "Waypoint Lock"
 
 

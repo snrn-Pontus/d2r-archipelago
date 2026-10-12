@@ -24,6 +24,8 @@ USEFUL_LOOT = {BOSS_UNIQUE, *UNIQUE_LOOT, "Random Set Item", "High Rune", EMPOWE
 # With the Cube Lock, these need the Horadric Cube (the Horadric Staff and Khalim's Will), on every difficulty.
 CUBE_QUESTS = ("The Horadric Staff", "The Seven Tombs", "Khalim's Will", "The Blackened Temple", "The Guardian")
 CUBE_AREAS = ("Duriel's Lair", "Durance of Hate Level 2", "Durance of Hate Level 3")
+# Waypoint Lock covers Acts I to III, the acts you can leave backwards without a waypoint.
+WAYPOINT_LOCK_ACTS = 3
 
 
 def deal_skill_trees(random) -> dict[int, int]:
@@ -311,12 +313,14 @@ class D2RWorld(World):
         return bool(self.options.merchant_lock) and self.options.shop_checks.value > 0
 
     def lock_items(self) -> list[str]:
-        """The lock items in the pool: one per lock that's on, and a Waypoints item per act in play."""
+        """The lock items in the pool: one per lock that's on, and a Waypoints item per act in play up to
+        Act III. Acts IV and V can only go back an act by waypoint, so their waypoints never lock: a check
+        left behind in Act III or IV must stay reachable."""
         toggles = (self.options.cube_lock, self.options.town_portal_lock, self.options.potion_lock,
                    self.options.stash_lock, self.options.merchant_lock)
         names = [name for name, on in zip(LOCKS, toggles) if on]
         if self.options.waypoint_lock:
-            names += [f"{act} Waypoints" for act in ACTS[:min(len(ACTS), self.act_count)]]
+            names += [f"{act} Waypoints" for act in ACTS[:min(WAYPOINT_LOCK_ACTS, self.act_count)]]
         return names
 
     def class_name(self) -> str:

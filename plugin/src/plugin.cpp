@@ -1663,7 +1663,9 @@ void UpdateLocks() {
 		.stash      = locked(slots.locks.stash, static_cast<uint32_t>(Lock::Stash)),
 		.merchants  = locked(slots.locks.merchants, static_cast<uint32_t>(Lock::Merchants)),
 	};
-	for (uint32_t act = 0; act < 5; ++act) {
+	// Only Acts I to III: from Acts IV and V a waypoint is the only way back an act, so
+	// locking them could strand a check (older seeds still hold their Waypoints items).
+	for (uint32_t act = 0; act < 3; ++act) {
 		locks.waypoints[act] = locked(slots.locks.waypoints, static_cast<uint32_t>(Lock::Waypoints) + act);
 	}
 	std::lock_guard lock(gMutex);

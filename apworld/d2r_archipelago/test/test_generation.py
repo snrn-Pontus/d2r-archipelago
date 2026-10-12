@@ -295,6 +295,12 @@ class TestLocks(D2RTestBase):
         self.assertFalse(self.world.create_item("Stash Access").advancement)
         self.assertEqual(self.world.fill_slot_data()["locks"]["cube"], True)
 
+    def test_late_waypoints_never_lock(self) -> None:
+        # From Acts IV and V only a waypoint goes back an act, so those must work from the start.
+        self.world.act_count = 5
+        self.assertEqual([name for name in self.world.lock_items() if name.endswith("Waypoints")],
+                         ["Act I Waypoints", "Act II Waypoints", "Act III Waypoints"])
+
     def test_cube_gates_duriel(self) -> None:
         self.collect_all_but(["Horadric Cube Access"])
         self.assertFalse(self.can_reach_location("Normal: The Seven Tombs"))
