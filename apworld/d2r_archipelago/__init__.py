@@ -12,7 +12,7 @@ from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOW
                   level_location_name, location_name_to_id, quest_item_location_name, quest_location_name,
                   set_location_name, shop_location_name, skill_item_name, skill_names_by_class,
                   superunique_location_name)
-from .options import D2ROptions
+from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions
 
 GAME = "Diablo II Resurrected"
 SKILLS_GROUP = "Skills"
@@ -36,6 +36,8 @@ class D2RLocation(Location):
 
 class D2RWeb(WebWorld):
     theme = "stone"
+    option_groups = OPTION_GROUPS
+    options_presets = OPTION_PRESETS
     tutorials = [Tutorial(
         "Multiworld Setup Guide",
         "Install the D2RLoader plugin and connect Diablo II: Resurrected to a multiworld.",

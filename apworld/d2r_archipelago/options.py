@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
-from Options import Choice, DeathLink, DefaultOnToggle, OptionSet, PerGameCommonOptions, Range, Toggle
+from typing import Any
+
+from Options import Choice, DeathLink, DefaultOnToggle, OptionGroup, OptionSet, PerGameCommonOptions, Range, Toggle
 
 from .data import CLASSES
 
@@ -586,3 +588,43 @@ class D2ROptions(PerGameCommonOptions):
     item_level_requirements: ItemLevelRequirements
     item_stat_requirements: ItemStatRequirements
     death_link: DeathLink
+
+
+# Sections for the Options Creator, the options web page and the template YAML.
+OPTION_GROUPS = [
+    OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, SkillsPerAct]),
+    OptionGroup("Skills and Codex", [CharacterClass, SkillPoolSize, SkillCopies, SkillFocus, ScaleWithLength, StartingSkills,
+                                     SkillClasses, IncludeWarlock, SkillLevelScaling, CodexEmpowerments]),
+    OptionGroup("Checks", [AreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, CowLevelChecks]),
+    OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,
+                                               FindCountChecks], start_collapsed=True),
+    OptionGroup("Locks", [CubeLock, TownPortalLock, PotionLock, StashLock, MerchantLock, WaypointLock]),
+    OptionGroup("Hints", [CainHints, PageHintChance, ProphecyShop, HintBalance]),
+    OptionGroup("Rewards", [BossQuestsGiveUniques, BasicLootWeight, UniqueWeight, SetItemWeight, HighRuneWeight,
+                            SocketedBaseWeight, GoldWeight, ExperienceWeight, CharmWeight, ShrineWeight, ProphecyWeight],
+                start_collapsed=True),
+    OptionGroup("Traps", [TrapPercentage, JunkBackpackWeight, AmbushWeight, PoisonCloudWeight, FirestormWeight, ManaDrainWeight,
+                          TaxCollectorWeight, MercenaryDownWeight], start_collapsed=True),
+    OptionGroup("Game Changes", [MonsterShuffle, SuperUniqueShuffle, RunewordShuffle, MonsterDensity, ChampionPacks, BetterDrops,
+                                 ExperienceMultiplier, ItemLevelRequirements, ItemStatRequirements]),
+    OptionGroup("Multiworld", [DeathLink]),
+]
+
+# Starting points on the options web page; anything not listed keeps its default.
+OPTION_PRESETS: dict[str, dict[str, Any]] = {
+    "Quick Normal": {
+        "goal": "normal", "goal_act": 2, "shop_checks": 2, "trap_percentage": 5,
+    },
+    "Full Hell": {
+        "goal": "hell", "goal_act": 5, "rune_checks": 20, "special_item_checks": True, "uber_checks": True,
+        "kill_count_checks": True,
+    },
+    "Locked Down": {
+        "cube_lock": True, "town_portal_lock": True, "potion_lock": True, "stash_lock": True, "merchant_lock": True,
+        "waypoint_lock": True, "trap_percentage": 25,
+    },
+    "Treasure Hunter": {
+        "goal": "nightmare", "goal_act": 5, "rune_checks": 33, "gem_checks": True, "set_checks": True,
+        "find_count_checks": True, "better_drops": 250,
+    },
+}
