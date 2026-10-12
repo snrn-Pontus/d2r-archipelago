@@ -18,11 +18,17 @@ from the server console: `/send <slot> <item name>` (for example `/send Snrn Act
 
 `skill_mode: tree`, `skill_tree_shuffle: true`, `character_class: barbarian`.
 
+Seed AP_33491417470862561012 (2026-10-12): starting skills Plague Poppy and Tiger Strike;
+Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fanaticism.
+
 - [ ] No Codex. The starting skills have a point in the tree, and the chat says each one is unlocked.
-- [ ] A skill found later gets its first point; after that, skill points go into it as usual. Locked
-      skills refuse points.
-- [ ] A second copy and `/send Snrn Skill Point` each give an unspent skill point.
+- [ ] At level 2 a point goes into a starting skill (it rises to 2); a locked skill (Bash) refuses points.
+- [ ] A skill found later gets its first point; after that, skill points go into it as usual, from its
+      row's level (Telekinesis from Bishibosh: level 6; Fanaticism from the Scroll of Inifuss: level 30).
+- [ ] A second copy, a found Skill Point (Dark Wood) and `/send Snrn Skill Point` each give an unspent
+      skill point.
 - [ ] After Save and Exit and rejoining, nothing is unlocked twice and no points are given again.
+- [ ] Moved-in skills work for a Barbarian: Plague Poppy (Poison Creeper) summons, Tiger Strike charges.
 
 ## 1. Tracking: Ledger and ap-missing
 
