@@ -86,6 +86,9 @@ D2RL::Panels::RegistrationHandle gDebugPanel = D2RL::Panels::InvalidHandle;
 
 std::unique_ptr<ap::Client> gClient;
 std::atomic<bool>           gWorkQueued;
+// D2RLoader drops queued game work on a session change, so GameWork may never
+// run; after a while the flag is treated as stale and the work queued again.
+std::atomic<int64_t>        gWorkQueuedAt;
 
 std::mutex            gMutex;
 ap::Config            gConfig;
@@ -2365,9 +2368,18 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	if (console && !gConsoleQueued.exchange(true) && gThreads->runOnUiThread(gContext, FlushConsole, nullptr) != D2RL::Threads::Result::Success) {
 		gConsoleQueued = false;
 	}
-	if (work && !gWorkQueued.exchange(true)) {
-		if (gThreads->runOnGameThread(gContext, GameWork, nullptr) != D2RL::Threads::Result::Success) {
-			gWorkQueued = false;
+	if (work) {
+		const int64_t now = Clock::now().time_since_epoch().count();
+		bool queue = !gWorkQueued.exchange(true);
+		if (!queue && Clock::duration(now - gWorkQueuedAt) > std::chrono::seconds(15)) {
+			Log("Archipelago: queued game work never ran; queuing it again.");
+			queue = true;
+		}
+		if (queue) {
+			gWorkQueuedAt = now;
+			if (gThreads->runOnGameThread(gContext, GameWork, nullptr) != D2RL::Threads::Result::Success) {
+				gWorkQueued = false;
+			}
 		}
 	}
 }
@@ -2382,6 +2394,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 	switch (event->kind) {
 		case Kind::GameJoined:
 		case Kind::LocalPlayerReady: {
+			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
 			gInGame = true;
 			gCodexDirty = true;
@@ -2408,6 +2421,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			break;
 		}
 		case Kind::GameLeft: {
+			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
 			gInGame = false;
 			break;
