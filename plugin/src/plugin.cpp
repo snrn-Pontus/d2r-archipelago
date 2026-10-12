@@ -870,6 +870,23 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 	} else if (pick.quality == D2RL::Items::Quality::Set) {
 		records = SetRecords(pick.name);
 	}
+	// Logged with each placement, so the log shows a locked cube or stash was passed over.
+	std::string skipped;
+	if (cubeLocked) {
+		skipped += ", cube locked";
+	}
+	if (stashLocked) {
+		skipped += ", stash locked";
+	}
+	const auto placedIn = [&](D2RL::Items::ItemContainer container) {
+		using enum D2RL::Items::ItemContainer;
+		const char* name = container == Inventory ? "inventory"
+		                   : container == Cube    ? "cube"
+		                   : container == PersonalStash ? "stash"
+		                   : container == Ground  ? "ground"
+		                                          : "cursor";
+		Log("Archipelago: placed " + pick.name + " in the " + name + (skipped.empty() ? std::string {} : " (" + skipped.substr(2) + ")") + ".");
+	};
 	std::string results;
 	for (const auto container : { D2RL::Items::ItemContainer::Inventory, D2RL::Items::ItemContainer::Cube, D2RL::Items::ItemContainer::PersonalStash,
 		     D2RL::Items::ItemContainer::Ground, D2RL::Items::ItemContainer::Cursor }) {
@@ -880,6 +897,7 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 		for (const uint32_t record : records) {
 			result = CreateIn(player, pick, record, container, owner);
 			if (result == D2RL::Items::Result::Success) {
+				placedIn(container);
 				return true;
 			}
 		}
@@ -889,6 +907,7 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 			result = CreateIn(player, pick, D2RL::Items::RandomQualityRecord, container, owner);
 		}
 		if (result == D2RL::Items::Result::Success) {
+			placedIn(container);
 			if (container == D2RL::Items::ItemContainer::Ground || container == D2RL::Items::ItemContainer::Cursor) {
 				Feed("Archipelago: your bags are full, so " + pick.name + (container == D2RL::Items::ItemContainer::Ground ? " dropped at your feet." : " is in your hand."));
 			}
@@ -896,7 +915,7 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 		}
 		results += " " + std::to_string(static_cast<uint32_t>(container)) + "=" + std::to_string(static_cast<uint32_t>(result));
 	}
-	Log("Archipelago: no room for " + pick.name + " (container=result:" + results + ").");
+	Log("Archipelago: no room for " + pick.name + " (container=result:" + results + skipped + ").");
 	return false;
 }
 
