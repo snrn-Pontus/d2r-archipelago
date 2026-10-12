@@ -39,6 +39,8 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			otherHints.insert(value);
 		} else if (key == "prophecies") {
 			prophecies = static_cast<int>(value);
+		} else if (key == "ledger") {
+			ledgerGiven = value != 0;
 		}
 	}
 	return true;
@@ -74,7 +76,7 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		for (const int64_t location : otherHints) {
 			file << "otherhint " << location << "\n";
 		}
-		file << "prophecies " << prophecies << "\n";
+		file << "prophecies " << prophecies << "\nledger " << (ledgerGiven ? 1 : 0) << "\n";
 		if (!file.flush()) {
 			return false;
 		}

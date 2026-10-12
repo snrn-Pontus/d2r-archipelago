@@ -1175,6 +1175,48 @@ void FindSuperUniqueMonsters() {
 	}
 }
 
+// Hands the character its Archipelago Ledger once per seed (ap-ledger asks for
+// another). If it can't be made (no room, or a mod without it), retries later.
+Clock::time_point gLedgerRetryAt;
+
+auto __cdecl FindLedger(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
+	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->code == ap::loot::CodeFromText(ap::randomizer::LedgerCode)) {
+		*static_cast<bool*>(userData) = true;
+		return D2RL::Inventory::IterationAction::Stop;
+	}
+	return D2RL::Inventory::IterationAction::Continue;
+}
+
+void GiveLedger(D2RL::PlayerHandle player) {
+	{
+		std::lock_guard lock(gMutex);
+		if (gSave.ledgerGiven || Clock::now() < gLedgerRetryAt) {
+			return;
+		}
+	}
+	bool found = false;
+	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
+	if (gInventory->forEachInventoryItem(gContext, player, &filter, FindLedger, &found) != D2RL::Inventory::Result::Success) {
+		return;
+	}
+	if (!found) {
+		auto spec = MakeSpec(ap::loot::CodeFromText(ap::randomizer::LedgerCode), D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
+		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
+		const auto result = gItems->createItem(gContext, player, &spec, &item);
+		if (result != D2RL::Items::Result::Success) {
+			Log("Archipelago: couldn't make the Archipelago Ledger (result " + std::to_string(static_cast<uint32_t>(result))
+				+ "); make room in your inventory, or rerun d2r-ap-setup if the mod predates it.");
+			std::lock_guard lock(gMutex);
+			gLedgerRetryAt = Clock::now() + std::chrono::seconds(60);
+			return;
+		}
+		Feed("Archipelago: your Archipelago Ledger counts the checks done in each act; hover over it.");
+	}
+	std::lock_guard lock(gMutex);
+	gSave.ledgerGiven = true;
+	gSave.Save(gSavePath);
+}
+
 void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	gWorkQueued = false;
 	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
@@ -1197,6 +1239,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 
 	ScanItems(player);
 	ScanParcels(player);
+	GiveLedger(player);
 	{
 		auto records = UniqueRecords("Archipelago Codex");
 		std::lock_guard lock(gMutex);
@@ -1909,6 +1952,58 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 
 // ---- Codex tooltip and UI messages (UI thread) --------------------------------
 
+// The Ledger's tooltip: checks done (sent, or held for a key) out of each act's
+// total, with the act you're in marked, then the ones not tied to an act.
+auto LedgerText() -> std::string {
+	if (gClient->State() != ap::ConnectionState::Connected) {
+		return "Archipelago: not connected";
+	}
+	std::set<int64_t> found;
+	int here = 0;
+	{
+		std::lock_guard lock(gMutex);
+		found = gBoundSession != 0 ? gSave.checks : gUnbound;
+		here = std::clamp(gDifficulty, 0, 2) * 5 + std::clamp(gAct, 0, 4);
+	}
+	// Per act (-1 for none): checks done and total.
+	std::map<int, std::pair<size_t, size_t>> acts;
+	for (const int64_t location : gClient->Checked()) {
+		auto& [done, total] = acts[ActOfLocation(location)];
+		++done;
+		++total;
+	}
+	size_t held = 0;
+	for (const int64_t location : gClient->Missing()) {
+		auto& [done, total] = acts[ActOfLocation(location)];
+		++total;
+		if (found.contains(location)) {
+			++done;
+			++held;
+		}
+	}
+	size_t done = 0, total = 0;
+	for (const auto& [act, counts] : acts) {
+		done += counts.first;
+		total += counts.second;
+	}
+	auto line = [](const std::string& label, const std::pair<size_t, size_t>& counts) {
+		return "\n" + label + ": " + std::to_string(counts.first) + "/" + std::to_string(counts.second) + (counts.first == counts.second ? " done" : "");
+	};
+	std::string text = "Archipelago: " + std::to_string(done) + "/" + std::to_string(total) + " checks";
+	for (const auto& [act, counts] : acts) {
+		if (act >= 0) {
+			text += line((act == here ? "> " : "") + ActLabel(act), counts);
+		}
+	}
+	if (const auto other = acts.find(-1); other != acts.end()) {
+		text += line("Not tied to an act", other->second);
+	}
+	if (held > 0) {
+		text += "\n" + std::to_string(held) + " held until their act's key arrives";
+	}
+	return text;
+}
+
 // Hovering over the Codex shows the connection and the latest messages, so you
 // don't have to open the console.
 void __cdecl OnItemTooltip(const D2RL::PluginContext*, D2RL::SharedEvents::ItemTooltipEvent* event, void*) noexcept {
@@ -1917,6 +2012,14 @@ void __cdecl OnItemTooltip(const D2RL::PluginContext*, D2RL::SharedEvents::ItemT
 	}
 	D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
 	if (gItems->getItemInfo(gContext, event->item, &info) != D2RL::Items::Result::Success || event->capacity < 2) {
+		return;
+	}
+	if (info.code == ap::loot::CodeFromText(ap::randomizer::LedgerCode)) {
+		const std::string text = LedgerText();
+		const size_t length = std::min<size_t>(text.size(), event->capacity - 1);
+		std::memcpy(event->text, text.data(), length);
+		event->text[length] = '\0';
+		event->length = static_cast<uint32_t>(length);
 		return;
 	}
 	// The Codex is the Archipelago Codex unique; a fallback Magic Codex keeps its seed marker.
@@ -2189,6 +2292,71 @@ auto CommandHints(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
+// ap-missing [all]: the checks left in the current act, or how many are left in every act.
+// Checks found in a locked act wait for its key; they count as held, not missing.
+auto CommandMissing(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
+	if (gClient->State() != ap::ConnectionState::Connected) {
+		gContext->WriteConsoleMessage("Not connected: ap-missing needs the server's list of checks.");
+		return D2RL::ConsoleCommandResult::Failed;
+	}
+	const auto args = SplitArgs(command);
+	const bool all = !args.empty() && args[0] == "all";
+	std::set<int64_t> found;
+	int here = 0;
+	{
+		std::lock_guard lock(gMutex);
+		found = gBoundSession != 0 ? gSave.checks : gUnbound;
+		here = std::clamp(gDifficulty, 0, 2) * 5 + std::clamp(gAct, 0, 4);
+	}
+	// Per act (-1 for checks that aren't tied to one): what's left, and how many are held.
+	std::map<int, std::vector<int64_t>> left;
+	std::map<int, int> held;
+	for (const int64_t location : gClient->Missing()) {
+		const int act = ActOfLocation(location);
+		if (found.contains(location)) {
+			++held[act];
+		} else {
+			left[act].push_back(location);
+		}
+	}
+	auto label = [](int act) { return act < 0 ? std::string("Any act") : ActLabel(act); };
+	auto heldText = [&](int act) { return held[act] > 0 ? " (" + std::to_string(held[act]) + " found, not sent until its key arrives)" : std::string(); };
+	if (all) {
+		std::set<int> acts;
+		for (const auto& [act, locations] : left) {
+			acts.insert(act);
+		}
+		for (const auto& [act, count] : held) {
+			acts.insert(act);
+		}
+		if (acts.empty()) {
+			gContext->WriteConsoleMessage("Every check is done.");
+		}
+		for (const int act : acts) {
+			gContext->WriteConsoleMessage((label(act) + ": " + std::to_string(left[act].size()) + " left" + heldText(act) + ".").c_str());
+		}
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	const int me = gClient->MySlot();
+	gContext->WriteConsoleMessage((ActLabel(here) + ": " + std::to_string(left[here].size()) + " left" + heldText(here) + ".").c_str());
+	for (const int64_t location : left[here]) {
+		gContext->WriteConsoleMessage(("  " + gClient->LocationName(location, me)).c_str());
+	}
+	if (!left[-1].empty()) {
+		gContext->WriteConsoleMessage((std::to_string(left[-1].size()) + " more aren't tied to an act (level milestones, collections, find counts).").c_str());
+	}
+	gContext->WriteConsoleMessage("ap-missing all counts what's left in every act.");
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
+// ap-ledger: a new Archipelago Ledger, if you lost yours.
+auto CommandLedger(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
+	std::lock_guard lock(gMutex);
+	gSave.ledgerGiven = false;
+	gLedgerRetryAt = {};
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
 auto CommandCodex(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
 	std::lock_guard lock(gMutex);
 	gCodexDirty = true;
@@ -2311,6 +2479,8 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-chat", CommandChat, "Show a line in the game chat: ap-chat <text>.")
 	                   && context->RegisterConsoleCommand("ap-codex", CommandCodex, "Rebuild the Archipelago Codex charm.")
 	                   && context->RegisterConsoleCommand("ap-hints", CommandHints, "List the hints you've found in game.")
+	                   && context->RegisterConsoleCommand("ap-ledger", CommandLedger, "Get a new Archipelago Ledger if you lost yours.")
+	                   && context->RegisterConsoleCommand("ap-missing", CommandMissing, "List the checks left in this act: ap-missing [all].")
 	                   && context->RegisterConsoleCommand("ap-ui", CommandUi, "Send a D2R UI message: ap-ui <target> <command> [text].");
 	if (!commands) {
 		context->LogError("Archipelago: couldn't register console commands.");

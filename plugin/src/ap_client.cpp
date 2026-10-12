@@ -217,7 +217,10 @@ void Client::Handle(const std::string& text) {
 			for (const json& location : packet.value("checked_locations", json::array())) {
 				checked_.insert(location.get<int64_t>());
 			}
-			locationCount_ = checked_.size() + packet.value("missing_locations", json::array()).size();
+			locations_ = checked_;
+			for (const json& location : packet.value("missing_locations", json::array())) {
+				locations_.insert(location.get<int64_t>());
+			}
 			const json data = packet.value("slot_data", json::object());
 			slotData_.worldVersion = data.value("world_version", "");
 			slotData_.goal = data.value("goal", 0);
@@ -551,7 +554,18 @@ auto Client::CheckedCount() const -> size_t {
 
 auto Client::LocationCount() const -> size_t {
 	std::lock_guard lock(mutex_);
-	return locationCount_;
+	return locations_.size();
+}
+
+auto Client::Missing() const -> std::vector<int64_t> {
+	std::lock_guard lock(mutex_);
+	std::vector<int64_t> missing;
+	for (const int64_t location : locations_) {
+		if (!checked_.contains(location)) {
+			missing.push_back(location);
+		}
+	}
+	return missing;
 }
 
 auto Client::ItemsGeneration() const -> uint64_t {

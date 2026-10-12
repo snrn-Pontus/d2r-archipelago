@@ -1,10 +1,11 @@
 // Drives ap::Client outside the game, against a real Archipelago server.
 //
-//   ap_probe <server> <slot> [--password <pw>] [--check <location id>]... [--goal]
+//   ap_probe <server> <slot> [--password <pw>] [--check <location id>]... [--goal] [--death]
 //   ap_probe --replay <file>
 //
 // Connects, prints the received items, sends the checks, optionally reports
-// the goal, then prints every server message and exits.
+// the goal or a DeathLink death (the slot needs death_link on), then prints
+// every server message and exits.
 
 #include "ap_client.h"
 #include "ids.h"
@@ -37,12 +38,13 @@ int main(int argc, char** argv) {
 		return Replay(argv[2]);
 	}
 	if (argc < 3) {
-		std::fprintf(stderr, "usage: ap_probe <server> <slot> [--password <pw>] [--check <id>]... [--goal]\n");
+		std::fprintf(stderr, "usage: ap_probe <server> <slot> [--password <pw>] [--check <id>]... [--goal] [--death]\n");
 		return 2;
 	}
 	std::string password;
 	std::vector<int64_t> checks;
 	bool goal = false;
+	bool death = false;
 	for (int i = 3; i < argc; ++i) {
 		const std::string arg = argv[i];
 		if (arg == "--password" && i + 1 < argc) {
@@ -51,6 +53,8 @@ int main(int argc, char** argv) {
 			checks.push_back(std::strtoll(argv[++i], nullptr, 10));
 		} else if (arg == "--goal") {
 			goal = true;
+		} else if (arg == "--death") {
+			death = true;
 		}
 	}
 
@@ -81,6 +85,12 @@ int main(int argc, char** argv) {
 	client.SendChecks(checks);
 	if (goal) {
 		client.SendGoal();
+	}
+	if (death) {
+		if (!slots.deathLink) {
+			std::puts("this slot doesn't have death_link on; no death sent");
+		}
+		client.SendDeath(std::string(argv[2]) + " was struck down by ap_probe.");
 	}
 	std::this_thread::sleep_for(std::chrono::seconds(3));
 	for (const auto& message : client.TakeMessages()) {

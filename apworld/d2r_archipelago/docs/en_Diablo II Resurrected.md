@@ -38,6 +38,13 @@ with more copies each.
   250 and 500 monsters in each act (`kill_count_checks`), and finding 1 to 50 uniques and 1 to 25 set items
   (`find_count_checks`).
 
+## Keeping track
+
+You start with an **Archipelago Ledger**, a small item whose tooltip shows the checks done in each act out of
+its total, with the act you're in marked, and the ones not tied to an act (level milestones, collections,
+find counts). In the console, `ap-missing` lists the checks left in your current act and `ap-missing all`
+counts them per act.
+
 ## What is the goal?
 
 Kill the boss of the act set by `goal_act` on the difficulty set by `goal`. That sets the game's length:

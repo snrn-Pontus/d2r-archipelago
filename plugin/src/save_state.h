@@ -28,6 +28,8 @@ struct SaveState {
 	std::set<int> ownHints;
 	std::set<int64_t> otherHints;
 	int prophecies = 0;
+	// Whether the character got its Archipelago Ledger (ap-ledger makes another).
+	bool ledgerGiven = false;
 
 	bool Load(const std::filesystem::path& path);
 	bool Save(const std::filesystem::path& path) const;

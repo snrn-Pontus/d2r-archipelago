@@ -116,6 +116,7 @@ void TestSaveStateRoundTrip() {
 	state.ownHints = { 0, 3 };
 	state.otherHints = { 2425500 };
 	state.prophecies = 2;
+	state.ledgerGiven = true;
 	EXPECT(state.Save(path));
 	ap::SaveState loaded;
 	EXPECT(loaded.Load(path));
@@ -124,7 +125,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.goalReached);
 	EXPECT(loaded.playerClass == 4);
 	EXPECT(loaded.kills == state.kills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
-	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2);
+	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven);
 	std::filesystem::remove_all(path.parent_path());
 }
 
@@ -186,6 +187,9 @@ void TestClientParsesServerPackets() {
 	EXPECT(client.State() == ap::ConnectionState::Connected);
 	EXPECT(client.LocationCount() == 2);
 	EXPECT(client.Checked().contains(2420001));
+	EXPECT(client.Missing() == std::vector<int64_t> { 2420002 });
+	client.Handle(R"json([{"cmd":"RoomUpdate","checked_locations":[2420002]}])json");
+	EXPECT(client.Missing().empty() && client.LocationCount() == 2);
 	EXPECT(client.Slots().goal == 2 && !client.Slots().areaChecks && client.Slots().levelCap == 90);
 	EXPECT(client.Items().size() == 1 && client.Items()[0].item == 2430054);
 	EXPECT(client.ItemName(2430054, 1) == "Teleport (Sorceress)");
@@ -471,6 +475,10 @@ void TestShopParcels() {
 	// Every tier at every potion seller, the price rising.
 	EXPECT(misc.Cell(6, 0) == "Scroll of Prophecy" && misc.Cell(6, 1) == "aq1" && misc.Cell(6, 2) == "1000" && misc.Cell(6, 3) == "1" && misc.Cell(6, 5) == "1");
 	EXPECT(misc.Cell(13, 1) == "aq8" && misc.Cell(13, 2) == "100000");
+	// The Ledger is sold nowhere and worth nothing.
+	EXPECT(ap::randomizer::AddLedger(misc) == 1 && ap::randomizer::AddLedger(misc) == 0);
+	EXPECT(misc.Cell(14, 0) == "Archipelago Ledger" && misc.Cell(14, 1) == "apl" && misc.Cell(14, 2) == "0" && misc.Cell(14, 3).empty()
+	       && misc.Cell(14, 7) == "0");
 }
 
 void TestTableEdits() {

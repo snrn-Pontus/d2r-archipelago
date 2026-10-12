@@ -35,3 +35,7 @@ Items you receive, checks you send and other server messages show in the game ch
 
 Use a fresh character for each seed. The Codex charm must stay in your inventory; if you lose it,
 `ap-codex` rebuilds it.
+
+Your character also gets an **Archipelago Ledger**. Hover over it to see how many checks you've done in
+each act, and outside any act, out of the total. `ap-missing` lists the checks left in the act you're in,
+and `ap-missing all` counts them for every act. If you lose the Ledger, `ap-ledger` makes another.

@@ -230,8 +230,9 @@ auto AddParcelGraphics(HANDLE storage, const fs::path& mpq) -> bool {
 	if (!items.is_array()) {
 		return false;
 	}
-	// Parcels borrow the Standard of Heroes' flag, Scrolls of Prophecy the Scroll of Inifuss.
-	nlohmann::json graphics, scroll;
+	// Parcels borrow the Standard of Heroes' flag, Scrolls of Prophecy the Scroll of Inifuss,
+	// the Ledger the Token of Absolution.
+	nlohmann::json graphics, scroll, token;
 	for (const auto& entry : items) {
 		if (entry.contains(rnd::ParcelCodes[0])) {
 			return true;
@@ -241,6 +242,9 @@ auto AddParcelGraphics(HANDLE storage, const fs::path& mpq) -> bool {
 		}
 		if (entry.contains("bks")) {
 			scroll = entry["bks"];
+		}
+		if (entry.contains("toa")) {
+			token = entry["toa"];
 		}
 	}
 	if (graphics.is_null()) {
@@ -252,6 +256,7 @@ auto AddParcelGraphics(HANDLE storage, const fs::path& mpq) -> bool {
 	for (const char* code : rnd::ProphecyCodes) {
 		items.push_back({ { code, scroll.is_null() ? graphics : scroll } });
 	}
+	items.push_back({ { rnd::LedgerCode, token.is_null() ? graphics : token } });
 	const fs::path target = mpq / "data" / "hd" / "items" / "items.json";
 	fs::create_directories(target.parent_path());
 	std::ofstream(target, std::ios::binary | std::ios::trunc) << (bom ? "\xEF\xBB\xBF" : "") << items.dump(2);
@@ -279,7 +284,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	}
 	std::error_code error;
 	fs::remove_all(excel, error);
-	if (!AddItemNames(storage, mpq, { "Archipelago Codex", rnd::ParcelName, rnd::ProphecyName })) {
+	if (!AddItemNames(storage, mpq, { "Archipelago Codex", rnd::ParcelName, rnd::ProphecyName, rnd::LedgerName })) {
 		std::printf("  couldn't add the Codex's name; it will show as \"An Evil Force\"\n");
 	}
 	if (!AddParcelGraphics(storage, mpq)) {
@@ -354,6 +359,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 				rnd::ClearRequirements(t, !settings.itemLevelRequirements, !settings.itemStatRequirements);
 			}
 			parcels = rnd::AddShopParcels(t) + rnd::AddProphecyScrolls(t);
+			rnd::AddLedger(t);
 		});
 		std::printf("  %s: %s\n", label, parcels > 0 ? "each act's potion seller sells an Archipelago Parcel" : "couldn't add the shop parcels");
 		// UniqueItems gets the Codex charm, plus cleared requirements if asked.

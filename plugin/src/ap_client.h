@@ -114,6 +114,8 @@ public:
 	auto Checked() const -> std::set<int64_t>;
 	auto CheckedCount() const -> size_t;
 	auto LocationCount() const -> size_t;
+	// Our locations the server hasn't seen checked, in id order.
+	auto Missing() const -> std::vector<int64_t>;
 	// Bumped whenever the received-item list changes.
 	auto ItemsGeneration() const -> uint64_t;
 	auto Items() const -> std::vector<NetworkItem>;
@@ -157,7 +159,8 @@ private:
 	int team_ = 0, mySlot_ = 0;
 	SlotData slotData_;
 	std::set<int64_t> checked_;
-	size_t locationCount_ = 0;
+	// Every location in our world, checked or not.
+	std::set<int64_t> locations_;
 	std::vector<NetworkItem> items_;
 	uint64_t itemsGeneration_ = 0;
 	std::deque<std::string> messages_;

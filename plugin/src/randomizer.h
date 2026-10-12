@@ -94,6 +94,11 @@ inline constexpr const char* ProphecyCodes[] = { "aq1", "aq2", "aq3", "aq4", "aq
 inline constexpr int         ProphecyCosts[] = { 1000, 2500, 5000, 10000, 20000, 35000, 60000, 100000 };
 inline constexpr char        ProphecyName[] = "Scroll of Prophecy";
 
+// The Archipelago Ledger: every character gets one, and its tooltip counts the
+// checks done in each act. It's never sold and never drops.
+inline constexpr char        LedgerCode[] = "apl";
+inline constexpr char        LedgerName[] = "Archipelago Ledger";
+
 // Appends the parcels to misc.txt as copies of the Standard of Heroes (an inert
 // 1x1 item), each always in stock at its act's vendor, unless the table
 // already has them. Returns how many it added.
@@ -101,6 +106,9 @@ auto AddShopParcels(Table& misc) -> int;
 
 // Appends the Scrolls of Prophecy the same way, every tier at every potion seller.
 auto AddProphecyScrolls(Table& misc) -> int;
+
+// Appends the Ledger the same way, sold nowhere. Returns 1 if it added it.
+auto AddLedger(Table& misc) -> int;
 
 // Multiplies monster experience on every difficulty.
 void ScaleExperience(Table& monlvl, int percent);

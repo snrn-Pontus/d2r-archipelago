@@ -75,18 +75,25 @@ See [the setup guide](apworld/d2r_archipelago/docs/setup_en.md).
 
 ## Status
 
-The network client is tested against a real Archipelago server, and the setup tool against a live D2R
-3.3 install. **The in-game parts haven't been run yet**: the Codex charm, the quest, area and level events,
-and the overlay. The first in-game session needs to confirm:
+Played in game (D2R 3.3, D2RLoader 1.3.1-beta, Lord of Destruction characters): connecting, the Codex
+charm and its oskills, its tooltip, loot rewards, quest checks, quest-item checks and messages in the game
+chat. Everything added since (DeathLink, traps, locks, shop parcels, in-game hints, superunique and cow
+checks, the shuffles, the Archipelago Ledger) still needs a session; [PLAYTEST.md](PLAYTEST.md) lists what
+to check.
 
-- D2R creates a Magic small charm with only the forced `oskill` properties (`codex_quality` and `codex_item`
-  in the config can change this).
-- Oskills from the Codex work even though the trees' level requirement is 100.
-- `QuestCompleted`'s quest row ids match D2's quest flags (the plugin logs every quest it sees).
-- Uniques and set items come out as the rolled item: the plugin forces the table's `*ID` as the record and
-  logs "created X as record N (asked for M)". If D2R rejects a record, it falls back to any unique for that base.
+What playing has shown about D2RLoader:
+
+- The `QuestCompleted` event doesn't fire, so quests complete from their boss's death, their quest item
+  reaching your inventory, or reaching the area they lead to (Den of Evil: 20 kills inside it). The event
+  still counts if it ever fires.
+- The overlay never renders (draw calls succeed, nothing shows), so messages go to the game chat through
+  D2RCore's undocumented `DisplayServerChatMessage` export. Recheck it after D2RLoader updates.
+- Item copies on the UI thread carry no seeds, so tooltips recognise the Codex by its unique row.
 
 ## Known limits
+
+- No Universal Tracker or PopTracker support. In game, the Archipelago Ledger's tooltip and `ap-missing` show
+  what's left.
 
 - One character per seed: fillers are handed out once per seed, to whichever character is playing.
 - Superunique kills are told apart by giving each field superunique a monster row of its own (D2RLoader's
