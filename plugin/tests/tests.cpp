@@ -786,6 +786,8 @@ void TestSuperUniqueShuffle() {
 	settings.xpPercent = { 100, 200, 300 };
 	EXPECT(settings.Stamp().find("superunique_minion_cap=4") != std::string::npos && settings.Stamp().find("superunique_minions=50") != std::string::npos);
 	EXPECT(settings.Stamp().find("xp=100/200/300") != std::string::npos);
+	settings.xpPercent = { 150, 150, 150 };
+	EXPECT(settings.Stamp().find("xp=150 ") != std::string::npos);
 	// Tuning for a shuffle that's off leaves the stamp alone.
 	ap::randomizer::Settings quiet;
 	quiet.shuffleTolerance = 9;

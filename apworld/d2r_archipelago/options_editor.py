@@ -63,9 +63,25 @@ def read_value(option: type[Option], raw: Any) -> Any:
         return bool(value)
     if kind == "set":
         return sorted(value) if set(value) <= set(option.valid_keys) else None
-    if kind == "range" and not option.range_start <= value <= option.range_end:
+    if kind == "range" and not range_allows(option, value):
         return None
     return value
+
+
+def special_values(option: type[Option]) -> list[int]:
+    return sorted(option.special_range_names.values()) if issubclass(option, NamedRange) else []
+
+
+def range_allows(option: type[Option], value: int) -> bool:
+    """A range takes its span and its named values, which may lie outside it (like 0 for "same")."""
+    return option.range_start <= value <= option.range_end or value in special_values(option)
+
+
+def snap_range(option: type[Option], value: int) -> int:
+    """The nearest value the range takes, for a slider that also spans named values outside it."""
+    if range_allows(option, value):
+        return value
+    return min([option.range_start, option.range_end, *special_values(option)], key=lambda allowed: abs(allowed - value))
 
 
 def write_value(option: type[Option], value: Any) -> Any:
@@ -365,11 +381,16 @@ def run_editor(path: str | None = None) -> None:
                     return f"{number} ({special})" if isinstance(special, str) else str(number)
 
                 tag = Label(text=shown(value), size_hint_x=None, width=dp(110))
-                slider = Slider(min=option.range_start, max=option.range_end, step=1, value=value)
+                ends = [option.range_start, option.range_end, *special_values(option)]
+                slider = Slider(min=min(ends), max=max(ends), step=1, value=value)
 
-                def slid(_, number: float) -> None:
-                    tag.text = shown(int(number))
-                    changed(int(number))
+                def slid(bar: Slider, number: float) -> None:
+                    allowed = snap_range(option, int(number))
+                    if allowed != int(number):
+                        bar.value = allowed
+                        return
+                    tag.text = shown(allowed)
+                    changed(allowed)
 
                 slider.bind(value=slid)
                 line.add_widget(slider)

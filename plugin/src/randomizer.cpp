@@ -73,8 +73,10 @@ auto TreeStamp(const SkillTree& tree) -> std::string {
 }
 
 auto Settings::Stamp() const -> std::string {
+	// One number when every difficulty matches, as before there were three.
 	const auto perDifficulty = [](const PerDifficulty& values) {
-		return std::to_string(values[0]) + "/" + std::to_string(values[1]) + "/" + std::to_string(values[2]);
+		return values[0] == values[1] && values[1] == values[2] ? std::to_string(values[0])
+		                                                        : std::to_string(values[0]) + "/" + std::to_string(values[1]) + "/" + std::to_string(values[2]);
 	};
 	std::string stamp = "seed=" + std::to_string(seed) + " monsters=" + std::to_string(static_cast<int>(monsters)) + " superuniques="
 	                  + std::to_string(static_cast<int>(superUniques)) + " runewords=" + (runewords ? "1" : "0") + " xp=" + perDifficulty(xpPercent)

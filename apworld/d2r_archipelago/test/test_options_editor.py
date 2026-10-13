@@ -57,6 +57,20 @@ class TestOptionsEditor(unittest.TestCase):
         self.assertIs(values["area_checks"], False)
         self.assertEqual(values["skill_classes"], ["Amazon", "Sorceress"])
         self.assertEqual(values["shop_checks"], 3)
+        # Named values outside the range ("same" is 0, below 50) are kept, and are the defaults.
+        self.assertEqual(values["monster_density_hell"], 0)
+        self.assertEqual(values["main_path_superunique_minions"], 5)
+
+    def test_named_values_outside_a_range(self) -> None:
+        from ..options_editor import snap_range, write_value
+        option = options.MainPathSuperUniqueMinions
+        self.assertEqual(read_value(option, "off"), -1)
+        self.assertEqual(write_value(option, -1), "off")
+        density = options.MonsterDensityNightmare
+        self.assertEqual(read_value(density, "same"), 0)
+        self.assertEqual(write_value(density, 0), "same")
+        # A slider between "same" (0) and the range's start (50) snaps to the nearer one.
+        self.assertEqual((snap_range(density, 10), snap_range(density, 40), snap_range(density, 120)), (0, 50, 120))
 
     def test_keeps_what_it_cannot_show(self) -> None:
         section = {"goal": {"normal": 50, "hell": 50}, "goal_act": "random-high", "monster_shuffle": "sideways",
