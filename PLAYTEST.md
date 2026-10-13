@@ -27,7 +27,17 @@ from the server console: `/send <slot> <item name>` (for example `/send Snrn Act
 - **Testing:** **Starter Kit** for a fresh character: a Horadric Cube, a Token of Absolution, the four essences
   (cube them into a second Token), a Tome of Identify and 3 Full Rejuvenation Potions. They're made as rewards,
   so none sends a check (a Token cubed from the essences does, like a real one). Then **Mark the Log** and
-  **Log State** (above).
+  **Log State** (above), and set-ups for the harder scenarios:
+  - **Kills to Next Check** sets the save's kill count for the act you're in one short of its next check, so
+    the next kill sends it (`ap-debug kills`); **Cows to Next Check** does the same for the cow check
+    (`ap-debug cows`).
+  - **Save 260 Kills** saves 260 kills for the act you're in without their checks, as a crash right after the
+    kill leaves it (`ap-debug kills <n>`). **Reconnect** then recovers them; **Disconnect** is there too.
+  - **Saves Fail** makes every save fail as if the file were read-only, until **Saves Work**
+    (`ap-debug savefail on|off`; it resets when the game restarts).
+  - **4 Healing Potions** puts potions in the inventory as rewards, for the Potion lock to set aside.
+  - **Crash D2R (Twice)** ends D2R at once, like Task Manager, for the crash tests: press it, open the panel
+    again and press it within 10 seconds (`ap-debug crash`, twice).
 
 `ap-debug give <code> [count] [sockets]` makes any item as a reward (no check), e.g. `ap-debug give r08 2` for
 two Ral runes or `ap-debug give lsd 1 3` for a 3-socket Long Sword to try a shuffled runeword.
@@ -54,7 +64,7 @@ Built, pushed and installed, still to check in game:
       connecting, "found ... checks", "sending ... checks", "received #..." and "shown: ..." lines as you play,
       and "entered <area>" on each area change. **Mark the Log** twice adds "mark 1" and "mark 2"; **Log
       State** adds the "state:" lines. Quit with the menu's Exit and relaunch: the new file doesn't say the
-      last session "has no normal exit". End D2R in Task Manager and relaunch: it does. (Does Alt+F4 count as
+      last session "has no normal exit". End D2R in Task Manager (or **Crash D2R** twice) and relaunch: it does. (Does Alt+F4 count as
       a normal exit? Note which.)
 - [ ] With the server down, the session log says "Could not connect" once, not every 5 seconds. While it
       retries, `ap-connect` to another server: the log shows "Connecting to" the new one right away.
@@ -141,9 +151,10 @@ Built, pushed and installed, still to check in game:
       no "bad packet" lines. Exiting the game while connected still closes promptly. Freeze the server
       (suspend its process in Resource Monitor) and `ap-connect` to another one: within about 3 seconds the
       new connection starts.
-- [ ] Save failures (#75): make the seed's save file read-only (Properties, Read-only) and `/send` a few
-      rewards: the chat says once that progress couldn't be saved and rewards are paused, and none arrive.
-      Clear Read-only: within a few seconds it says saving works again and the rewards arrive, once each.
+- [ ] Save failures (#75): press **Saves Fail** on the debug panel and `/send` a few rewards: the chat says
+      once that progress couldn't be saved and rewards are paused, and none arrive. **Saves Work**: within a
+      few seconds it says saving works again and the rewards arrive, once each. Then once the real way: make
+      the seed's save file read-only (Properties, Read-only), and clear it again.
 - [ ] Data package (#75): `ap-reconnect` a few times: item and location names in chat still resolve, and
       the server log shows a GetDataPackage only on the first connect (or none once names are held).
 - [ ] Runeword shuffle (#75, rerun setup): `runewords.txt` in the mod has no two complete runewords with the
@@ -244,7 +255,7 @@ Any seed, connected.
 Any seed, connected. Several of these D2RCore cheats haven't been tried yet; note any that do nothing
 (the log has each command).
 
-- [ ] F10 does nothing until `ap-debug on`; then it opens "Archipelago Debug" with four headed columns of
+- [ ] F10 does nothing until `ap-debug on`; then it opens "Archipelago Debug" with five headed columns of
       twelve buttons and Close, all on screen. `ap-debug off` closes it and F10 stops working.
 - [ ] Go To: Cold Plains and Tristram from Rogue Encampment. Lut Gholein without the Act II key warps you
       back (that's section 3's test); with the keys from From the Server, Kurast Docks and Harrogath work.
@@ -252,6 +263,15 @@ Any seed, connected. Several of these D2RCore cheats haven't been tried yet; not
 - [ ] Spawn Andariel / Spawn Radament: killing the spawn sends their quest check.
 - [ ] Items: each lands in the inventory and its check is sent; the unique ring counts for "Find 1 Unique".
 - [ ] From the Server: the chat shows "Cheat console: sending ..." and the item arrives.
+- [ ] Testing, with `kill_count_checks`: **Kills to Next Check** in Cold Plains after one kill says "Normal Act I
+      kills set to 99", and one more kill sends "Kill 100 monsters"; pressed again it says 249. Without
+      `kill_count_checks`, before connecting, after Disconnect or before the game's first kill, it says why
+      and changes nothing. **Cows to Next Check** works the same with
+      `cow_level_checks` in the Cow Level.
+- [ ] **Saves Fail** and **Saves Work** each answer in the chat; **Log State** shows "(ap-debug savefail on)"
+      on the save line while it's on.
+- [ ] **Crash D2R (Twice)**: one press only asks for a second; a second press more than 10 seconds later asks
+      again; within 10 seconds D2R closes, and the log ends with "ap-debug crash: ending D2R now."
 
 ## 1d. Banners
 
@@ -287,14 +307,16 @@ Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: 
 - [ ] Picking up the **Scroll of Inifuss** and **Wirt's Leg** each sends a check, once.
 - [ ] Buying an **Archipelago Parcel** from Akara (2,500 gold) sends a check and the parcel disappears. The
       fourth one is refunded.
-- [ ] 100 kills in Act I sends "Kill 100 monsters"; finding your first unique sends "Find 1 Unique".
+- [ ] 100 kills in Act I sends "Kill 100 monsters" (**Kills to Next Check** on the debug panel, then one
+      kill); finding your first unique sends "Find 1 Unique".
 - [ ] Kill-count recovery (#78), the state a crash right after the 100th kill leaves: before any Normal
-      Act I kill check, quit D2R and edit the seed's save in `<D2R>\d2rloader\archipelago\` so it reads
-      `kills_0 260` (`kills_<difficulty * 10 + act>`). Start again and connect: the log says "2 kill or cow
-      count checks recovered from the save" and "Kill 100 monsters" and "Kill 250 monsters" go out with no
-      extra kill. A reconnect (`ap-disconnect`, then connect) or another kill doesn't send or banner them again.
-      Try the same with `kills_1` on a seed where Act II is still locked: the checks show "(held)" and go
-      out with the Act II Key.
+      Act I kill check, press **Save 260 Kills** in Act I, then **Reconnect** (or quit D2R and edit the
+      seed's save in `<D2R>\d2rloader\archipelago\` so it reads `kills_0 260`, `kills_<difficulty * 10 + act>`,
+      and start again). The log says "2 kill or cow count checks recovered from the save" and "Kill 100
+      monsters" and "Kill 250 monsters" go out with no extra kill. Another reconnect or another kill doesn't
+      send or banner them again. Try the same with `kills_1` (edit the save, or with `enforce_act_keys: false`
+      press the button in Act II) on a seed where Act II is still locked: the checks show "(held)" and go out
+      with the Act II Key.
 - [ ] Rewards don't count: a Random Unique from the server doesn't count toward "Find 1 Unique".
 - [ ] Side areas (#31): `ap-missing` (or the Ledger) lists five "Normal: Enter <side area>" checks. Walking
       into one of them (e.g. the Mausoleum or Cave Level 2) sends its check; a side area the seed didn't
@@ -363,7 +385,8 @@ Defaults (`act_keys` and `enforce_act_keys` on).
   - [ ] Ctrl+click the Horadric Scroll into the stash: its check doesn't send.
 - [ ] D2RLoader 1.3.1-beta logs inventory activations (container 4) for potions now: if a plain right click
       on an inventory potion is logged, the set-aside on pickup could go.
-- [ ] Potion Access gives the set-aside potions back (to the ground if the inventory is full).
+- [ ] Potion Access gives the set-aside potions back (to the ground if the inventory is full). **4 Healing
+      Potions** on the debug panel gives some to set aside.
 - [x] Town Portal: D2RLoader doesn't report scroll use, so within 5 seconds every scroll and tome on the
       character crumbles, with a chat message (the starting scroll too).
 - [x] Town Portal Access brings a Tome of Town Portal, once.
@@ -410,7 +433,8 @@ Any seed. Send each with `/send`, standing outside town for the traps.
       Task Manager within a second. After relaunching and loading the character, the ones that hadn't run yet
       arrive. The seed's save file (`d2rloader\archipelago\<seed>_<slot>.txt` in the game folder) lists waiting ones as `command` lines,
       and they're gone once they ran.
-- [ ] Crash recovery (#70): get a few rewards, then kill D2R from Task Manager without leaving the game. On
+- [ ] Crash recovery (#70): get a few rewards, then kill D2R from Task Manager (or **Crash D2R** twice)
+      without leaving the game. On
       the next connect the chat says D2R closed during the last game and offers `ap-redeliver`. If the
       character lost the rewards, `ap-redeliver` hands the loot, gold and experience out again (no traps or
       prophecies), and the chat says when they're all back. After a normal Save and Exit, no such message.

@@ -106,11 +106,23 @@ constexpr std::array DebugServer {
 	Button { "debug-merc", "Mercenary Down Trap", "!getitem Mercenary Down Trap" },
 };
 
-// A fresh character's kit (made as rewards, no checks) and the log tools for bug reports.
+// A fresh character's kit (made as rewards, no checks), the log tools for bug reports,
+// and set-ups for the checklist's harder scenarios: kill counts one short of a check or
+// saved past one without it (Reconnect recovers them), saves that fail, potions for the
+// Potion lock and a crash.
 constexpr std::array DebugTesting {
 	Button { "debug-kit", "Starter Kit", "ap-debug kit" },
 	Button { "debug-mark", "Mark the Log", "ap-debug mark" },
 	Button { "debug-state", "Log State", "ap-debug state" },
+	Button { "debug-kills-next", "Kills to Next Check", "ap-debug kills" },
+	Button { "debug-kills-260", "Save 260 Kills", "ap-debug kills 260" },
+	Button { "debug-cows-next", "Cows to Next Check", "ap-debug cows" },
+	Button { "debug-reconnect", "Reconnect", "ap-reconnect" },
+	Button { "debug-disconnect", "Disconnect", "ap-disconnect" },
+	Button { "debug-savefail-on", "Saves Fail", "ap-debug savefail on" },
+	Button { "debug-savefail-off", "Saves Work", "ap-debug savefail off" },
+	Button { "debug-potions", "4 Healing Potions", "ap-debug give hp1 4" },
+	Button { "debug-crash", "Crash D2R (Twice)", "ap-debug crash" },
 };
 
 constexpr std::array DebugColumns {
