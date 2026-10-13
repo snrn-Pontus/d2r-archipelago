@@ -263,9 +263,10 @@ Any seed, connected. Several of these D2RCore cheats haven't been tried yet; not
 - [ ] Spawn Andariel / Spawn Radament: killing the spawn sends their quest check.
 - [ ] Items: each lands in the inventory and its check is sent; the unique ring counts for "Find 1 Unique".
 - [ ] From the Server: the chat shows "Cheat console: sending ..." and the item arrives.
-- [ ] Testing, with `kill_count_checks`: **Kills to Next Check** in Cold Plains says "Normal Act I kills set to
-      99", and one kill sends "Kill 100 monsters"; pressed again it says 249. Without `kill_count_checks` or
-      before connecting, it says why and changes nothing. **Cows to Next Check** works the same with
+- [ ] Testing, with `kill_count_checks`: **Kills to Next Check** in Cold Plains after one kill says "Normal Act I
+      kills set to 99", and one more kill sends "Kill 100 monsters"; pressed again it says 249. Without
+      `kill_count_checks`, before connecting, after Disconnect or before the game's first kill, it says why
+      and changes nothing. **Cows to Next Check** works the same with
       `cow_level_checks` in the Cow Level.
 - [ ] **Saves Fail** and **Saves Work** each answer in the chat; **Log State** shows "(ap-debug savefail on)"
       on the save line while it's on.

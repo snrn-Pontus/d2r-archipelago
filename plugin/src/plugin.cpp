@@ -4932,6 +4932,9 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 			const int next = cows ? ap::milestones::CowsBeforeNext(gSave, difficulty) : ap::milestones::KillsBeforeNext(gSave, difficulty, act);
 			if (session == 0 || gBoundSession != session) {
 				answer = "ap-debug: connect first; the counts are in the seed's save.";
+			} else if (!gInGame || !gDifficultyKnown) {
+				// gDifficulty keeps the last game's until a kill (or a Nightmare or Hell area) says otherwise.
+				answer = "ap-debug: kill a monster first, so the plugin knows this game's difficulty.";
 			} else if (!(cows ? gSlots.cowLevelChecks : gSlots.killCountChecks)) {
 				answer = cows ? "ap-debug: this seed has no cow check (cow_level_checks)." : "ap-debug: this seed has no kill-count checks (kill_count_checks).";
 			} else if (args.size() == 1 && next < 0) {
