@@ -195,6 +195,9 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 - [ ] With `enforce_act_keys: false`, Act II's checks are recorded but held: the chat says so, the Ledger
       line shows "held until their act's key arrives", and they're sent all at once after
       `/send Snrn Normal Act II Key`.
+- [ ] In a multiworld with another D2 slot (default `act_key_window: 1`), the spoiler log has no Normal
+      Act II Key in the other D2 world past its Act II, and the Options Creator lists Act Key Window
+      under Goal and Length.
 
 ## 4. Locks
 
