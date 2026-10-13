@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <functional>
 #include <map>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <unordered_map>
@@ -27,6 +28,11 @@ const std::set<int> FixedLevels = { 39, 120, 133, 134, 135, 136 };
 auto IsFieldSuperUnique(const std::string& name) -> bool {
 	return std::ranges::any_of(data::SuperUniques, [&](const auto& entry) { return name == entry.name; });
 }
+
+// Field superuniques off the main path: in side dungeons no quest or act
+// route needs. The others stand on an act's route or at a quest objective, so
+// the main-path cap keeps them close to their own strength.
+const std::set<std::string> OptionalSuperUniques = { "Bonebreak", "Coldcrow", "Leatherarm", "Ancient Kaa the Soulless", "Snapchip Shatter" };
 
 // Anywhere: an area takes a line-up only if every monster in it has a
 // variant at most this many levels above the area's level.
@@ -70,7 +76,8 @@ auto TreeStamp(const SkillTree& tree) -> std::string {
 
 auto Settings::Stamp() const -> std::string {
 	return "seed=" + std::to_string(seed) + " monsters=" + std::to_string(static_cast<int>(monsters)) + " superuniques="
-	     + std::to_string(static_cast<int>(superUniques)) + " runewords=" + (runewords ? "1" : "0") + " xp=" + std::to_string(xpPercent)
+	     + std::to_string(static_cast<int>(superUniques))
+	     + (superUniques != Shuffle::Off && mainPathSuperUniqueCap >= 0 ? " superunique_cap=" + std::to_string(mainPathSuperUniqueCap) : "") + " runewords=" + (runewords ? "1" : "0") + " xp=" + std::to_string(xpPercent)
 	     + " levelreqs=" + (itemLevelRequirements ? "1" : "0") + " statreqs=" + (itemStatRequirements ? "1" : "0") + " density="
 	     + std::to_string(monsterDensity) + " packs=" + std::to_string(championPacks) + " drops=" + std::to_string(betterDrops)
 	     // The count, so a mod written for an older superunique list doesn't
@@ -458,7 +465,7 @@ auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt
 	return changed;
 }
 
-auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mode, std::mt19937& random) -> int {
+auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mode, std::mt19937& random, int mainPathCap) -> int {
 	if (mode == Shuffle::Off) {
 		return 0;
 	}
@@ -491,6 +498,24 @@ auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mod
 		}
 		const auto original = classes;
 		Permute(classes, random);
+		if (mainPathCap >= 0) {
+			// Main-path slots pick first, the tightest cap first, each from the
+			// classes still left within its cap. Every slot's own class is within
+			// its cap, so a pick always exists; the optional slots take the rest.
+			std::vector<size_t> order(end - start);
+			std::iota(order.begin(), order.end(), size_t { 0 });
+			const auto limit = [&](size_t slot) {
+				const bool optional = OptionalSuperUniques.contains(superUniques.Cell(rows[start + slot], key));
+				return optional ? INT_MAX : monsterLevel[original[slot]] + mainPathCap;
+			};
+			std::ranges::stable_sort(order, {}, limit);
+			std::vector<std::string> left = classes;
+			for (const size_t slot : order) {
+				const auto pick = std::ranges::find_if(left, [&](const std::string& name) { return monsterLevel[name] <= limit(slot); });
+				classes[slot] = *pick;
+				left.erase(pick);
+			}
+		}
 		for (size_t i = start; i < end; ++i) {
 			changed += classes[i - start] != original[i - start] ? 1 : 0;
 			superUniques.Set(rows[i], cls, classes[i - start]);

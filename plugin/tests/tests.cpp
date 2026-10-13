@@ -714,6 +714,28 @@ void TestSuperUniqueShuffle() {
 	EXPECT(superUniques.Cell(2, 2) == "radament" && superUniques.Cell(4, 2) == "summoner");
 	std::multiset<std::string> classes { superUniques.Cell(0, 2), superUniques.Cell(1, 2), superUniques.Cell(3, 2) };
 	EXPECT((classes == std::multiset<std::string> { "fallenshaman1", "skeleton1", "reanimatedhorde5" }));
+	// The main-path cap: Bishibosh and Griswold never get a stronger monster than
+	// their own, so Leatherarm's mummy goes to an optional slot (Coldcrow or Leatherarm).
+	const auto capped = ap::Table::Parse("Id\tLevel\r\nfallenshaman1\t2\r\ncr_archer1\t4\r\ngriswold\t5\r\nmummy2\t15\r\n");
+	bool moved = false;
+	for (uint32_t seed = 0; seed < 50; ++seed) {
+		auto table = ap::Table::Parse("Superunique\tName\tClass\r\nBishibosh\tBishibosh\tfallenshaman1\r\nColdcrow\tColdcrow\tcr_archer1\r\n"
+		                              "Griswold\tGriswold\tgriswold\r\nLeatherarm\tLeatherarm\tmummy2\r\n");
+		std::mt19937 seeded(seed);
+		ap::randomizer::ShuffleSuperUniques(table, capped, ap::randomizer::Shuffle::Anywhere, seeded, 0);
+		EXPECT(table.Cell(0, 2) == "fallenshaman1");
+		EXPECT(table.Cell(2, 2) != "mummy2");
+		moved = moved || table.Cell(2, 2) != "griswold";
+		std::multiset<std::string> all { table.Cell(0, 2), table.Cell(1, 2), table.Cell(2, 2), table.Cell(3, 2) };
+		EXPECT((all == std::multiset<std::string> { "fallenshaman1", "cr_archer1", "griswold", "mummy2" }));
+	}
+	// Weaker swaps still happen.
+	EXPECT(moved);
+	ap::randomizer::Settings settings;
+	settings.superUniques = ap::randomizer::Shuffle::Nearby;
+	EXPECT(settings.Stamp().find("superunique_cap") == std::string::npos);
+	settings.mainPathSuperUniqueCap = 2;
+	EXPECT(settings.Stamp().find("superunique_cap=2") != std::string::npos);
 }
 
 void TestRunewordShuffle() {

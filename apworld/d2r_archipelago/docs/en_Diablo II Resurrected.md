@@ -127,7 +127,9 @@ The setup tool rewrites the game's tables for your seed:
   With `anywhere`, Normal-difficulty monsters are levelled to fit: each area only gets line-ups whose
   monsters have a version near its level, and each monster becomes that version.
 - `superunique_shuffle`: field superuniques like Bishibosh and Pindleskin become other monsters. Quest and
-  act bosses stay as they are.
+  act bosses stay as they are. `main_path_superunique_cap` (default 2) keeps the ones you can't avoid, like
+  Rakanishu and Griswold, within that many levels of their own monster; the tougher swaps land in optional
+  dungeons (the Crypt, the Cave, the Stony Tomb, Tal Rasha's tombs and the Icy Cellar).
 - `runeword_shuffle`: every runeword gets a new recipe of similar-tier runes, listed in `runewords.txt` in the
   mod folder.
 - `monster_density`, `champion_packs` and `better_drops` (uniques, sets and rares) in percent.

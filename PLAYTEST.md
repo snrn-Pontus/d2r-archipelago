@@ -52,6 +52,11 @@ Built, pushed and installed, still to check in game:
       per difficulty.
 - [ ] Shuffled superuniques are visible now (they had no HD model): after rerunning setup, Rakanishu in
       Stony Field and his minions show their new monster's model (section 8).
+- [ ] Main-path superunique cap (#3, new seed needed, `superunique_shuffle: nearby`, default
+      `main_path_superunique_cap: 2`): setup prints the superuniques that changed shape. On Normal, Griswold
+      in Tristram and Rakanishu in Stony Field are no tougher than their usual selves (no level-15 mummy for
+      Griswold); the stronger swaps show up in the Crypt, the Cave or the Stony Tomb. With the cap at 50,
+      Griswold can be strong again.
 - [ ] Unspawnable superuniques dropped (issue #28, new seed needed): `ap-missing` and the Ledger list 31
       superunique checks per difficulty, none without an area. Frigid Highlands has Eldritch, Sharptooth
       Slayer and Eyeback but no Axe Dweller, Anodized Elite, Vinvear Molech, Magma Torquer or Blaze Ripper.

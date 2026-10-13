@@ -612,6 +612,7 @@ class D2RWorld(World):
                 "seed": self.randomizer_seed,
                 "monster_shuffle": self.options.monster_shuffle.value,
                 "superunique_shuffle": self.options.superunique_shuffle.value,
+                "main_path_superunique_cap": self.options.main_path_superunique_cap.value,
                 "runeword_shuffle": bool(self.options.runeword_shuffle),
                 # Skill tree shuffle: [skill id, id of the skill whose tree slot it takes], for moved skills.
                 "skill_tree": sorted([skill, slot] for skill, slot in self.skill_tree.items() if skill != slot),

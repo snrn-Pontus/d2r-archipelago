@@ -283,6 +283,7 @@ void Client::Handle(const std::string& text) {
 			slotData_.randomizer.seed = randomizer.value("seed", 0U);
 			slotData_.randomizer.monsters = static_cast<randomizer::Shuffle>(randomizer.value("monster_shuffle", 0));
 			slotData_.randomizer.superUniques = static_cast<randomizer::Shuffle>(randomizer.value("superunique_shuffle", 0));
+			slotData_.randomizer.mainPathSuperUniqueCap = randomizer.value("main_path_superunique_cap", -1);
 			slotData_.randomizer.runewords = randomizer.value("runeword_shuffle", false);
 			slotData_.randomizer.xpPercent = randomizer.value("xp_multiplier", 100);
 			slotData_.randomizer.itemLevelRequirements = randomizer.value("item_level_requirements", true);

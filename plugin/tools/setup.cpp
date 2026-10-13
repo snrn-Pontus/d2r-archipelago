@@ -765,7 +765,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			int changed = 0, linked = 0;
 			auto random = TableRandom(settings.seed, "superuniques");
 			PatchTable(storage, excel, bank, "superuniques.txt", [&](Table& t) {
-				changed = rnd::ShuffleSuperUniques(t, monstats, settings.superUniques, random);
+				changed = rnd::ShuffleSuperUniques(t, monstats, settings.superUniques, random, settings.mainPathSuperUniqueCap);
 				if (settings.superUniqueChecks) {
 					linked = rnd::AddSuperUniqueMonsters(monstats, t, &superUniqueCopies);
 				}
