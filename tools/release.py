@@ -112,7 +112,7 @@ def bump(version: str) -> None:
     CHANGELOG.write_text(text, encoding="utf-8")
     print(f"{old} -> {version}; drafted {len(lines)} changelog lines in CHANGELOG.md since {tag or 'the first commit'}.")
     git("add", str(CHANGELOG))
-    print(f'Edit them, then: git commit -am "Release {version}" and tools/release.py publish <archipelago-folder>.')
+    print(f'Edit them, then: git commit -am "Release {version}" and python -I tools/release.py publish <archipelago-folder>.')
 
 
 def notes(version: str | None) -> None:
