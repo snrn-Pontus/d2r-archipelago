@@ -26,6 +26,12 @@ def random_options(world_type, rng: random.Random) -> dict:
         elif issubclass(option, OptionSet):
             keys = sorted(option.valid_keys)
             options[key] = rng.sample(keys, rng.randint(0, len(keys)))
+    if rng.random() < 0.15:
+        # A tiny game now and then: one act with few or no optional checks, where keys, locks and
+        # skills compete for a handful of locations.
+        options.update(goal="normal", goal_act=1, area_checks=rng.random() < 0.3, side_area_checks=rng.choice([0, 0, 1]),
+                       level_checks=False, superunique_checks=rng.random() < 0.3, quest_item_checks=rng.random() < 0.5,
+                       shop_checks=rng.choice([0, 0, 1, 2]))
     return options
 
 
@@ -38,17 +44,25 @@ def main() -> int:
     from worlds.AutoWorld import AutoWorldRegister, call_all
     import worlds  # noqa: F401
     from Fill import distribute_items_restrictive
+    from Options import OptionError
     from test.general import setup_multiworld
 
     world_type = AutoWorldRegister.world_types["Diablo II Resurrected"]
     rng = random.Random(1234)
-    failures = 0
+    failures = refused = 0
     for round_number in range(rounds):
         players = rng.randint(1, 3)
         options = [random_options(world_type, rng) for _ in range(players)]
         seed = rng.getrandbits(32)
         try:
-            multiworld = setup_multiworld([world_type] * players, seed=seed, options=options)
+            try:
+                multiworld = setup_multiworld([world_type] * players, seed=seed, options=options)
+            except OptionError as error:
+                # The world refused the options with a message, which is the right answer for an
+                # impossible seed (more keys and locks than locations).
+                refused += 1
+                print(f"round {round_number} seed {seed} refused: {error}")
+                continue
             distribute_items_restrictive(multiworld)
             call_all(multiworld, "post_fill")
             if not multiworld.can_beat_game(multiworld.state):
@@ -62,7 +76,7 @@ def main() -> int:
                 print(f"  player {player}: {opts}")
             if failures <= 3:
                 traceback.print_exc()
-    print(f"{rounds - failures}/{rounds} rounds generated and were beatable")
+    print(f"{rounds - failures - refused}/{rounds} rounds generated and were beatable, {refused} refused with a message")
     return 1 if failures else 0
 
 
