@@ -254,7 +254,8 @@ Restart D2R after updating the plugin: the game caches panel layouts.
       focused by default**. Cancel or Escape changes nothing. Reopen and explicitly confirm: Collect
       asks the server to collect the slot (use a disposable seed), Disconnect drops the connection,
       Relearn restores missing AP tree skills after a respec without needing to type a command.
-- [ ] Double-clicking Confirm runs the action once. Opening F9 during a dialog closes that dialog and
+- [ ] Double-clicking Confirm runs the action once. Confirm Relearn then immediately switch AP slots:
+      deferred work reports cancellation and adds no old-slot skills. Opening F9 during a dialog closes that dialog and
       returns to the main panel. Cancel then opening another action never runs the cancelled action.
 - [ ] Start reconnecting to another AP slot while a confirmation is open: the old confirmation refuses
       to run even before the handshake finishes (also test a refused/unreachable server).

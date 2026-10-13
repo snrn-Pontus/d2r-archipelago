@@ -1580,6 +1580,26 @@ void TestPersonalization() {
 	EXPECT(HexDump(std::span(data).first(18)).find("\n0010: ") != std::string::npos);
 }
 
+void TestDeferredPanelScope() {
+	const ap::panel::SessionScope confirmed { 1, 2, 3, 0, 0, true };
+	EXPECT(ap::panel::SameReadyScope(confirmed, confirmed));
+	for (int change = 0; change < 6; ++change) {
+		auto current = confirmed;
+		switch (change) {
+			case 0: ++current.target; break;
+			case 1: ++current.session; break;
+			case 2: ++current.game; break;
+			case 3: ++current.playerClass; break;
+			case 4: ++current.seedClass; break;
+			case 5: current.ready = false; break;
+		}
+		EXPECT(!ap::panel::SameReadyScope(confirmed, current));
+	}
+	auto disconnected = confirmed;
+	disconnected.ready = false;
+	EXPECT(!ap::panel::SameReadyScope(disconnected, disconnected));
+}
+
 void TestCommandPanel() {
 	std::set<std::string> ids;
 	std::vector<const ap::panel::Panel*> panels { &ap::panel::Main(), &ap::panel::Debug(), &ap::panel::Repairs() };
@@ -1672,6 +1692,7 @@ void TestRepairOffers() {
 
 int main() {
 	TestCommandPanel();
+	TestDeferredPanelScope();
 	TestRepairOffers();
 	TestQuestTriggers();
 	TestCodexLevels();

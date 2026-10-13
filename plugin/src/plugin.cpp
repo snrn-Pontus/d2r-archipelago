@@ -105,7 +105,7 @@ std::array<D2RL::Panels::RegistrationHandle, 3> gConfirmPanels {};
 std::array<uint64_t, 3> gConfirmSessions {};
 std::array<uint64_t, 3> gConfirmTargets {};
 std::array<uint64_t, 3> gConfirmGames {};
-uint64_t gPanelGame = 0;
+std::atomic<uint64_t> gPanelGame = 0;
 
 std::unique_ptr<ap::Client> gClient;
 std::atomic<bool>           gWorkQueued;
@@ -4275,9 +4275,35 @@ auto CommandCore(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command,
 // ap-relearn confirm (you just respecced) gives each of them a level back. A
 // failed check changes nothing. A Token or Writ of Absolution does this on its own
 // (RelearnAfterToken); Akara's respec can't be seen, so it needs ap-relearn.
-bool gRelearnConfirmed = false;
+struct RelearnRequest {
+	bool confirmed = false;
+	ap::panel::SessionScope scope;
+};
+std::optional<RelearnRequest> gRelearnRequest;
+uint64_t gRelearnRequestId = 0;
 
-void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
+// gMutex held; the game generation is also read on the game thread.
+auto RelearnScope() -> ap::panel::SessionScope {
+	const auto session = gClient->SessionGeneration();
+	return { gClient->TargetGeneration(), session, gPanelGame.load(), GameClass(), SeedClass(gSlots),
+		gClient->HasCurrentSession() && gInGame && gBoundSession != 0 && gBoundSession == session
+			&& CharacterVerdict(gSlots) == ap::character::Verdict::Match };
+}
+
+void __cdecl RelearnWork(const D2RL::PluginContext*, void* userData) noexcept {
+	RelearnRequest request;
+	{
+		std::lock_guard lock(gMutex);
+		if (reinterpret_cast<uintptr_t>(userData) != gRelearnRequestId || !gRelearnRequest) {
+			return;
+		}
+		request = *gRelearnRequest;
+		gRelearnRequest.reset();
+		if (!ap::panel::SameReadyScope(request.scope, RelearnScope())) {
+			QueueLine("Archipelago: Relearn cancelled because the connection or character changed.");
+			return;
+		}
+	}
 	auto say = [](const std::string& text) {
 		std::lock_guard lock(gMutex);
 		QueueLine(text);
@@ -4298,13 +4324,7 @@ void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 		say("Archipelago: ap-relearn needs a newer D2RLoader (its game rule service) to tell which skills a respec took.");
 		return;
 	}
-	bool confirmed = false;
-	{
-		std::lock_guard lock(gMutex);
-		confirmed = gRelearnConfirmed;
-		gRelearnConfirmed = false;
-	}
-	const auto checked = RefusedSkills(player);
+		const auto checked = RefusedSkills(player);
 	if (!checked) {
 		say("Archipelago: couldn't check your skills, so ap-relearn changed nothing.");
 		return;
@@ -4315,12 +4335,16 @@ void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 		say("Archipelago: all your Archipelago skills are still unlocked.");
 		return;
 	}
-	if (!confirmed) {
+	if (!request.confirmed) {
 		say("Archipelago: these skills won't take a point: " + names + ". After a respec that's expected, but it's the same with no unspent "
 		    "skill points, below a skill's level requirement or at its cap. If you just respecced, type ap-relearn confirm.");
 		return;
 	}
 	std::lock_guard lock(gMutex);
+	if (!ap::panel::SameReadyScope(request.scope, RelearnScope())) {
+		QueueLine("Archipelago: Relearn cancelled because the connection or character changed.");
+		return;
+	}
 	for (const uint32_t skill : refused) {
 		gCommandQueue.push_back("skadd " + SkillName(skill) + ",1");
 	}
@@ -4329,11 +4353,25 @@ void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 
 auto CommandRelearn(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
 	const auto args = SplitArgs(command);
+	uint64_t requestId = 0;
 	{
 		std::lock_guard lock(gMutex);
-		gRelearnConfirmed = !args.empty() && args[0] == "confirm";
+		const auto scope = RelearnScope();
+		if (!scope.ready) {
+			QueueLine("Archipelago: Relearn needs an accepted connection and its claimed character.");
+			return D2RL::ConsoleCommandResult::Failed;
+		}
+		gRelearnRequest = RelearnRequest { !args.empty() && args[0] == "confirm", scope };
+		requestId = ++gRelearnRequestId;
 	}
-	if (gThreads->runOnGameThread(gContext, RelearnWork, nullptr) != D2RL::Threads::Result::Success) {
+	// The token selects the immutable request; no allocation survives dropped game work.
+	if (gThreads->runOnGameThread(gContext, RelearnWork, reinterpret_cast<void*>(static_cast<uintptr_t>(requestId))) != D2RL::Threads::Result::Success) {
+		{
+			std::lock_guard lock(gMutex);
+			if (requestId == gRelearnRequestId) {
+				gRelearnRequest.reset();
+			}
+		}
 		Reply("ap-relearn: join a game first.");
 		return D2RL::ConsoleCommandResult::Failed;
 	}

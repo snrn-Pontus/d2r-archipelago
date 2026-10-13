@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,6 +21,18 @@ auto ClickMessage(std::string_view id) -> std::string;
 
 // The button id a UI message carries, or empty if it isn't a button click.
 auto ClickedButton(std::string_view target, std::string_view command, std::string_view text) -> std::string_view;
+
+// Identity captured before queuing a character-changing command.
+struct SessionScope {
+	uint64_t target = 0, session = 0, game = 0;
+	int playerClass = -1, seedClass = -1;
+	bool ready = false;
+	auto operator==(const SessionScope&) const -> bool = default;
+};
+
+inline auto SameReadyScope(const SessionScope& captured, const SessionScope& current) -> bool {
+	return captured.ready && current.ready && captured == current;
+}
 
 struct Button {
 	std::string_view id;
