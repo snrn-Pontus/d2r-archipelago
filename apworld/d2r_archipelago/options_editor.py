@@ -11,6 +11,7 @@ other games, triggers) stays as it was.
 """
 import re
 import threading
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -186,7 +187,9 @@ def set_key(lines: list[str], start: int, end: int, indent: str, key: str, value
             del lines[index + 1:last + 1]
             end -= last - index
         return end
-    last = next((index for index in range(end - 1, start - 1, -1) if lines[index].strip()), start - 1)
+    # After the last line that isn't blank or a column-0 comment (which may belong to whatever follows).
+    last = next((index for index in range(end - 1, start - 1, -1)
+                 if lines[index].strip() and not lines[index].startswith("#")), start - 1)
     lines.insert(last + 1, f"{indent}{key}: {flow(value)}")
     return end + 1
 
@@ -480,4 +483,5 @@ def run_editor(path: str | None = None) -> None:
 def launch_editor(*args: str) -> None:
     from worlds.LauncherComponents import launch
     yaml = next((arg for arg in args if arg.lower().endswith((".yaml", ".yml"))), None)
-    launch(run_editor, name=TITLE, args=(yaml,) if yaml else ())
+    # A partial rather than launch's args, which older Archipelago versions don't have.
+    launch(partial(run_editor, yaml), name=TITLE)

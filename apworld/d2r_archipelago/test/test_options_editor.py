@@ -113,6 +113,14 @@ class TestOptionsEditor(unittest.TestCase):
         crlf = FILE.replace("\n", "\r\n")
         self.assertEqual(render_yaml(crlf, data, "Old", values, kept)[1], crlf)
 
+    def test_new_option_goes_before_the_next_sections_comment(self) -> None:
+        text = "name: Old\ngame: Diablo II Resurrected\nDiablo II Resurrected:\n  goal: normal\n\n# Other games\nFoo: {}\n"
+        data = parse_yaml(text)
+        values, kept = load_options(data)
+        values["shop_checks"] = 4
+        saved, patched = render_yaml(text, data, "Old", values, kept)
+        self.assertEqual(patched, text.replace("goal: normal\n", "goal: normal\n  shop_checks: 4\n"))
+
     def test_new_file_and_fallback(self) -> None:
         values, kept = load_options({})
         saved, text = render_yaml(None, {}, "Snrn", values, kept)
