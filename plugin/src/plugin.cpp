@@ -10,7 +10,6 @@
 #include "command_panel.h"
 #include "config.h"
 #include "game_data.h"
-#include "ground_drops.h"
 #include "ids.h"
 #include "loot.h"
 #include "milestones.h"
@@ -1462,35 +1461,18 @@ auto CreateIn(D2RL::PlayerHandle player, const ap::loot::Pick& pick, uint32_t re
 	return result;
 }
 
-// Items at the player's feet are paced (ground_drops.h): one at a time, and none
-// while the game is still loading the player, who is dead, or whose area isn't
-// known yet. Game thread only.
-ap::drops::GroundGate gGroundGate;
-// Set when an item waited for its turn on the ground; GameWork clears it each pass.
-bool                  gGroundWaited = false;
-constexpr auto        GroundSettleTime = std::chrono::seconds(2);
+// Puts a loot item in the inventory, falling back to the cube and stash. A
+// locked cube or stash is skipped, so the item can't be stored where the player
+// can't reach it. Nothing goes to the ground: D2RLoader's ground placement
+// crashes D2R (#109), so with full bags the item waits for room. If D2R rejects a
+// forced unique or set record, it retries with any record that fits the base.
+// Returns false only when nothing could be placed; gLootNoRoom then says whether
+// it was only for lack of room (D2R answers Conflict in every container), not an
+// item D2R won't make. owner, when set, is the sender's name for a unique or set item.
+bool gLootNoRoom = false;
 
-// Whether an item may go to the ground now; a yes uses up the turn.
-auto TakeGroundTurn() -> bool {
-	bool settled = false;
-	{
-		std::lock_guard lock(gMutex);
-		settled = gInGame && gCurrentLevel >= 0 && !gPlayerDead && Clock::now() - gPlayerReadyAt >= GroundSettleTime;
-	}
-	if (gGroundGate.Take(settled, Clock::now())) {
-		return true;
-	}
-	gGroundWaited = true;
-	return false;
-}
-
-// Puts a loot item in the inventory, falling back to the cube, stash and
-// ground. A locked cube or stash is skipped, so the item can't be stored where
-// the player can't reach it. If D2R rejects a forced unique or set record, it
-// retries with any record that fits the base. Returns false only when nothing
-// could be placed, or the ground's turn is used up (gGroundWaited, nothing then
-// goes to the cursor either). owner, when set, is the sender's name for a unique or set item.
 bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::string& owner = {}) {
+	gLootNoRoom = false;
 	bool cubeLocked = false, stashLocked = false;
 	{
 		std::lock_guard lock(gMutex);
@@ -1515,20 +1497,14 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 		using enum D2RL::Items::ItemContainer;
 		const char* name = container == Inventory ? "inventory"
 		                   : container == Cube    ? "cube"
-		                   : container == PersonalStash ? "stash"
-		                   : container == Ground  ? "ground"
-		                                          : "cursor";
+		                                          : "stash";
 		Log("Archipelago: placed " + pick.name + " in the " + name + (skipped.empty() ? std::string {} : " (" + skipped.substr(2) + ")") + ".");
 	};
 	std::string results;
-	for (const auto container : { D2RL::Items::ItemContainer::Inventory, D2RL::Items::ItemContainer::Cube, D2RL::Items::ItemContainer::PersonalStash,
-		     D2RL::Items::ItemContainer::Ground, D2RL::Items::ItemContainer::Cursor }) {
+	bool noRoom = true;
+	for (const auto container : { D2RL::Items::ItemContainer::Inventory, D2RL::Items::ItemContainer::Cube, D2RL::Items::ItemContainer::PersonalStash }) {
 		if ((container == D2RL::Items::ItemContainer::Cube && cubeLocked) || (container == D2RL::Items::ItemContainer::PersonalStash && stashLocked)) {
 			continue;
-		}
-		if (container == D2RL::Items::ItemContainer::Ground && !TakeGroundTurn()) {
-			Log("Archipelago: no room for " + pick.name + " in the bags, and it waits for its turn on the ground (container=result:" + results + skipped + ").");
-			return false;
 		}
 		auto result = D2RL::Items::Result::NotFound;
 		for (const uint32_t record : records) {
@@ -1545,14 +1521,13 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 		}
 		if (result == D2RL::Items::Result::Success) {
 			placedIn(container);
-			if (container == D2RL::Items::ItemContainer::Ground || container == D2RL::Items::ItemContainer::Cursor) {
-				Feed("Archipelago: your bags are full, so " + pick.name + (container == D2RL::Items::ItemContainer::Ground ? " dropped at your feet." : " is in your hand."));
-			}
 			return true;
 		}
 		results += " " + std::to_string(static_cast<uint32_t>(container)) + "=" + std::to_string(static_cast<uint32_t>(result));
+		noRoom = noRoom && result == D2RL::Items::Result::Conflict;
 	}
 	Log("Archipelago: no room for " + pick.name + " (container=result:" + results + skipped + ").");
+	gLootNoRoom = noRoom;
 	return false;
 }
 
@@ -2047,6 +2022,9 @@ auto __cdecl CollectPortals(const D2RL::PluginContext*, const D2RL::Items::ItemI
 	return D2RL::Inventory::IterationAction::Continue;
 }
 
+// Whether the Tome waits for room in a full inventory (said once). Game thread only.
+bool gPortalTomeWaiting = false;
+
 void EnforceTownPortalLock(D2RL::PlayerHandle player) {
 	bool locked = false, lockInSeed = false, given = false;
 	{
@@ -2063,18 +2041,16 @@ void EnforceTownPortalLock(D2RL::PlayerHandle player) {
 		spec.quantity = 20;
 		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
 		auto result = gItems->createItem(gContext, player, &spec, &item);
+		// A full inventory: it waits for room (nothing goes to the ground, #109), said once.
 		if (result != D2RL::Items::Result::Success) {
-			// A full inventory: the ground, if it's the tome's turn; a later pass otherwise.
-			if (!TakeGroundTurn()) {
-				return;
+			if (!gPortalTomeWaiting) {
+				gPortalTomeWaiting = true;
+				Log("Archipelago: couldn't give the Tome of Town Portal (" + std::to_string(static_cast<uint32_t>(result)) + "); it waits for room.");
+				Feed("Archipelago: Town Portal Access! Make room in your inventory for your Tome of Town Portal.");
 			}
-			spec.destination.container = D2RL::Items::ItemContainer::Ground;
-			result = gItems->createItem(gContext, player, &spec, &item);
-		}
-		if (result != D2RL::Items::Result::Success) {
-			Log("Archipelago: couldn't give the Tome of Town Portal (" + std::to_string(static_cast<uint32_t>(result)) + ").");
 			return;
 		}
+		gPortalTomeWaiting = false;
 		{
 			std::lock_guard lock(gMutex);
 			gSave.portalTomeGiven = true;
@@ -2125,7 +2101,7 @@ auto __cdecl CollectPotions(const D2RL::PluginContext*, const D2RL::Items::ItemI
 	return D2RL::Inventory::IterationAction::Continue;
 }
 
-// Whether set-aside potions are coming back one at a time (a full inventory). Game thread only.
+// Whether set-aside potions wait for room in a full inventory. Game thread only.
 bool gPotionsTrickling = false;
 
 void EnforcePotionLock(D2RL::PlayerHandle player) {
@@ -2140,18 +2116,13 @@ void EnforcePotionLock(D2RL::PlayerHandle player) {
 		if (held.empty()) {
 			return;
 		}
-		// With a full inventory, the potions go to the ground one per turn (TakeGroundTurn);
-		// the rest stay held for later passes.
+		// The ones a full inventory can't take stay held for later passes (nothing goes
+		// to the ground, #109).
 		std::vector<uint32_t> kept;
 		for (const uint32_t code : held) {
 			auto spec = MakeSpec(code, D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
 			D2RL::ItemHandle item = D2RL::InvalidItemHandle;
-			auto result = gItems->createItem(gContext, player, &spec, &item);
-			if (result != D2RL::Items::Result::Success && TakeGroundTurn()) {
-				spec.destination.container = D2RL::Items::ItemContainer::Ground;
-				result = gItems->createItem(gContext, player, &spec, &item);
-			}
-			if (result != D2RL::Items::Result::Success) {
+			if (gItems->createItem(gContext, player, &spec, &item) != D2RL::Items::Result::Success) {
 				kept.push_back(code);
 			}
 		}
@@ -2166,14 +2137,14 @@ void EnforcePotionLock(D2RL::PlayerHandle player) {
 			if (kept.empty()) {
 				Feed("Archipelago: Potion Access! Your " + std::to_string(back) + " set-aside potions are back.");
 			} else {
-				Feed("Archipelago: Potion Access! Your inventory is full, so your " + std::to_string(held.size())
-				     + " set-aside potions come back one at a time; make room to get them sooner.");
+				Feed("Archipelago: Potion Access! Your inventory is full, so " + std::to_string(kept.size()) + " of your "
+				     + std::to_string(held.size()) + " set-aside potions come back as you make room.");
 			}
 		} else if (kept.empty()) {
 			Feed("Archipelago: the last of your set-aside potions is back.");
 		}
 		gPotionsTrickling = !kept.empty();
-		if (!kept.empty()) {
+		if (!kept.empty() && back > 0) {
 			Log("Archipelago: gave back " + std::to_string(back) + " potions; " + std::to_string(kept.size()) + " wait for room.");
 		}
 		return;
@@ -2580,7 +2551,6 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 
 void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	gWorkQueued = false;
-	gGroundWaited = false;
 	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
 	if (gInventory->getLocalPlayer(gContext, &player) != D2RL::Inventory::Result::Success) {
 		return;
@@ -2754,8 +2724,9 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		}
 		// An item D2R refuses everywhere may not exist for this character, so roll
 		// others. If none fit, a mid rune stands in; if even that won't fit, the
-		// containers are full and we wait for the player to make room.
-		// Uniques and sets from another player carry that player's name.
+		// containers are full and we wait for the player to make room. An item that
+		// only lacks room (gLootNoRoom) waits too, rather than shrinking into a smaller
+		// one or a rune. Uniques and sets from another player carry that player's name.
 		const int         sender = items[index].player;
 		const std::string owner = sender > 0 && sender != gClient->MySlot() ? ap::personal::Name(gClient->PlayerName(sender)) : std::string {};
 		ap::loot::Pick pick {};
@@ -2766,8 +2737,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 				break;
 			}
 			placed = GiveLoot(player, pick, owner);
-			// The bags are full and the ground's turn is used: the reward waits for a later pass.
-			if (!placed && gGroundWaited) {
+			if (!placed && gLootNoRoom) {
 				return false;
 			}
 			if (!placed) {
@@ -2864,8 +2834,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	if (codexOk && next == items.size() && !redelivering) {
 		gCodexItems = generation;
 		gCodexDirty = false;
-	} else if (codexOk && (more || (roomFull && gGroundWaited))) {
-		// More this pass couldn't take, or a reward waiting for its turn on the ground.
+	} else if (codexOk && more) {
 		gRetryAt = Clock::now() + LootPassGap;
 	} else {
 		gRetryAt = Clock::now() + std::chrono::seconds(30);
@@ -2881,8 +2850,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		                          : gLocks.cube               ? "inventory or stash"
 		                          : gLocks.stash              ? "inventory or cube"
 		                                                      : "inventory, cube or stash";
-		QueueLine(gGroundWaited ? "Archipelago: your bags are full, so rewards drop at your feet one at a time; make room in your " + rooms + " to get them sooner."
-		                        : "Archipelago: rewards are waiting; make room in your " + rooms + ".");
+		QueueLine("Archipelago: rewards are waiting; make room in your " + rooms + " and they arrive within 30 seconds.");
 	}
 }
 
@@ -4860,7 +4828,7 @@ void GiveDebugItems(D2RL::PlayerHandle player, std::span<const DebugItem> items)
 	}
 }
 
-// Makes the queued items in the inventory, or at your feet if it's full.
+// Makes the queued items in the inventory (rewards also in the cube or stash).
 void __cdecl SpawnWork(const D2RL::PluginContext*, void*) noexcept {
 	std::vector<DebugItem> spawns;
 	{
@@ -4883,12 +4851,8 @@ void __cdecl SpawnWork(const D2RL::PluginContext*, void*) noexcept {
 		auto spec = MakeSpec(spawn.code, spawn.unique ? D2RL::Items::Quality::Unique : D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
 		spec.itemLevel = spawn.unique ? 99 : 1;
 		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
-		auto result = gItems->createItem(gContext, player, &spec, &item);
-		// One at a time on the ground, like rewards (#109); the rest aren't made.
-		if (result != D2RL::Items::Result::Success && TakeGroundTurn()) {
-			spec.destination.container = D2RL::Items::ItemContainer::Ground;
-			result = gItems->createItem(gContext, player, &spec, &item);
-		}
+		// Only in the inventory: D2RLoader's ground placement crashes D2R (#109).
+		const auto result = gItems->createItem(gContext, player, &spec, &item);
 		std::string name = "item";
 		D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
 		if (result == D2RL::Items::Result::Success && gItems->getItemInfo(gContext, item, &info) == D2RL::Items::Result::Success) {
