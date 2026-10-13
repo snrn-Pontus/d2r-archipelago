@@ -2274,9 +2274,11 @@ void UpdateLocks() {
 	    + (locks.potions ? "yes" : "no") + ", stash " + (locks.stash ? "yes" : "no") + ", merchants " + (locks.merchants ? "yes" : "no")
 	    + ", waypoints " + (locks.waypoints[0] ? "I " : "") + (locks.waypoints[1] ? "II " : "") + (locks.waypoints[2] ? "III" : "") + ".");
 	std::lock_guard lock(gMutex);
+	if (gLocks.merchants != locks.merchants) {
+		gRepairOffer.Cancel();
+	}
 	gLocks = locks;
 	gSlots = slots;
-	gRepairOffer.Cancel();
 }
 
 // Tells the player why something didn't work, at most every few seconds.
@@ -3613,6 +3615,7 @@ auto CommandReconnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, vo
 	{
 		std::lock_guard lock(gMutex);
 		config = gConfig;
+		gRepairOffer.Cancel();
 	}
 	if (config.server.empty() || config.slot.empty()) {
 		Reply("No server saved yet: connect once with ap-connect <server[:port]> <slot> [password].");
