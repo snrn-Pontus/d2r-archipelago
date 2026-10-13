@@ -4921,6 +4921,8 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 	// leaves it; ap-reconnect then recovers them (#78).
 	if ((args[0] == "kills" || args[0] == "cows") && args.size() <= 2) {
 		const bool cows = args[0] == "cows";
+		// The live session, not just a bound save: after ap-disconnect the old seed stays bound.
+		const uint64_t session = gClient->ConnectedSession();
 		std::string answer;
 		{
 			std::lock_guard lock(gMutex);
@@ -4928,7 +4930,7 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 			const int act = std::clamp(gAct, 0, 4);
 			const std::string where = std::string(DifficultyNames[difficulty]) + (cows ? std::string() : std::string(" ") + ActNames[act]);
 			const int next = cows ? ap::milestones::CowsBeforeNext(gSave, difficulty) : ap::milestones::KillsBeforeNext(gSave, difficulty, act);
-			if (gBoundSession == 0) {
+			if (session == 0 || gBoundSession != session) {
 				answer = "ap-debug: connect first; the counts are in the seed's save.";
 			} else if (!(cows ? gSlots.cowLevelChecks : gSlots.killCountChecks)) {
 				answer = cows ? "ap-debug: this seed has no cow check (cow_level_checks)." : "ap-debug: this seed has no kill-count checks (kill_count_checks).";
