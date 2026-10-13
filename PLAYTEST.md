@@ -317,6 +317,12 @@ a guess checked against the item before writing, so test the command first.
       the game doesn't crash.
 - [ ] Multiworld seed with a second slot: a `Random Unique` that slot finds arrives named after it, and
       chat says "you got <item> from <name>!". Your own finds and `/send` (from the server) stay unnamed.
+- [ ] Two-socket base rewards (#61): send `Socketed Base` repeatedly to an early-level character.
+      Confirm two-socket normal weapons and armor arrive, can be equipped by the receiving class,
+      and accept a matching vanilla or seed-shuffled two-rune runeword in the right order.
+      Counts are equally likely from two through the selected base's legal maximum (two-socket
+      bases always give two). At higher levels, confirm larger socket counts still arrive and
+      no base exceeds its item/type limit (Sorceress orbs cap at three).
 - [ ] Several `/send`s of `Random Unique`, `Random Set Item` and `Socketed Base` never give another
       class's gear (no Arreat's Face or Paladin shield on a Sorceress); your own class's still turn up.
 
