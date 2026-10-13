@@ -162,6 +162,25 @@ void TestConfigDefaults() {
 	EXPECT(parsed.codexPrefix == ap::data::CodexPrefix);
 }
 
+void TestLoaderSettings() {
+	const std::string text = ap::FormatLoaderSettings({
+		{ "d2rcore.items.show_ground_sockets", "true" },
+		{ "d2rcore.stash.add_shared_tabs", "50" },
+		{ "d2rcore.items.floor_item_display_limit", "64" },
+		// Skipped: a global loader setting, a bad table, a value that isn't a bool or number.
+		{ "d2rloader.skip_title_screen", "true" },
+		{ "d2rcore.it ems.x", "1" },
+		{ "d2rcore.items", "1" },
+		{ "d2rcore.items.display_item_levels", "\"yes\"\nevil = 1" },
+	});
+	EXPECT(text.find("\n[d2rcore.items]\nshow_ground_sockets = true\nfloor_item_display_limit = 64\n\n[d2rcore.stash]\nadd_shared_tabs = 50\n")
+	       != std::string::npos);
+	EXPECT(text.find("d2rloader]") == std::string::npos && text.find("evil") == std::string::npos && text.find("it ems") == std::string::npos);
+	EXPECT(text.find("display_item_levels") == std::string::npos);
+	// Nothing to override: only the header comment, no tables.
+	EXPECT(ap::FormatLoaderSettings({}).find('[') == std::string::npos);
+}
+
 void TestScaleWav() {
 	// A 16-bit mono WAV with an odd-sized chunk before the samples.
 	const auto u16 = [](std::string& out, uint16_t value) { out.append(reinterpret_cast<const char*>(&value), 2); };
@@ -302,7 +321,8 @@ void TestClientParsesServerPackets() {
 		"location_name_to_id":{"Normal: Den of Evil":2420001},"checksum":"x"}}}}])json");
 	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[{"team":0,"slot":1,"alias":"Snrn","name":"Snrn","class":"NetworkPlayer"}],
 		"missing_locations":[2420002],"checked_locations":[2420001],"slot_data":{"goal":2,"goal_quest":40,"area_checks":false,"level_checks":true,
-		"level_step":5,"level_cap":90},"slot_info":{"1":{"name":"Snrn","game":"Diablo II Resurrected","type":1,"group_members":[],"class":"NetworkSlot"}},
+		"level_step":5,"level_cap":90,"loader_settings":{"d2rcore.stash.add_shared_tabs":50,"d2rcore.items.show_ground_sockets":true,
+		"d2rcore.items.odd":"text"}},"slot_info":{"1":{"name":"Snrn","game":"Diablo II Resurrected","type":1,"group_members":[],"class":"NetworkSlot"}},
 		"hint_points":0}])json");
 	client.Handle(R"json([{"cmd":"ReceivedItems","index":0,"items":[{"item":2430054,"location":-2,"player":1,"flags":1,"class":"NetworkItem"}]}])json");
 	EXPECT(client.State() == ap::ConnectionState::Connected);
@@ -312,6 +332,10 @@ void TestClientParsesServerPackets() {
 	client.Handle(R"json([{"cmd":"RoomUpdate","checked_locations":[2420002]}])json");
 	EXPECT(client.Missing().empty() && client.LocationCount() == 2);
 	EXPECT(client.Slots().goal == 2 && !client.Slots().areaChecks && client.Slots().levelCap == 90 && client.Slots().sideAreas.empty());
+	// Strings aren't D2RLoader values we write, so they're dropped.
+	EXPECT(client.Slots().loaderSettings.size() == 2);
+	EXPECT(std::ranges::count(client.Slots().loaderSettings, std::pair<std::string, std::string>("d2rcore.stash.add_shared_tabs", "50")) == 1);
+	EXPECT(std::ranges::count(client.Slots().loaderSettings, std::pair<std::string, std::string>("d2rcore.items.show_ground_sockets", "true")) == 1);
 	EXPECT(client.Items().size() == 1 && client.Items()[0].item == 2430054);
 	EXPECT(client.ItemName(2430054, 1) == "Teleport (Sorceress)");
 	// A gap in the item index must not append anything.
@@ -867,6 +891,7 @@ int main() {
 	TestClientDeathLink();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
+	TestLoaderSettings();
 	TestScaleWav();
 	TestSaveStateRoundTrip();
 	TestIdsMatchApworld();

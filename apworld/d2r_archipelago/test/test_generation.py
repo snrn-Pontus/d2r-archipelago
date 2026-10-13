@@ -102,6 +102,22 @@ class TestNoSideAreas(D2RTestBase):
 
     def test_none(self) -> None:
         self.assertEqual(self.world.fill_slot_data()["side_areas"], [])
+        # D2RLoader settings left at keep (the default) aren't overridden.
+        self.assertEqual(self.world.fill_slot_data()["loader_settings"], {})
+
+
+class TestLoaderSettings(D2RTestBase):
+    options = {"show_ground_sockets": "on", "item_stat_ranges": "off", "maximum_sockets": "keep", "display_item_levels": True,
+               "shared_stash_tabs": 50, "materials_limit": 99, "floor_item_limit": 64}
+
+    def test_only_the_chosen_ones(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["loader_settings"], {
+            "d2rcore.items.show_ground_sockets": True,
+            "d2rcore.items.item_stat_ranges": False,
+            "d2rcore.items.display_item_levels": True,
+            "d2rcore.items.floor_item_display_limit": 64,
+            "d2rcore.stash.add_shared_tabs": 50,
+        })
 
 
 class TestHell(D2RTestBase):

@@ -14,7 +14,7 @@ from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOW
                   level_location_name, location_name_to_id, quest_item_location_name, quest_location_name,
                   set_location_name, shop_location_name, skill_item_name, skill_names_by_class,
                   superunique_location_name)
-from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions
+from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions, loader_settings
 
 GAME = "Diablo II Resurrected"
 SKILLS_GROUP = "Skills"
@@ -590,6 +590,8 @@ class D2RWorld(World):
                 "waypoints": bool(self.options.waypoint_lock),
             },
             "death_link": bool(self.options.death_link),
+            # d2r-ap-setup writes these into the mod's d2rloader.toml, overriding the player's D2RLoader settings.
+            "loader_settings": loader_settings(self.options),
             # d2r-ap-setup reads this and writes the matching game tables.
             "randomizer": {
                 "seed": self.randomizer_seed,

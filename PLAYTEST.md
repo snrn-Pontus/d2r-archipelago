@@ -61,6 +61,12 @@ Built, pushed and installed, still to check in game:
       Resurrected Options**; it opens a window (no error in the Launcher log). **Open...** a copy of
       `Players\Snrn.yaml`, change Goal Difficulty and Shop Checks, **Save**: only those two lines change and
       the comments stay. A preset, then **Save as...** a new name, generates a seed.
+- [ ] D2RLoader settings from the YAML (#9, new seed needed): with `show_ground_sockets: on`,
+      `display_item_levels: on`, `shared_stash_tabs: 10` and `materials_limit: 150`, setup lists them and writes
+      `mods\Archipelago\d2rloader\config\d2rloader.toml`. In game, white items on the ground show sockets,
+      tooltips show item levels, the shared stash has 10 extra tabs (after Stash Access with Stash Lock) and
+      runes stack past 99. D2RLoader's Options show the mod's values winning. Then a seed with everything at
+      `keep`: your own D2RLoader settings are back. Watch the loader log for a complaint about the mod file.
 
 Ideas, not started:
 

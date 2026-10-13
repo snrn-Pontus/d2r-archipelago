@@ -586,6 +586,86 @@ class ItemStatRequirements(DefaultOnToggle):
     display_name = "Item Stat Requirements"
 
 
+class LoaderToggle(Choice):
+    """A D2RLoader setting d2r-ap-setup writes as the Archipelago mod's override. keep leaves your own D2RLoader
+    setting alone."""
+    loader_path = ""
+    option_keep = 0
+    option_on = 1
+    option_off = 2
+    default = 0
+
+    def loader_value(self) -> bool | None:
+        return None if self.value == self.option_keep else self.value == self.option_on
+
+
+class LoaderRange(Range):
+    """A numeric D2RLoader setting d2r-ap-setup writes as the Archipelago mod's override; the default (the game's
+    own value) leaves your own D2RLoader setting alone."""
+    loader_path = ""
+
+    def loader_value(self) -> int | None:
+        return None if self.value == self.default else self.value
+
+
+class ShowGroundSockets(LoaderToggle):
+    """D2RLoader: show socket counts on normal and superior items on the ground. keep leaves your own D2RLoader
+    setting alone; on or off overrides it while you play this seed."""
+    display_name = "Show Ground Sockets"
+    loader_path = "d2rcore.items.show_ground_sockets"
+
+
+class DisplayItemLevels(LoaderToggle):
+    """D2RLoader: show item levels on weapons, armor, rings, amulets, charms and jewels. keep leaves your own
+    D2RLoader setting alone; on or off overrides it while you play this seed."""
+    display_name = "Display Item Levels"
+    loader_path = "d2rcore.items.display_item_levels"
+
+
+class ItemStatRanges(LoaderToggle):
+    """D2RLoader: hold Ctrl (or the right trigger) to see the possible stat rolls of an item. keep leaves your own
+    D2RLoader setting alone; on or off overrides it while you play this seed."""
+    display_name = "Item Stat Ranges"
+    loader_path = "d2rcore.items.item_stat_ranges"
+
+
+class MaximumSockets(LoaderToggle):
+    """D2RLoader: show the most sockets each item can have. keep leaves your own D2RLoader setting alone; on or
+    off overrides it while you play this seed."""
+    display_name = "Maximum Sockets"
+    loader_path = "d2rcore.items.maximum_sockets"
+
+
+class FloorItemLimit(LoaderRange):
+    """D2RLoader: how many item labels on the floor show at once. 32 (the game's own) leaves your D2RLoader
+    setting alone."""
+    display_name = "Floor Item Labels"
+    loader_path = "d2rcore.items.floor_item_display_limit"
+    range_start = 32
+    range_end = 128
+    default = 32
+
+
+class SharedStashTabs(LoaderRange):
+    """D2RLoader: extra shared stash tabs after the game's own. 0 leaves your D2RLoader setting alone. With Stash
+    Lock, they only matter once Stash Access arrives. D2RLoader warns the game may crash past about 500."""
+    display_name = "Extra Shared Stash Tabs"
+    loader_path = "d2rcore.stash.add_shared_tabs"
+    range_start = 0
+    range_end = 500
+    default = 0
+
+
+class MaterialsLimit(LoaderRange):
+    """D2RLoader: how many of each material (runes, gems...) the advanced stash stacks. 99 (the game's own) leaves
+    your D2RLoader setting alone."""
+    display_name = "Materials Stack Limit"
+    loader_path = "d2rcore.stash.set_materials_limit"
+    range_start = 99
+    range_end = 255
+    default = 99
+
+
 @dataclass
 class D2ROptions(PerGameCommonOptions):
     goal: Goal
@@ -660,6 +740,13 @@ class D2ROptions(PerGameCommonOptions):
     experience_multiplier: ExperienceMultiplier
     item_level_requirements: ItemLevelRequirements
     item_stat_requirements: ItemStatRequirements
+    show_ground_sockets: ShowGroundSockets
+    display_item_levels: DisplayItemLevels
+    item_stat_ranges: ItemStatRanges
+    maximum_sockets: MaximumSockets
+    floor_item_limit: FloorItemLimit
+    shared_stash_tabs: SharedStashTabs
+    materials_limit: MaterialsLimit
     death_link: DeathLink
 
 
@@ -680,8 +767,21 @@ OPTION_GROUPS = [
                           TaxCollectorWeight, MercenaryDownWeight], start_collapsed=True),
     OptionGroup("Game Changes", [MonsterShuffle, SuperUniqueShuffle, RunewordShuffle, MonsterDensity, ChampionPacks, BetterDrops,
                                  ExperienceMultiplier, ItemLevelRequirements, ItemStatRequirements]),
+    OptionGroup("D2RLoader Settings", [ShowGroundSockets, DisplayItemLevels, ItemStatRanges, MaximumSockets, FloorItemLimit,
+                                       SharedStashTabs, MaterialsLimit], start_collapsed=True),
     OptionGroup("Multiworld", [DeathLink]),
 ]
+
+
+def loader_settings(options: D2ROptions) -> dict[str, bool | int]:
+    """The D2RLoader settings d2r-ap-setup writes as the mod's overrides, by their d2rloader.toml path; settings
+    left at keep (or the game's own value) aren't included."""
+    settings: dict[str, bool | int] = {}
+    for name in D2ROptions.type_hints:
+        option = getattr(options, name)
+        if isinstance(option, (LoaderToggle, LoaderRange)) and (value := option.loader_value()) is not None:
+            settings[option.loader_path] = value
+    return settings
 
 # Starting points on the options web page; anything not listed keeps its default.
 OPTION_PRESETS: dict[str, dict[str, Any]] = {

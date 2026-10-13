@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <sstream>
+#include <string_view>
 
 namespace ap {
 
@@ -121,6 +122,48 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "codex_prefix = " << config.codexPrefix << "\n"
 	    << "# Properties.txt *Id of oskill.\n"
 	    << "oskill_property = " << config.oskillProperty << "\n";
+	return out.str();
+}
+
+auto FormatLoaderSettings(const std::vector<std::pair<std::string, std::string>>& settings) -> std::string {
+	const auto name = [](const std::string& text) {
+		return !text.empty() && std::ranges::all_of(text, [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; });
+	};
+	const auto value = [](const std::string& text) {
+		const size_t digits = !text.empty() && text.front() == '-' ? 1 : 0;
+		return text == "true" || text == "false"
+		    || (text.size() > digits && std::ranges::all_of(text.substr(digits), [](char c) { return c >= '0' && c <= '9'; }));
+	};
+	// Table -> its keys, both in the order they first appear.
+	std::vector<std::pair<std::string, std::vector<std::string>>> tables;
+	constexpr std::string_view Prefix = "d2rcore.";
+	for (const auto& [path, setting] : settings) {
+		const auto dot = path.find('.', Prefix.size());
+		if (!path.starts_with(Prefix) || dot == std::string::npos || !value(setting)) {
+			continue;
+		}
+		const std::string table = path.substr(Prefix.size(), dot - Prefix.size());
+		const std::string key = path.substr(dot + 1);
+		if (!name(table) || !name(key)) {
+			continue;
+		}
+		auto found = std::ranges::find(tables, table, &std::pair<std::string, std::vector<std::string>>::first);
+		if (found == tables.end()) {
+			tables.push_back({ table, {} });
+			found = tables.end() - 1;
+		}
+		found->second.push_back(key + " = " + setting);
+	}
+	std::ostringstream out;
+	out << "# Written by d2r-ap-setup from your Archipelago options (the D2RLoader Settings group), each time it\n"
+	    << "# sets up a seed. These override your own D2RLoader settings while the Archipelago mod runs; change\n"
+	    << "# them in your options YAML, since edits here are replaced.\n";
+	for (const auto& [table, lines] : tables) {
+		out << "\n[d2rcore." << table << "]\n";
+		for (const auto& line : lines) {
+			out << line << "\n";
+		}
+	}
 	return out.str();
 }
 

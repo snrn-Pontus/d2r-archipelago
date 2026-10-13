@@ -83,6 +83,9 @@ struct SlotData {
 	// Deaths are shared with the other DeathLink players.
 	bool deathLink   = false;
 	randomizer::Settings randomizer;
+	// D2RLoader settings d2r-ap-setup writes as the mod's overrides: dotted
+	// path ("d2rcore.stash.add_shared_tabs") and TOML value ("50", "true").
+	std::vector<std::pair<std::string, std::string>> loaderSettings;
 };
 
 // Archipelago protocol client. Runs its own network thread; every public

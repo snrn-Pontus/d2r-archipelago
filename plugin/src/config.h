@@ -6,6 +6,8 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace ap {
 
@@ -43,5 +45,11 @@ struct Config {
 // ignored, so every key must be unique.
 auto ParseConfig(const std::string& text) -> Config;
 auto FormatConfig(const Config& config) -> std::string;
+
+// The mod's d2rloader.toml: D2RLoader settings the mod overrides, from
+// ("d2rcore.<table>.<key>", TOML value) pairs, grouped into their tables.
+// Paths outside d2rcore (the global loader settings mods can't override) or
+// with odd characters are skipped.
+auto FormatLoaderSettings(const std::vector<std::pair<std::string, std::string>>& settings) -> std::string;
 
 } // namespace ap

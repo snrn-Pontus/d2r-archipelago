@@ -290,6 +290,15 @@ void Client::Handle(const std::string& text) {
 			}
 			slotData_.randomizer.treeMode = randomizer.value("tree_mode", false);
 			slotData_.randomizer.superUniqueChecks = slotData_.superUniqueChecks;
+			slotData_.loaderSettings.clear();
+			const json loaderSettings = data.value("loader_settings", json::object());
+			for (const auto& [path, value] : loaderSettings.items()) {
+				if (value.is_boolean()) {
+					slotData_.loaderSettings.emplace_back(path, value.get<bool>() ? "true" : "false");
+				} else if (value.is_number_integer()) {
+					slotData_.loaderSettings.emplace_back(path, std::to_string(value.get<int64_t>()));
+				}
+			}
 			state_ = ConnectionState::Connected;
 			status_ = "Connected as " + slot_ + ".";
 			++sessionGeneration_;

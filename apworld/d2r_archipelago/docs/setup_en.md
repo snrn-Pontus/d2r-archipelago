@@ -27,6 +27,12 @@ opens an editor with a checkbox, dropdown or slider for each option, with its de
 Put the saved YAML in Archipelago's `Players` folder, or send it to whoever hosts the multiworld.
 Archipelago's own Options Creator works too, but it can only make new files.
 
+The **D2RLoader Settings** group sets some of D2RLoader's own game settings for this seed: ground socket
+counts, item levels, stat ranges, maximum sockets, floor item labels, extra shared stash tabs and the
+materials stack limit. The setup writes them to `mods/Archipelago/d2rloader/config/d2rloader.toml`, where they
+override your D2RLoader settings while the Archipelago mod runs. Left at `keep` (or the game's own number),
+your own D2RLoader setting applies. Change them in your YAML, not in that file, since each setup rewrites it.
+
 ## Playing
 
 With the game closed, do one of these:
