@@ -2,6 +2,21 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.9.0 - 2026-10-13
+
+- Rewards only go to a character of the seed's class, so loading a mule no longer hands it the seed's loot,
+  Codex and unlocks; `ap-claim` moves the seed to the character you're playing (#70)
+- Gold, experience and skill rewards wait in the seed's save until the game accepts them, and after a crash
+  `ap-redeliver` hands back what that game lost (#70)
+- Hints found while disconnected reach the server when you reconnect, and a goal finished before connecting
+  still counts (#71)
+- A kill or cow count check missed by a crash or disconnect is sent on the next connect, with no extra kill
+  (#78)
+- The 100 cows add up per difficulty over the whole seed, across games and reconnects, and only cows in the
+  Cow Level count (#79)
+- Reconnecting or switching slots no longer hangs or saves into the wrong seed, a save that can't be written
+  pauses rewards and says so, and no two runewords share a rune recipe; rerun `d2r-ap-setup` (#75)
+
 ## 0.8.1 - 2026-10-13
 
 - Starting a new game no longer carries over the last character's level, class and area, so it no longer
