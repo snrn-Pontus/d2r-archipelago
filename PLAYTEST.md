@@ -171,6 +171,8 @@ Built, pushed and installed, still to check in game:
       same rune sequence (2026-10-13: none in either bank's `runes.txt`); a shuffled runeword with a common
       base still makes the right word (El Eld in a normal 2-socket Long Sword made Steel on a LoD character,
       from the base bank's recipe; the list itself is #110).
+- [ ] Writ name (#113, rerun setup): the Writ of Absolution in a potion seller's Misc tab is named "Writ of
+      Absolution", not "An Evil Force".
 
 Ideas, not started:
 
