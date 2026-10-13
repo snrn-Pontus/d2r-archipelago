@@ -504,6 +504,31 @@ class TestUnusableSkills(D2RTestBase):
         self.assertGreater(len(self.world.skill_pool), 50)
 
 
+class TestBarbarianSkills(D2RTestBase):
+    options = {"character_class": "barbarian", "skill_focus": "any_skills", "skill_pool_size": 240, "skill_copies": 1}
+
+    def test_barbarian_gets_no_smite_or_traps(self) -> None:
+        # The Barbarian's S1 animation has no hit frame (#117) and its S2 only one weapon class.
+        names = {item.name for item in self.multiworld.itempool} | {item.name for item in self.multiworld.precollected_items[self.player]}
+        for skill in ("Smite (Paladin)", "Fire Trauma (Assassin)", "Lightning Sentry (Assassin)"):
+            self.assertNotIn(skill, names)
+        self.assertGreater(len(self.world.skill_pool), 50)
+
+
+class TestS1Skills(D2RTestBase):
+    def test_s1_skills_follow_animdata(self) -> None:
+        from .. import can_use
+        smite, dodges = 97, (13, 18, 29)
+        for cls in ("ama", "bar"):
+            self.assertFalse(can_use(smite, cls), cls)
+        for cls in ("sor", "nec", "pal", "dru", "ass", "war"):
+            self.assertTrue(can_use(smite, cls), cls)
+        for skill in dodges:
+            self.assertFalse(can_use(skill, "pal"))
+            self.assertTrue(can_use(skill, "ama"))
+            self.assertTrue(can_use(skill, "bar"))
+
+
 class TestAnyClassSkills(D2RTestBase):
     options = {"character_class": "any", "skill_focus": "any_skills", "skill_pool_size": 240, "skill_copies": 1}
 
@@ -546,6 +571,22 @@ class TestTreeShuffleUsable(D2RTestBase):
             dealt = deal_skill_trees(random.Random(seed))
             for skill, slot in dealt.items():
                 self.assertTrue(can_use(skill, slot_class[slot]), f"seed {seed}: {skill} in {slot_class[slot]}'s tree")
+
+    def test_s1_skills_stay_with_classes_that_have_s1(self) -> None:
+        from .. import deal_skill_trees
+        from ..data import SKILLS
+        import random
+        slot_class = {sid: cls for sid, _name, cls in SKILLS}
+        smite_classes = set()
+        for seed in range(200):
+            dealt = deal_skill_trees(random.Random(seed))
+            if 97 in dealt:
+                smite_classes.add(slot_class[dealt[97]])
+            for dodge in (13, 18, 29):
+                if dodge in dealt:
+                    self.assertNotEqual(slot_class[dealt[dodge]], "pal", f"seed {seed}: {dodge} in the Paladin's tree")
+        self.assertFalse(smite_classes & {"ama", "bar"})
+        self.assertGreater(len(smite_classes), 1)
 
 
 class TestDruidFullStart(D2RTestBase):

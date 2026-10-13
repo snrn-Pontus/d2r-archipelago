@@ -124,19 +124,50 @@ EXCLUDED_CODES = {"cm1", "cm2", "cm3"}
 
 # The Druid's shapeshifts stay with the Druid in a skill tree shuffle.
 PINNED_SKILLS = {"Wearwolf", "Wearbear", "Shape Shifting"}
-# Only the Barbarian and the Assassin have the S2-S4 animation modes (animdata.d2); any other class
-# casting an S2 skill (the Assassin's traps) freezes in place.
-SPECIAL_MODE_CLASSES = ("bar", "ass")
+# The players' special animation modes S1-S4 in D2R 3.x's data/global/animdata.d2 (read from the game's
+# CASC storage): class -> mode -> (the weapon classes the mode has frames for, the ones of those whose
+# frames carry an action event: the frame where an attack lands or a trap is thrown). A class casting a
+# skill in a mode it has no frames for freezes in place (#18); one whose frames have no event plays the
+# animation but the skill never goes off (#117: Smite on the Barbarian, whose S1 is event-less). Only
+# the Barbarian's dual-wield (1JS...) and the Assassin's claw (HT1, HT2) weapon classes are left out.
+WEAPON_CLASSES = frozenset({"HTH", "BOW", "1HS", "1HT", "STF", "2HS", "2HT", "XBW"})
+# A shield leaves a hand free, a one-handed weapon or nothing.
+SHIELD_WEAPON_CLASSES = frozenset({"HTH", "1HS", "1HT"})
+ANIM_MODES = {
+    "ama": {"S1": (WEAPON_CLASSES, WEAPON_CLASSES - {"1HS", "1HT", "XBW"})},
+    "sor": {"S1": (WEAPON_CLASSES, WEAPON_CLASSES)},
+    "nec": {"S1": (WEAPON_CLASSES, WEAPON_CLASSES)},
+    "pal": {"S1": (SHIELD_WEAPON_CLASSES, SHIELD_WEAPON_CLASSES)},
+    "bar": {"S1": (WEAPON_CLASSES, frozenset()), "S2": (frozenset({"1HT"}), frozenset({"1HT"}))},
+    "dru": {"S1": (WEAPON_CLASSES, WEAPON_CLASSES)},
+    "ass": {"S1": (WEAPON_CLASSES, WEAPON_CLASSES), "S2": (WEAPON_CLASSES, WEAPON_CLASSES),
+            "S3": (WEAPON_CLASSES, frozenset())},
+    "war": {"S1": (WEAPON_CLASSES, WEAPON_CLASSES)},
+}
+# (The Barbarian's S3 and S4 are dual-wield only and the Assassin's S4 claws only; no skill uses them.)
 # The classes that can hold a second weapon: the Barbarian anything, the Assassin claws (h2h is mele).
 DUAL_WIELD = {"mele": ("bar", "ass"), "h2h": ("ass",), "h2h2": ("ass",)}
 # Druid forms by skills.txt state, for the attacks that need one (restrict 2).
 FORM_SKILLS = {"wolf": "Wearwolf", "bear": "Wearbear"}
 
 
+def mode_users(row: dict[str, str]) -> set[str]:
+    """The classes with frames for a skill's S1-S4 animation in every weapon class it can be used with
+    (one-handed ones for a shield skill), with the action event too unless it's a passive (Dodge, Avoid
+    and Evade play S1 when they trigger, so they only need the frames)."""
+    needed = SHIELD_WEAPON_CLASSES if "shld" in (row.get(f"itypea{n}") for n in (1, 2, 3)) else WEAPON_CLASSES
+    users = set()
+    for cls, modes in ANIM_MODES.items():
+        frames, events = modes.get(row["anim"], (frozenset(), frozenset()))
+        if needed <= (frames if row.get("passive") == "1" else events):
+            users.add(cls)
+    return users
+
+
 def skill_users(row: dict[str, str]) -> tuple[str, ...] | None:
     """The classes that can use a skill, or None for every class: claw skills need claws (Assassin
-    only), two-weapon skills a class that dual wields, S2-S4 skills the animation mode, and form attacks
-    a Druid form."""
+    only), two-weapon skills a class that dual wields, S1-S4 skills the animation mode (ANIM_MODES),
+    and form attacks a Druid form."""
     users = set(CLASSES)
     if any(row.get(column) in ("h2h", "h2h2") for column in ("itypea1", "itypea2", "itypea3", "itypeb1", "itypeb2", "itypeb3")):
         users &= {"ass"}
@@ -146,8 +177,8 @@ def skill_users(row: dict[str, str]) -> tuple[str, ...] | None:
     if row.get("restrict") == "2":
         # Form attacks play the form's animations, not the class's.
         users &= {"dru"}
-    elif row.get("anim") in ("S2", "S3", "S4"):
-        users &= set(SPECIAL_MODE_CLASSES)
+    elif row.get("anim") in ("S1", "S2", "S3", "S4"):
+        users &= mode_users(row)
     return None if users == set(CLASSES) else tuple(code for code in CLASSES if code in users)
 
 
@@ -348,7 +379,7 @@ def main() -> None:
           f"CLASSES = {CLASSES!r}", "", "# (skill id, name, class code)", "SKILLS = ["]
     py += [f"    ({sid}, {name!r}, {cls!r})," for sid, name, cls in skills]
     py += ["]", "", "# Active skills with a vanilla level requirement of 1.", f"STARTER_SKILLS = frozenset({sorted(starters)!r})"]
-    py += ["", "# Skills only these classes can use (claws, two weapons, the S2-S4 animations, Druid forms).",
+    py += ["", "# Skills only these classes can use (claws, two weapons, the S1-S4 animations, Druid forms).",
            "SKILL_USERS = {"]
     py += [f"    {sid}: {who!r}," for sid, who in sorted(users.items())]
     py += ["}", "", "# Druid form attacks: skill id -> the form skills (any one) it needs.", "SKILL_FORMS = {"]
