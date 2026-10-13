@@ -1,6 +1,7 @@
 // Unit tests for the parts of the plugin that don't need the game.
 
 #include "ap_client.h"
+#include "character.h"
 #include "codex.h"
 #include "command_panel.h"
 #include "config.h"
@@ -22,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <algorithm>
 #include <iterator>
 #include <map>
@@ -301,6 +303,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12);
 	EXPECT(loaded.heldPotions == state.heldPotions);
+	EXPECT(loaded.commands.empty() && loaded.checkpoint == 0 && !loaded.redeliver);
 	std::filesystem::remove_all(path.parent_path());
 }
 
@@ -441,6 +444,109 @@ void TestLifetimeCows() {
 		EXPECT(plain.cowKills[0] == 30 && shuffled.cowKills[0] == 60);
 	}
 	std::filesystem::remove_all(path.parent_path());
+}
+
+// Reward commands wait in the save, spaces and all, and leave only once they ran (#70).
+void TestSaveStatePendingCommands() {
+	const auto path = std::filesystem::temp_directory_path() / "d2rl-ap-test-commands" / "seed_slot.txt";
+	ap::SaveState state;
+	state.fillersDelivered = 9;
+	state.commands = { { 4, "gold 1200" }, { -1, "skadd Fire Bolt,1" }, { 6, "experience 5000" }, { 4, "gold 1200" } };
+	state.checkpoint = 5;
+	state.lostFrom = 2;
+	state.lostTo = 5;
+	state.redeliver = true;
+	state.redeliverMark = 1;
+	state.ran = { { 3, "gold 10" } };
+	state.lostCommands = { { -1, "skillpoints 2" } };
+	state.playerClass = 6;
+	EXPECT(state.Save(path));
+	ap::SaveState loaded;
+	EXPECT(loaded.Load(path));
+	EXPECT(loaded.commands == state.commands && loaded.ran == state.ran && loaded.lostCommands == state.lostCommands);
+	EXPECT(loaded.fillersDelivered == 9 && loaded.checkpoint == 5 && loaded.lostFrom == 2 && loaded.lostTo == 5 && loaded.redeliver
+	       && loaded.redeliverMark == 1 && loaded.playerClass == 6);
+	// Each one that ran takes its first match and is remembered as run; the rest keep their order.
+	loaded.FinishCommands({ { 4, "gold 1200" }, { -1, "skadd Fire Bolt,1" }, { 7, "gold 1" } });
+	EXPECT((loaded.commands == std::vector<ap::PendingCommand> { { 6, "experience 5000" }, { 4, "gold 1200" } }));
+	EXPECT((loaded.ran == std::vector<ap::PendingCommand> { { 3, "gold 10" }, { 4, "gold 1200" }, { -1, "skadd Fire Bolt,1" } }));
+	// A save written by an older plugin (no command lines) still loads. Its "class" was whatever
+	// character was loaded, maybe a mule, so it isn't taken as the seed's class.
+	{
+		std::ofstream old(path, std::ios::trunc);
+		old << "fillers 3\nclass 2\ncheck 5\n";
+	}
+	ap::SaveState older;
+	EXPECT(older.Load(path) && older.fillersDelivered == 3 && older.playerClass == -1 && older.checks.contains(5) && older.commands.empty());
+	// Its rewards count as kept, not as lost in a crash.
+	EXPECT(older.checkpoint == 3 && !older.DetectUncleanExit());
+	std::filesystem::remove_all(path.parent_path());
+}
+
+// A game never left (a crash) offers its rewards again with ap-redeliver (#70).
+void TestUncleanExit() {
+	ap::SaveState state;
+	state.fillersDelivered = 10;
+	state.checkpoint = 10;
+	EXPECT(!state.DetectUncleanExit());
+	// Items 10..14 went out, then D2R closed without leaving the game.
+	state.fillersDelivered = 15;
+	state.commands = { { 3, "gold 100" }, { 12, "gold 900" }, { -1, "skillpoints 1" }, { 14, "experience 70" } };
+	// Commands that ran in that game: a tree skill, and gold from an earlier item and a lost one.
+	state.ran = { { -1, "skadd Fire Bolt,1" }, { 2, "gold 50" }, { 11, "gold 400" } };
+	EXPECT(state.DetectUncleanExit());
+	EXPECT(state.lostFrom == 10 && state.lostTo == 15 && state.checkpoint == 15 && !state.redeliver && state.ran.empty());
+	EXPECT(state.lostCommands.size() == 3);
+	// Only once: the next start finds nothing new.
+	EXPECT(!state.DetectUncleanExit());
+	// Another crash right after, before ap-redeliver: the two are offered together.
+	state.fillersDelivered = 18;
+	EXPECT(state.DetectUncleanExit());
+	EXPECT(state.lostFrom == 10 && state.lostTo == 18);
+	// ap-redeliver drops the lost items' commands that never ran (they're made again) and runs
+	// the other lost ones again: the skill and the earlier item's gold, not the lost item's.
+	EXPECT(state.StartRedelivery());
+	EXPECT(state.redeliver && state.redeliverMark == 10 && state.lostCommands.empty());
+	EXPECT((state.commands == std::vector<ap::PendingCommand> { { 3, "gold 100" }, { -1, "skillpoints 1" }, { -1, "skadd Fire Bolt,1" }, { 2, "gold 50" } }));
+	EXPECT(!state.StartRedelivery());
+	// Items 10..12 are handed out again (and one's gold queued), then D2R crashes again: the
+	// redelivery starts over from 10, and the queued gold goes (it's made again).
+	state.lostFrom = 13;
+	state.commands.push_back({ 11, "gold 420" });
+	EXPECT(state.DetectUncleanExit());
+	EXPECT(state.redeliver && state.lostFrom == 10 && state.lostTo == 18);
+	EXPECT(std::ranges::none_of(state.commands, [](const ap::PendingCommand& command) { return command.item == 11; }));
+	// It finishes; leaving the game then clears it, and moves the checkpoint, so a clean exit loses nothing.
+	state.lostFrom = 18;
+	state.fillersDelivered = 20;
+	state.ran = { { 2, "gold 50" } };
+	state.Checkpoint();
+	EXPECT(state.checkpoint == 20 && state.ran.empty() && !state.redeliver && state.lostFrom == 0 && state.lostTo == 0);
+	EXPECT(!state.DetectUncleanExit());
+	// Only commands ran in a crashed game (no new items): still offered.
+	state.ran = { { -1, "skillpoints 1" } };
+	EXPECT(state.DetectUncleanExit() && state.lostFrom == state.lostTo && state.lostCommands.size() == 1);
+	EXPECT(state.StartRedelivery() && !state.redeliver && state.commands.back() == (ap::PendingCommand { -1, "skillpoints 1" }));
+	// A later loss that doesn't follow on starts its own window.
+	ap::SaveState later;
+	later.lostFrom = 1;
+	later.lostTo = 3;
+	later.checkpoint = 8;
+	later.fillersDelivered = 11;
+	EXPECT(later.DetectUncleanExit() && later.lostFrom == 8 && later.lostTo == 11);
+	ap::SaveState nothing;
+	EXPECT(!nothing.StartRedelivery());
+}
+
+// Rewards only go to a character of the seed's class (#70).
+void TestCharacterCheck() {
+	using ap::character::Verdict;
+	EXPECT(ap::character::Check(4, -1) == Verdict::Unknown);
+	EXPECT(ap::character::Check(-1, -1) == Verdict::Unknown);
+	EXPECT(ap::character::Check(4, 4) == Verdict::Match);
+	EXPECT(ap::character::Check(4, 1) == Verdict::Mismatch);
+	// A seed with no class yet goes to the first character that shows its class.
+	EXPECT(ap::character::Check(-1, 7) == Verdict::Match);
 }
 
 // Mirrors apworld/d2r_archipelago/test/test_generation.py.
@@ -1369,6 +1475,9 @@ int main() {
 	TestSaveStateRoundTrip();
 	TestMilestoneRecovery();
 	TestLifetimeCows();
+	TestSaveStatePendingCommands();
+	TestUncleanExit();
+	TestCharacterCheck();
 	TestIdsMatchApworld();
 	TestGameData();
 	TestPersonalization();

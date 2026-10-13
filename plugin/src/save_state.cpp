@@ -1,5 +1,6 @@
 #include "save_state.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -8,15 +9,26 @@
 namespace ap {
 
 // One "key value" pair per line: "check <id>", "fillers <count>", "goal 1", "level <n>",
-// "kills_<difficulty * 10 + act> <count>", "cows_<difficulty> <count>", "unique <seed>", "set <seed>".
+// "kills_<difficulty * 10 + act> <count>", "cows_<difficulty> <count>", "unique <seed>", "set <seed>",
+// "command <item> <text>" (the text runs to the end of the line).
 bool SaveState::Load(const std::filesystem::path& path) {
 	std::ifstream file(path);
 	if (!file) {
 		return false;
 	}
-	std::string key;
-	long long value = 0;
-	while (file >> key >> value) {
+	std::string line;
+	bool hasCheckpoint = false;
+	while (std::getline(file, line)) {
+		if (!line.empty() && line.back() == '\r') {
+			line.pop_back();
+		}
+		const size_t space = line.find(' ');
+		if (space == std::string::npos) {
+			continue;
+		}
+		const std::string key = line.substr(0, space);
+		const std::string rest = line.substr(space + 1);
+		const long long value = std::strtoll(rest.c_str(), nullptr, 10);
 		if (key == "check") {
 			checks.insert(value);
 		} else if (key == "fillers") {
@@ -25,7 +37,8 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			goalReached = value != 0;
 		} else if (key == "level") {
 			level = static_cast<int>(value);
-		} else if (key == "class") {
+		} else if (key == "seedclass") {
+			// Not "class": older plugins wrote whichever character was loaded there, mules too.
 			playerClass = static_cast<int>(value);
 		} else if (key.rfind("kills_", 0) == 0) {
 			kills[std::atoi(key.c_str() + 6)] = static_cast<int>(value);
@@ -53,7 +66,26 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			portalTomeGiven = value != 0;
 		} else if (key == "heldpotion") {
 			heldPotions.push_back(static_cast<uint32_t>(value));
+		} else if (key == "command" || key == "ran" || key == "lostcommand") {
+			if (const size_t gap = rest.find(' '); gap != std::string::npos && gap + 1 < rest.size()) {
+				(key == "command" ? commands : key == "ran" ? ran : lostCommands).push_back({ value, rest.substr(gap + 1) });
+			}
+		} else if (key == "redelivermark") {
+			redeliverMark = static_cast<size_t>(value);
+		} else if (key == "checkpoint") {
+			checkpoint = static_cast<size_t>(value);
+			hasCheckpoint = true;
+		} else if (key == "lostfrom") {
+			lostFrom = static_cast<size_t>(value);
+		} else if (key == "lostto") {
+			lostTo = static_cast<size_t>(value);
+		} else if (key == "redeliver") {
+			redeliver = value != 0;
 		}
+	}
+	// A save from before checkpoints: what it delivered counts as kept, not lost.
+	if (!hasCheckpoint) {
+		checkpoint = fillersDelivered;
 	}
 	return true;
 }
@@ -69,7 +101,7 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		if (!file) {
 			return false;
 		}
-		file << "fillers " << fillersDelivered << "\ngoal " << (goalReached ? 1 : 0) << "\nlevel " << level << "\nclass " << playerClass << "\n";
+		file << "fillers " << fillersDelivered << "\ngoal " << (goalReached ? 1 : 0) << "\nlevel " << level << "\nseedclass " << playerClass << "\n";
 		for (const int64_t check : checks) {
 			file << "check " << check << "\n";
 		}
@@ -98,12 +130,108 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		for (const uint32_t code : heldPotions) {
 			file << "heldpotion " << code << "\n";
 		}
+		auto writeCommands = [&](const char* key, const std::vector<PendingCommand>& list) {
+			for (const auto& command : list) {
+				// One line each: a line break would split it.
+				if (!command.text.empty() && command.text.find_first_of("\r\n") == std::string::npos) {
+					file << key << " " << command.item << " " << command.text << "\n";
+				}
+			}
+		};
+		writeCommands("command", commands);
+		writeCommands("ran", ran);
+		writeCommands("lostcommand", lostCommands);
+		file << "checkpoint " << checkpoint << "\nlostfrom " << lostFrom << "\nlostto " << lostTo << "\nredeliver " << (redeliver ? 1 : 0)
+		     << "\nredelivermark " << redeliverMark << "\n";
 		if (!file.flush()) {
 			return false;
 		}
 	}
 	std::filesystem::rename(temporary, path, error);
 	return !error;
+}
+
+bool SaveState::InLostRange(const PendingCommand& command) const {
+	return command.item >= 0 && static_cast<size_t>(command.item) >= lostFrom && static_cast<size_t>(command.item) < lostTo;
+}
+
+void SaveState::RequeueLostCommands() {
+	// Commands of the items handed out again are made again; the rest (tree skills, refunds,
+	// earlier items' gold) run once more as they were.
+	std::erase_if(commands, [&](const PendingCommand& command) { return InLostRange(command); });
+	for (auto& command : lostCommands) {
+		if (!InLostRange(command)) {
+			commands.push_back(std::move(command));
+		}
+	}
+	lostCommands.clear();
+}
+
+bool SaveState::DetectUncleanExit() {
+	const bool delivered = checkpoint < fillersDelivered;
+	const bool redelivered = redeliver && lostFrom > redeliverMark;
+	if (!delivered && ran.empty() && !redelivered) {
+		checkpoint = fillersDelivered;
+		return false;
+	}
+	// A redelivery under way starts again from where the character was last saved.
+	if (redeliver) {
+		lostFrom = redeliverMark;
+	}
+	if (delivered) {
+		const bool open = lostFrom < lostTo;
+		if (!open) {
+			lostFrom = checkpoint;
+			lostTo = fillersDelivered;
+		} else if (lostTo == checkpoint) {
+			// Right after the earlier loss (no game was left in between): one range.
+			lostTo = fillersDelivered;
+		} else if (!redeliver) {
+			// An older loss nobody asked for again gives way to this one.
+			lostFrom = checkpoint;
+			lostTo = fillersDelivered;
+			lostCommands.clear();
+		}
+		// Otherwise a redelivery under way keeps its range; this loss can't be held next to it.
+	}
+	lostCommands.insert(lostCommands.end(), std::make_move_iterator(ran.begin()), std::make_move_iterator(ran.end()));
+	ran.clear();
+	if (redeliver) {
+		RequeueLostCommands();
+	}
+	checkpoint = fillersDelivered;
+	redeliverMark = lostFrom;
+	return true;
+}
+
+void SaveState::Checkpoint() {
+	checkpoint = fillersDelivered;
+	ran.clear();
+	// A finished redelivery is kept until now, so a crash before this rewinds it too.
+	if (redeliver && lostFrom >= lostTo) {
+		redeliver = false;
+		lostFrom = lostTo = 0;
+	}
+	redeliverMark = lostFrom;
+}
+
+bool SaveState::StartRedelivery() {
+	if (redeliver || (lostFrom >= lostTo && lostCommands.empty())) {
+		return false;
+	}
+	RequeueLostCommands();
+	redeliver = lostFrom < lostTo;
+	redeliverMark = lostFrom;
+	return true;
+}
+
+void SaveState::FinishCommands(const std::vector<PendingCommand>& done) {
+	for (const auto& command : done) {
+		if (const auto found = std::ranges::find(commands, command); found != commands.end()) {
+			commands.erase(found);
+			ran.push_back(command);
+		}
+	}
 }
 
 } // namespace ap
