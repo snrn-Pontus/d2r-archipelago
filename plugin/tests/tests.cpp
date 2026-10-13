@@ -636,6 +636,40 @@ void TestStarterKit() {
 	EXPECT(ap::panel::Find(ap::panel::Debug(), "debug-kit") != nullptr);
 }
 
+// ap-debug kills and cows: one short of the first check the save hasn't got.
+void TestDebugCounts() {
+	using ap::ids::CowLocation;
+	using ap::ids::KillLocation;
+	using ap::milestones::CowsBeforeNext;
+	using ap::milestones::KillsBeforeNext;
+	ap::SaveState save;
+	EXPECT(KillsBeforeNext(save, 0, 0) == 99);
+	save.checks = { KillLocation(1, 2, 0) };
+	EXPECT(KillsBeforeNext(save, 1, 2) == 249);
+	// Only that act and difficulty.
+	EXPECT(KillsBeforeNext(save, 0, 2) == 99 && KillsBeforeNext(save, 1, 3) == 99);
+	// A gap: the 250 check is missing though 500 is in.
+	save.checks = { KillLocation(0, 0, 0), KillLocation(0, 0, 2) };
+	EXPECT(KillsBeforeNext(save, 0, 0) == 249);
+	save.checks.insert(KillLocation(0, 0, 1));
+	EXPECT(KillsBeforeNext(save, 0, 0) == -1);
+	EXPECT(KillsBeforeNext(save, 3, 0) == -1 && KillsBeforeNext(save, 0, 5) == -1 && KillsBeforeNext(save, -1, 0) == -1);
+	// The next kill at that count reaches the check.
+	save.checks.clear();
+	const int kills = KillsBeforeNext(save, 2, 4);
+	EXPECT(ap::milestones::KillChecks(2, 4, kills).empty() && ap::milestones::KillChecks(2, 4, kills + 1) == std::vector<int64_t> { KillLocation(2, 4, 0) });
+
+	EXPECT(CowsBeforeNext(save, 1) == static_cast<int>(ap::ids::CowKills) - 1);
+	save.checks = { CowLocation(1, 2) };
+	EXPECT(CowsBeforeNext(save, 1) == -1 && CowsBeforeNext(save, 0) == 99);
+	EXPECT(CowsBeforeNext(save, 3) == -1);
+	// ap-debug kills 260 sets a count past two thresholds, both recovered on the next bind.
+	save.checks.clear();
+	save.kills[0] = 260;
+	EXPECT(ap::milestones::Missing(save, true, false).size() == 2);
+	EXPECT(ap::panel::Find(ap::panel::Debug(), "debug-kills-260")->action == "ap-debug kills 260");
+}
+
 void TestCharacterCheck() {
 	using ap::character::Verdict;
 	EXPECT(ap::character::Check(4, -1) == Verdict::Unknown);
@@ -1553,6 +1587,11 @@ void TestCommandPanel() {
 		EXPECT(ap::panel::Find(*panel, "nothing") == nullptr);
 		EXPECT(std::string(panel->name) == std::string("archipelago/") + panel->localId);
 	}
+	// The debug panel fits on screen at five columns of twelve; more need checking in game.
+	EXPECT(ap::panel::Debug().columns.size() <= 5);
+	for (const auto& column : ap::panel::Debug().columns) {
+		EXPECT(column.buttons.size() <= 12);
+	}
 	// Debug buttons only run from the debug panel.
 	EXPECT(ap::panel::Find(ap::panel::Main(), "debug-god") == nullptr);
 	EXPECT(ap::panel::Find(ap::panel::Debug(), "debug-god") != nullptr);
@@ -1628,6 +1667,7 @@ int main() {
 	TestUncleanExit();
 	TestSessionLog();
 	TestStarterKit();
+	TestDebugCounts();
 	TestSkillTablePrerequisite();
 	TestCharacterCheck();
 	TestIdsMatchApworld();

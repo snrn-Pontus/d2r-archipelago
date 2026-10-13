@@ -128,4 +128,27 @@ inline auto Missing(const SaveState& save, bool killChecks, bool cowChecks) -> s
 	return missing;
 }
 
+// For the debug tools: the count one short of the first kill-count check an act
+// on a difficulty hasn't got in the save, so the next kill sends it; -1 if it
+// has them all.
+inline auto KillsBeforeNext(const SaveState& save, int difficulty, int act) -> int {
+	if (difficulty < 0 || difficulty >= Difficulties || act < 0 || act >= KillActs) {
+		return -1;
+	}
+	for (uint32_t index = 0; index < std::size(ids::KillCounts); ++index) {
+		if (!save.checks.contains(ids::KillLocation(static_cast<uint32_t>(difficulty), static_cast<uint32_t>(act), index))) {
+			return static_cast<int>(ids::KillCounts[index]) - 1;
+		}
+	}
+	return -1;
+}
+
+// The same for the cow check on a difficulty.
+inline auto CowsBeforeNext(const SaveState& save, int difficulty) -> int {
+	if (difficulty < 0 || difficulty >= Difficulties || save.checks.contains(ids::CowLocation(static_cast<uint32_t>(difficulty), 2))) {
+		return -1;
+	}
+	return static_cast<int>(ids::CowKills) - 1;
+}
+
 } // namespace ap::milestones

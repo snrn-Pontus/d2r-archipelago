@@ -489,6 +489,8 @@ struct UnsavedState {
 	uint64_t      serial = 0;
 };
 std::map<std::filesystem::path, UnsavedState> gUnsaved;
+// ap-debug savefail on: every save fails as if the file were read-only.
+std::atomic<bool>     gDebugSaveFails = false;
 
 // Writes one copy of a save. True once it's on disk, or a newer one is.
 auto WriteSave(const ap::SaveState& state, const std::filesystem::path& path, uint64_t serial) -> bool {
@@ -497,7 +499,7 @@ auto WriteSave(const ap::SaveState& state, const std::filesystem::path& path, ui
 	if (serial < written) {
 		return true;
 	}
-	if (!state.Save(path)) {
+	if (gDebugSaveFails || !state.Save(path)) {
 		return false;
 	}
 	written = serial;
@@ -4764,7 +4766,7 @@ void LogState() {
 		for (const int64_t check : gSave.checks) {
 			unsent += server.contains(check) ? 0 : 1;
 		}
-		lines.push_back("save: " + (gSavePath.empty() ? std::string("none bound") : gSavePath.filename().string()) + (gSaveFailed ? " (SAVING FAILS)" : "")
+		lines.push_back("save: " + (gSavePath.empty() ? std::string("none bound") : gSavePath.filename().string()) + (gSaveFailed ? " (SAVING FAILS)" : "") + (gDebugSaveFails ? " (ap-debug savefail on)" : "")
 		                + ", bound session " + std::to_string(gBoundSession) + ", " + std::to_string(gSave.checks.size()) + " checks ("
 		                + std::to_string(unsent) + " not on the server, " + std::to_string(gSent.size()) + " sent this session), "
 		                + std::to_string(gUnbound.size()) + " found while unbound, goal " + (gSave.goalReached ? "reached" : "not reached")
@@ -4913,8 +4915,68 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 		Reply("ap-debug: the plugin's state is in the log (d2rloader\\archipelago\\logs).");
 		return D2RL::ConsoleCommandResult::Handled;
 	}
+	// ap-debug kills [n] / cows [n]: sets the save's kill count for the act you're in (or
+	// the difficulty's cows). Without n, one short of the next check, so the next kill sends
+	// it. With n, the count is saved without its checks, as a crash right after the kill
+	// leaves it; ap-reconnect then recovers them (#78).
+	if ((args[0] == "kills" || args[0] == "cows") && args.size() <= 2) {
+		const bool cows = args[0] == "cows";
+		std::string answer;
+		{
+			std::lock_guard lock(gMutex);
+			const int difficulty = std::clamp(gDifficulty, 0, 2);
+			const int act = std::clamp(gAct, 0, 4);
+			const std::string where = std::string(DifficultyNames[difficulty]) + (cows ? std::string() : std::string(" ") + ActNames[act]);
+			const int next = cows ? ap::milestones::CowsBeforeNext(gSave, difficulty) : ap::milestones::KillsBeforeNext(gSave, difficulty, act);
+			if (gBoundSession == 0) {
+				answer = "ap-debug: connect first; the counts are in the seed's save.";
+			} else if (!(cows ? gSlots.cowLevelChecks : gSlots.killCountChecks)) {
+				answer = cows ? "ap-debug: this seed has no cow check (cow_level_checks)." : "ap-debug: this seed has no kill-count checks (kill_count_checks).";
+			} else if (args.size() == 1 && next < 0) {
+				answer = "ap-debug: " + where + " has all its " + (cows ? "cow" : "kill-count") + " checks already.";
+			} else {
+				const int count = args.size() == 2 ? std::clamp(std::atoi(args[1].c_str()), 0, 100000) : next;
+				(cows ? gSave.cowKills[difficulty] : gSave.kills[difficulty * 10 + act]) = count;
+				SaveNow();
+				answer = "ap-debug: " + where + (cows ? " cows" : " kills") + " set to " + std::to_string(count)
+				       + (args.size() == 1 ? "; the next one sends a check." : ", saved without checks; Reconnect recovers any it reached.");
+			}
+		}
+		Reply(answer);
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	// ap-debug savefail on|off: every save fails as if the file were read-only, until off (#75).
+	if (args[0] == "savefail" && args.size() == 2 && (args[1] == "on" || args[1] == "off")) {
+		gDebugSaveFails = args[1] == "on";
+		{
+			std::lock_guard lock(gMutex);
+			// Fails (or works) at once rather than at the next save; off retries within a few seconds anyway.
+			if (!gSavePath.empty()) {
+				SaveNow();
+			}
+		}
+		Log("Archipelago: ap-debug savefail " + args[1] + ".");
+		Reply(args[1] == "on" ? "ap-debug: saves fail now, as if the save were read-only; rewards should pause."
+		                      : "ap-debug: saves work again; paused rewards should arrive.");
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	// ap-debug crash: ends D2R at once, like a crash or Task Manager, for the "no normal
+	// exit" and lost-rewards tests. It needs a second crash within 10 seconds.
+	if (args[0] == "crash") {
+		static Clock::time_point armed;
+		const auto now = Clock::now();
+		if (armed == Clock::time_point() || now - armed > std::chrono::seconds(10)) {
+			armed = now;
+			Reply("ap-debug: crash again within 10 seconds to end D2R without a normal exit.");
+			return D2RL::ConsoleCommandResult::Handled;
+		}
+		Log("Archipelago: ap-debug crash: ending D2R now.");
+		TerminateProcess(GetCurrentProcess(), 3);
+		return D2RL::ConsoleCommandResult::Handled;
+	}
 	gContext->WriteConsoleMessage("Usage: ap-debug [on|off], ap-debug kit, ap-debug give <item code> [count] [sockets], ap-debug spawn <item code> [unique], "
-	                              "ap-debug mark [text], ap-debug state, ap-debug banner [important|trap|check] <text>, ap-debug overlay");
+	                              "ap-debug mark [text], ap-debug state, ap-debug kills [n], ap-debug cows [n], ap-debug savefail on|off, ap-debug crash, "
+	                              "ap-debug banner [important|trap|check] <text>, ap-debug overlay");
 	return D2RL::ConsoleCommandResult::InvalidArguments;
 }
 
@@ -5196,7 +5258,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-missing", CommandMissing, "List the checks left in this act: ap-missing [all].")
 	                   && context->RegisterConsoleCommand("ap-panel", CommandPanel, "Open or close the Archipelago command panel (F9).")
 	                   && context->RegisterConsoleCommand("ap-repairs", CommandRepairs, "Experimental repairs with Merchant Lock: ap-repairs on|off; use the NPC repair panel.")
-	                   && context->RegisterConsoleCommand("ap-debug", CommandDebug, "Debug tools: ap-debug on|off, ap-debug opens the debug panel (F10), ap-debug kit, give <code> [count] [sockets], spawn <code> [unique], mark [text], state.")
+	                   && context->RegisterConsoleCommand("ap-debug", CommandDebug, "Debug tools: ap-debug on|off, ap-debug opens the debug panel (F10), ap-debug kit, give <code> [count] [sockets], spawn <code> [unique], mark [text], state, kills [n], cows [n], savefail on|off, crash.")
 	                   && context->RegisterConsoleCommand("ap-ui", CommandUi, "Send a D2R UI message: ap-ui <target> <command> [text].");
 	if (!commands) {
 		LogFailure("Archipelago: couldn't register console commands.");
