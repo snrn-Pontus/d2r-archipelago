@@ -3,8 +3,10 @@
 // Fallback quest detection. D2RLoader's QuestCompleted event didn't fire in
 // testing (Den of Evil on 1.3.1-beta), so quests also complete from signals
 // the plugin can see: the quest's boss dying, its quest item turning up in
-// your inventory, or reaching the area the quest leads to. Ids are from
-// D2R 3.3 (monstats *hcIdx, item codes, level ids).
+// your inventory, or reaching the area the quest leads to. The plugin logs
+// which source completed each quest, to see whether the event works now
+// (PLAYTEST.md section 2c). Ids are from D2R 3.3 (monstats *hcIdx, item
+// codes, level ids).
 
 #include <D2RLPlugin/item.h>
 
