@@ -11,6 +11,7 @@
 #include "game_data.h"
 #include "ids.h"
 #include "loot.h"
+#include "milestones.h"
 #include "notify.h"
 #include "personalize.h"
 #include "quest_triggers.h"
@@ -717,6 +718,7 @@ void BindSession(uint64_t session) {
 	bool unboundGoal = false;
 	std::vector<ap::HintEntry> ownHints;
 	std::vector<int64_t> otherHints;
+	std::vector<int64_t> counted;
 	{
 		std::lock_guard lock(gMutex);
 		gSave = {};
@@ -755,6 +757,9 @@ void BindSession(uint64_t session) {
 				otherHints.push_back(location);
 			}
 		}
+		// Kill and cow counts saved at or past a threshold whose check never made
+		// it into the save (nor to the server), so no further kill is needed.
+		counted = ap::milestones::Missing(gSave, slots.killCountChecks, slots.cowLevelChecks);
 		gSent.clear();
 		gGoalSent = false;
 		gWarnedActs.clear();
@@ -779,6 +784,10 @@ void BindSession(uint64_t session) {
 	}
 	if (level > 0) {
 		CheckLevelMilestones(level);
+	}
+	if (!counted.empty()) {
+		Log("Archipelago: " + std::to_string(counted.size()) + " kill or cow count checks recovered from the save.");
+		AddChecks(counted);
 	}
 	Log("Archipelago: bound to seed " + seed + " slot " + slot + ", " + std::to_string(unsent) + " checks not on the server yet, "
 	    + std::to_string(ownHints.size() + otherHints.size()) + " hints sent again.");
@@ -3335,10 +3344,12 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 		const int act = ap::data::LevelActs[event->levelId];
 		if (act < 5) {
 			const int count = ++gSave.kills[difficulty * 10 + act];
+			// Every threshold reached and not yet in the save, so a count saved past
+			// one without its check (the game stopped in between) still gets it.
 			bool milestone = false;
-			for (uint32_t index = 0; index < std::size(ap::ids::KillCounts); ++index) {
-				if (count == static_cast<int>(ap::ids::KillCounts[index])) {
-					gCollectionQueue.push_back(ap::ids::KillLocation(static_cast<uint32_t>(difficulty), static_cast<uint32_t>(act), index));
+			for (const int64_t location : ap::milestones::KillChecks(difficulty, act, count)) {
+				if (!gSave.checks.contains(location)) {
+					gCollectionQueue.push_back(location);
 					milestone = true;
 				}
 			}
@@ -3350,11 +3361,17 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 	if (monster == ap::data::CowKingMonster) {
 		gCowQueue.insert(difficulty * 10 + 1);
 	} else if (monster == ap::data::CowMonster) {
-		int& cows = gBoundSession != 0 ? gSave.cowKills[difficulty] : gCowKills[difficulty];
-		if (++cows == static_cast<int>(ap::ids::CowKills)) {
-			gCowQueue.insert(difficulty * 10 + 2);
+		const bool bound = gBoundSession != 0;
+		int& cows = bound ? gSave.cowKills[difficulty] : gCowKills[difficulty];
+		bool milestone = false;
+		// A seed without cow checks never saves the check, so don't queue (and save) it on every cow.
+		for (const int64_t location : ap::milestones::CowChecks(difficulty, ++cows)) {
+			if ((!bound || gSlots.cowLevelChecks) && !(bound ? gSave.checks : gUnbound).contains(location)) {
+				gCowQueue.insert(difficulty * 10 + 2);
+				milestone = true;
+			}
 		}
-		if (gBoundSession != 0 && cows % 25 == 0) {
+		if (bound && (milestone || cows % 25 == 0)) {
 			gSave.Save(gSavePath);
 		}
 	}

@@ -244,6 +244,13 @@ Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: 
 - [ ] Buying an **Archipelago Parcel** from Akara (2,500 gold) sends a check and the parcel disappears. The
       fourth one is refunded.
 - [ ] 100 kills in Act I sends "Kill 100 monsters"; finding your first unique sends "Find 1 Unique".
+- [ ] Kill-count recovery (#78), the state a crash right after the 100th kill leaves: before any Normal
+      Act I kill check, quit D2R and edit the seed's save in `<D2R>\d2rloader\archipelago\` so it reads
+      `kills_0 260` (`kills_<difficulty * 10 + act>`). Start again and connect: the log says "2 kill or cow
+      count checks recovered from the save" and "Kill 100 monsters" and "Kill 250 monsters" go out with no
+      extra kill. A reconnect (`ap-disconnect`, then connect) or another kill doesn't send or banner them again.
+      Try the same with `kills_1` on a seed where Act II is still locked: the checks show "(held)" and go
+      out with the Act II Key.
 - [ ] Rewards don't count: a Random Unique from the server doesn't count toward "Find 1 Unique".
 - [ ] Side areas (#31): `ap-missing` (or the Ledger) lists five "Normal: Enter <side area>" checks. Walking
       into one of them (e.g. the Mausoleum or Cave Level 2) sends its check; a side area the seed didn't
@@ -433,6 +440,9 @@ These need a character that has beaten Baal, so test them during a real run.
 
 - [ ] Secret Cow Level (on difficulties before the goal): entering it, The Cow King, and 100 cows each send
       a check.
+- [ ] Cow recovery (#78): with D2R closed, set `cows_<difficulty> 100` in the seed's save (the 100-cow check
+      not yet sent). Start again and connect: the 100-cow check goes out once, without another cow. Disconnect
+      from the server before the 100th cow and reconnect after it: the check also goes out, once.
 - [ ] With `merchant_lock`: the cow portal needs a Tome of Town Portal, so logic now waits for Merchant
       Access. Check whether a tome ever drops or can be had without a merchant (new characters only have
       a scroll); if it can't, the rule is right.
