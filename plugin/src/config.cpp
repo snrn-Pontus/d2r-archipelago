@@ -69,6 +69,8 @@ auto ParseConfig(const std::string& text, std::vector<std::string>* warnings) ->
 			config.autoConnect = value == "true";
 		} else if (key == "debug_tools") {
 			config.debugTools = value == "true";
+		} else if (key == "repair_only") {
+			config.repairOnly = value == "true";
 		} else if (key == "notifications") {
 			config.notifications = value != "false";
 		} else if (key == "banner_sounds") {
@@ -118,6 +120,8 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "auto_connect = " << (config.autoConnect ? "true" : "false") << "\n"
 	    << "# Set by ap-debug on/off: the debug panel (F10) for testing.\n"
 	    << "debug_tools = " << (config.debugTools ? "true" : "false") << "\n"
+	    << "# Experimental repairs while Merchant Access is locked; set with ap-repairs on/off.\n"
+	    << "repair_only = " << (config.repairOnly ? "true" : "false") << "\n"
 	    << "# On-screen banners for items received and checks sent.\n"
 	    << "notifications = " << (config.notifications ? "true" : "false") << "\n"
 	    << "# Game sounds with the gold, red and white banners.\n"

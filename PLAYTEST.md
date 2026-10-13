@@ -383,6 +383,42 @@ on `death_link: true` in both.
 
 These need a character that has beaten Baal, so test them during a real run.
 
+### Experimental repairs with Merchant Lock (#5)
+
+This prototype keeps the stock vendor panel blocked and routes only D2R's native
+`VendorPanelMessage:RepairAll` from a separate modal. Whether the native handler
+works with its vendor panel closed is **not yet verified**. A successful dispatch
+log only means the message was routed, not that repairs happened. It does not
+change durability or charge gold itself. There are no native hooks or new NPCs.
+
+Use a disposable character with damaged non-ethereal equipment and enough gold,
+in a seed with `merchant_lock: true`, before receiving Merchant Access.
+
+- [ ] Run `ap-repairs on` in the D2RLoader console (or set `repair_only = true`
+      in the plugin config and reload). Talk to Charsi and choose Trade/Repair:
+      the shop stays closed and an Archipelago Repairs modal appears.
+- [ ] Click **Repair All (NPC Prices)**. Inspect durability, broken-item recovery,
+      charges, throwing quantities and gold before/after; compare with ordinary
+      native repairs. Insufficient gold and ethereal gear retain native rules.
+- [ ] Try Akara/Gheed: they must not gain repair abilities or open a shop. The
+      prototype cannot identify the NPC through the SDK and relies on native
+      validation, so this check is required before enabling it by default.
+- [ ] Buying, selling, gambling, Shift/Ctrl-clicks, dragging, controller shortcuts
+      and repeated panel toggles never bypass Merchant Lock. Test HD/classic
+      graphics and keyboard/controller separately; unsupported routing should
+      leave shopping blocked.
+- [ ] Double-click Repair All: one request at most. Close/Escape, wait 30 seconds,
+      leave town, die, switch game/slot, or run `ap-repairs off`: an old repair
+      offer no longer works. Talk to the blacksmith again for another offer.
+- [ ] Receive Merchant Access: the ordinary vendor opens normally. Run
+      `ap-repairs off` to restore the original behavior; the setting persists.
+
+If no modal appears, record the `blocked vendor panel` / `repair offer failed`
+log lines. If gear stays damaged, record `native RepairAll dispatch result` and
+the UI messages around the NPC interaction. Keep the feature off until this
+closed-panel route is proven; opening the shop as a fallback would defeat the
+lock. A loader API for native NPC repair/context would be the next approach.
+
 - [ ] Secret Cow Level (on difficulties before the goal): entering it, The Cow King, and 100 cows each send
       a check.
 - [ ] With `merchant_lock`: the cow portal needs a Tome of Town Portal, so logic now waits for Merchant

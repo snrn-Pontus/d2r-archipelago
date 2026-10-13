@@ -4,6 +4,7 @@
 #include "codex.h"
 #include "command_panel.h"
 #include "config.h"
+#include "repairs.h"
 #include "game_data.h"
 #include "ids.h"
 #include "loot.h"
@@ -120,9 +121,13 @@ void TestConfigRoundTrip() {
 	config.codexUnique = 500;
 	config.oskillProperty = 300;
 	config.debugTools = true;
+	config.repairOnly = true;
+	EXPECT(!ap::ParseConfig("").repairOnly);
 	EXPECT(!ap::ParseConfig("").debugTools);
 	const ap::Config parsed = ap::ParseConfig(ap::FormatConfig(config));
 	EXPECT(parsed.debugTools);
+	EXPECT(parsed.repairOnly);
+	EXPECT(!ap::ParseConfig("repair_only = false").repairOnly);
 	EXPECT(ap::ParseConfig("").notifications);
 	EXPECT(ap::ParseConfig("").statusLine && ap::ParseConfig("").statusPosition == "top-left");
 	config.statusLine = false;
@@ -901,7 +906,7 @@ void TestPersonalization() {
 
 void TestCommandPanel() {
 	std::set<std::string> ids;
-	for (const auto* panel : { &ap::panel::Main(), &ap::panel::Debug() }) {
+	for (const auto* panel : { &ap::panel::Main(), &ap::panel::Debug(), &ap::panel::Repairs() }) {
 		const auto layout = nlohmann::json::parse(ap::panel::Layout(*panel));
 		EXPECT(layout["type"] == "Panel" && layout["name"] == panel->name);
 		std::set<std::string> names;
@@ -942,8 +947,33 @@ void TestCommandPanel() {
 	EXPECT((ap::panel::SplitAction("!a; !b c") == std::vector<std::string_view> { "!a", "!b c" }));
 }
 
+void TestRepairOffers() {
+	using namespace std::chrono;
+	using ap::repairs::Offer;
+	const auto now = Offer::Clock::time_point {} + seconds(100);
+	Offer offer;
+	EXPECT(!offer.Take(true, now));
+	offer.Begin(now);
+	EXPECT(!offer.Ready(false, now));
+	EXPECT(offer.Take(true, now + seconds(1)));
+	EXPECT(!offer.Take(true, now + seconds(2))); // Double clicks cannot charge twice.
+	offer.Begin(now);
+	EXPECT(!offer.Take(true, now + seconds(30))); // Expired NPC interaction.
+	offer.Begin(now);
+	EXPECT(!offer.Take(false, now)); // Death, leaving town, disabling or unlocking.
+	EXPECT(!offer.Take(true, now));
+	offer.Begin(now);
+	offer.Cancel(); // Game/slot changes and closing the modal invalidate it.
+	EXPECT(!offer.Ready(true, now));
+	EXPECT(ap::repairs::IsVendorPanel("\"VendorPanelLayout\""));
+	EXPECT(ap::repairs::IsVendorPanel("VendorPanelLayoutHD"));
+	EXPECT(!ap::repairs::IsVendorPanel("archipelago/RepairPanel"));
+	EXPECT(!ap::repairs::IsVendorPanel("PlayerInventoryPanel"));
+}
+
 int main() {
 	TestCommandPanel();
+	TestRepairOffers();
 	TestQuestTriggers();
 	TestCodexLevels();
 	TestTableRoundTrip();

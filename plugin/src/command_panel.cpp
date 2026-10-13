@@ -132,6 +132,20 @@ const Panel DebugPanel {
 	.gap     = 14,
 };
 
+constexpr std::array RepairButtons {
+	Button { "repair-all", "Repair All (NPC Prices)", "ap-repairs all" },
+};
+constexpr std::array RepairColumns { Column { "", RepairButtons } };
+const Panel RepairPanel {
+	.localId = "RepairPanel",
+	.name    = "archipelago/RepairPanel",
+	.path    = "data/global/ui/layouts/archipelago/RepairPanelhd.json",
+	.title   = "Repairs",
+	.help    = "Merchant Access is locked. Repairs cost gold.",
+	.columns = RepairColumns,
+	.gap     = 30,
+};
+
 // ModalButton is 531x102.
 constexpr int ButtonWidth = 531, ButtonHeight = 102, HeadingHeight = 80;
 
@@ -164,6 +178,10 @@ auto Main() -> const Panel& {
 
 auto Debug() -> const Panel& {
 	return DebugPanel;
+}
+
+auto Repairs() -> const Panel& {
+	return RepairPanel;
 }
 
 auto Find(const Panel& panel, std::string_view id) -> const Button* {

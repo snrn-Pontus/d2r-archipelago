@@ -48,6 +48,7 @@ struct Panel {
 
 auto Main() -> const Panel&;
 auto Debug() -> const Panel&;
+auto Repairs() -> const Panel&;
 
 // The button with this id on the panel, or nullptr.
 auto Find(const Panel& panel, std::string_view id) -> const Button*;
