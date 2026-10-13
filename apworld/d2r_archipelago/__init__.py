@@ -172,9 +172,9 @@ class D2RWorld(World):
                     add(acts[difficulty * len(ACTS) + act], quest_location_name(difficulty, name))
         if self.options.superunique_checks:
             for difficulty in range(self.options.goal.value + 1):
-                for _superunique_id, act, name in SUPERUNIQUES:
+                for _superunique_id, act, _name, label in SUPERUNIQUES:
                     if difficulty * len(ACTS) + act < self.act_count:
-                        add(acts[difficulty * len(ACTS) + act], superunique_location_name(difficulty, name))
+                        add(acts[difficulty * len(ACTS) + act], superunique_location_name(difficulty, label))
         if self.options.cow_level_checks:
             # The cow portal opens once Baal is dead, so only difficulties finished before the goal.
             for difficulty in range(self.options.goal.value):

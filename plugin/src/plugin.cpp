@@ -2374,7 +2374,9 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		if (chance > 0 && IsNewCheck(location) && static_cast<int>(HintRandom()() % 100) < chance) {
 			std::string name = "the superunique";
 			for (const auto& entry : ap::data::SuperUniques) {
-				name = entry.id == kill % 100 ? entry.name : name;
+				// The label is the name the game shows, then the area in brackets.
+				const std::string_view label = entry.label;
+				name = entry.id == kill % 100 ? std::string(label.substr(0, label.find(" ("))) : name;
 			}
 			std::lock_guard lock(gMutex);
 			gHintQueue.push_back("A torn page falls from " + name + ":");

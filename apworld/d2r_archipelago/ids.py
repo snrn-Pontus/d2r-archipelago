@@ -159,8 +159,8 @@ for level in range(LEVEL_STEP, LEVEL_CAPS[-1] + 1, LEVEL_STEP):
     location_name_to_id[level_location_name(level)] = LOCATION_BASE + 2000 + level
 # Superunique kills: LOCATION_BASE + 3000 + difficulty * 100 + superunique id.
 for difficulty in range(3):
-    for superunique_id, _act, name in SUPERUNIQUES:
-        location_name_to_id[superunique_location_name(difficulty, name)] = LOCATION_BASE + 3000 + difficulty * 100 + superunique_id
+    for superunique_id, _act, _name, label in SUPERUNIQUES:
+        location_name_to_id[superunique_location_name(difficulty, label)] = LOCATION_BASE + 3000 + difficulty * 100 + superunique_id
 # Collections, once per seed: runes 5000 + rune number, gems 5100 + index, sets 5200 + index,
 # special items 5300 + index. Cow level: 5400 + difficulty * 10 + check.
 for number, name in RUNES:

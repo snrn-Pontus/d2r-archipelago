@@ -15,8 +15,8 @@ class TestDefaults(D2RTestBase):
         self.assertEqual(world.location_name_to_id["Normal: Enter Tristram"], LOCATION_BASE + 1038)
         self.assertEqual(world.location_name_to_id["Hell: Enter The Worldstone Chamber"], LOCATION_BASE + 1532)
         self.assertEqual(world.location_name_to_id["Reach Character Level 30"], LOCATION_BASE + 2030)
-        self.assertEqual(world.location_name_to_id["Normal: Kill Bishibosh"], LOCATION_BASE + 3000)
-        self.assertEqual(world.location_name_to_id["Hell: Kill Frozenstein"], LOCATION_BASE + 3259)
+        self.assertEqual(world.location_name_to_id["Normal: Kill Bishibosh (Cold Plains)"], LOCATION_BASE + 3000)
+        self.assertEqual(world.location_name_to_id["Hell: Kill Frozenstein (Frozen River)"], LOCATION_BASE + 3259)
         self.assertEqual(world.location_name_to_id["Find Zod Rune"], LOCATION_BASE + 5033)
         self.assertEqual(world.location_name_to_id["Find Perfect Skull"], LOCATION_BASE + 5134)
         self.assertEqual(world.location_name_to_id["Complete Civerb's Vestments"], LOCATION_BASE + 5200)
@@ -180,9 +180,9 @@ class TestShortGame(D2RTestBase):
         self.assertIn("Reach Character Level 10", names)
         self.assertNotIn("Reach Character Level 15", names)
         self.assertIn("Defeat Duriel", names)
-        self.assertIn("Normal: Kill Ancient Kaa the Soulless", names)
-        self.assertNotIn("Normal: Kill Stormtree", names)
-        self.assertNotIn("Nightmare: Kill Bishibosh", names)
+        self.assertIn("Normal: Kill Ancient Kaa the Soulless (Tal Rasha's Tomb)", names)
+        self.assertNotIn("Normal: Kill Stormtree (Flayer Jungle)", names)
+        self.assertNotIn("Nightmare: Kill Bishibosh (Cold Plains)", names)
 
     def test_slot_data(self) -> None:
         data = self.world.fill_slot_data()

@@ -279,6 +279,8 @@ a guess checked against the item before writing, so test the command first.
 - [ ] `ap-hints` lists them; the hints show on the server (`!hint` in the text client) without costing
       hint points.
 - [ ] `/send Snrn Prophecy` gives a hint too.
+- [ ] Hints and the Ledger name superunique checks with the game's name and area, e.g. "Normal: Kill
+      Bonebreaker (Crypt)"; Bonebreaker's torn page says "A torn page falls from Bonebreaker:" (#26).
 
 ## 7. DeathLink
 
