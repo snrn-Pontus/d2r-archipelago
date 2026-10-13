@@ -23,6 +23,8 @@ struct Settings {
 	uint32_t seed = 0;
 	Shuffle  monsters = Shuffle::Off;
 	Shuffle  superUniques = Shuffle::Off;
+	// Levels a main-path superunique's new monster may be above its own; negative is no cap.
+	int      mainPathSuperUniqueCap = -1;
 	bool     runewords = false;
 	int      xpPercent = 100;
 	bool     itemLevelRequirements = true;
@@ -92,8 +94,11 @@ void BoostDrops(Table& itemratio, int percent);
 
 // Gives field superuniques (Bishibosh, Pindleskin...) another superunique's
 // monster type. Quest and scripted bosses keep theirs. Nearby only swaps
-// between monsters of similar level. Returns how many changed.
-auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mode, std::mt19937& random) -> int;
+// between monsters of similar level. With mainPathCap of 0 or more, a
+// superunique on the main path (an act's route or a quest objective) only gets
+// a monster at most that many levels above its own; negative means no cap.
+// Returns how many changed.
+auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mode, std::mt19937& random, int mainPathCap = -1) -> int;
 
 // Gives each field superunique (data::SuperUniques, in order) a monster row of
 // its own, a copy of its current monster appended to MonStats, so a kill tells

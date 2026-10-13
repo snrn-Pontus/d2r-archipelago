@@ -571,6 +571,16 @@ class SuperUniqueShuffle(Choice):
     default = 1
 
 
+class MainPathSuperUniqueCap(Range):
+    """With Superunique Shuffle on, superuniques you can't avoid (on an act's route or at a quest objective, like
+    Rakanishu, Griswold and Pindleskin) only become a monster at most this many levels above their own; the
+    tougher ones go to the optional dungeons. 0 never makes them stronger; 50 turns the cap off."""
+    display_name = "Main-Path Superunique Cap"
+    range_start = 0
+    range_end = 50
+    default = 2
+
+
 class MonsterDensity(Range):
     """How many monsters each area spawns, in percent."""
     display_name = "Monster Density"
@@ -777,6 +787,7 @@ class D2ROptions(PerGameCommonOptions):
     junk_backpack_size: JunkBackpackSize
     monster_shuffle: MonsterShuffle
     superunique_shuffle: SuperUniqueShuffle
+    main_path_superunique_cap: MainPathSuperUniqueCap
     runeword_shuffle: RunewordShuffle
     skill_tree_shuffle: SkillTreeShuffle
     monster_density: MonsterDensity
@@ -811,7 +822,7 @@ OPTION_GROUPS = [
     OptionGroup("Traps", [TrapPercentage, JunkBackpackWeight, AmbushWeight, PoisonCloudWeight, FirestormWeight, ManaDrainWeight,
                           TaxCollectorWeight, MercenaryDownWeight, TrapsWaitForTown, AmbushSize, AmbushMonsters, TaxCollectorGold,
                           JunkBackpackSize], start_collapsed=True),
-    OptionGroup("Game Changes", [MonsterShuffle, SuperUniqueShuffle, RunewordShuffle, MonsterDensity, ChampionPacks, BetterDrops,
+    OptionGroup("Game Changes", [MonsterShuffle, SuperUniqueShuffle, MainPathSuperUniqueCap, RunewordShuffle, MonsterDensity, ChampionPacks, BetterDrops,
                                  ExperienceMultiplier, ItemLevelRequirements, ItemStatRequirements]),
     OptionGroup("D2RLoader Settings", [ShowGroundSockets, DisplayItemLevels, ItemStatRanges, MaximumSockets, FloorItemLimit,
                                        SharedStashTabs, MaterialsLimit], start_collapsed=True),

@@ -253,6 +253,7 @@ class TestShortGame(D2RTestBase):
         self.assertEqual(data["goal_quest"], 14)
         self.assertEqual(data["level_cap"], 10)
         self.assertEqual(data["randomizer"]["monster_shuffle"], 1)
+        self.assertEqual(data["randomizer"]["main_path_superunique_cap"], 2)
         self.assertTrue(data["superunique_checks"])
         self.assertFalse(data["death_link"])
         self.assertEqual(data["hint_sources"], {"cain": True, "page_chance": 25, "prophecy_shop": True})
