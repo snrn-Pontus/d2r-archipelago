@@ -384,6 +384,17 @@ void TestClientParsesServerPackets() {
 	// DeathLink is off for this seed, so deaths are ignored.
 	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":1.0,"source":"Other","cause":"Other fell."}}])json");
 	EXPECT(client.TakeDeaths().empty());
+	EXPECT(client.ItemsSynced());
+	// A new session (ap-connect to another slot) must not keep the previous slot's items or players:
+	// the server sends ReceivedItems index 0 only when the new slot has items.
+	const uint64_t generation = client.ItemsGeneration();
+	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":2,"players":[{"team":0,"slot":2,"alias":"Other","name":"Other","class":"NetworkPlayer"}],
+		"missing_locations":[2420001],"checked_locations":[],"slot_data":{},"slot_info":{"2":{"name":"Other","game":"Diablo II Resurrected","type":1,"group_members":[],"class":"NetworkSlot"}},
+		"hint_points":0}])json");
+	EXPECT(client.Items().empty() && !client.ItemsSynced() && client.ItemsGeneration() != generation);
+	EXPECT(client.PlayerName(1) == "player 1" && client.PlayerName(2) == "Other");
+	client.Handle(R"json([{"cmd":"ReceivedItems","index":0,"items":[]}])json");
+	EXPECT(client.Items().empty() && client.ItemsSynced());
 }
 
 void TestClientDeathLink() {

@@ -132,6 +132,9 @@ public:
 	auto LocationCount() const -> size_t;
 	// Our locations the server hasn't seen checked, in id order.
 	auto Missing() const -> std::vector<int64_t>;
+	// Whether the item list is the server's full list for this session (a ReceivedItems with index 0
+	// has arrived since Connected). Until then it's empty and nothing should be delivered.
+	auto ItemsSynced() const -> bool;
 	// Bumped whenever the received-item list changes.
 	auto ItemsGeneration() const -> uint64_t;
 	auto Items() const -> std::vector<NetworkItem>;
@@ -178,6 +181,7 @@ private:
 	// Every location in our world, checked or not.
 	std::set<int64_t> locations_;
 	std::vector<NetworkItem> items_;
+	bool itemsSynced_ = false;
 	uint64_t itemsGeneration_ = 0;
 	std::deque<std::string> messages_;
 	std::vector<std::string> deaths_;

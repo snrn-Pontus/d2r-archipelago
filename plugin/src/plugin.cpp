@@ -1988,11 +1988,14 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		std::lock_guard lock(gMutex);
 		act = gAct;
 	}
-	size_t next = std::min(delivered, items.size());
+	// Nothing is delivered until the server has sent this session's full item list: right after
+	// Connected the list is empty, and running from it would reset the delivered count.
+	const bool synced = gClient->ItemsSynced();
+	size_t next = synced ? std::min(delivered, items.size()) : delivered;
 	bool   roomFull = false;
 	bool   more     = false;
 	size_t given    = 0;
-	for (; next < items.size(); ++next) {
+	for (; synced && next < items.size(); ++next) {
 		if (!ap::ids::IsLootItem(items[next].item)) {
 			continue;
 		}
@@ -2069,7 +2072,9 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 
 	std::lock_guard lock(gMutex);
-	if (next != delivered) {
+	// The count only ever grows: a shorter list (a server restored from an older save) must not
+	// hand the same rewards out again once it catches up.
+	if (next > delivered) {
 		gSave.fillersDelivered = next;
 		gSave.Save(gSavePath);
 	}

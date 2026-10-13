@@ -293,6 +293,11 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 
 Any seed. Send each with `/send`, standing outside town for the traps.
 
+- [ ] Switching slots (#66): connect to another player's slot of the same seed by mistake, get an item or
+      two, then `ap-connect` to your own slot that has received nothing yet. Nothing from the other slot
+      arrives, the Codex and locks reset to your own slot, and the first item `/send`-ed to your slot after
+      that arrives (it isn't skipped). Reconnecting to the same slot delivers nothing twice.
+
 - [ ] `Gold` (works), `Experience`, `Random Charm`, `Random Jewel`, `Socketed Base`, `Random Set Item`: arrive,
       scaled to your level.
 - [x] `Random Shrine` appears at your feet and works.
