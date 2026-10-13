@@ -37,6 +37,14 @@ two Ral runes or `ap-debug give lsd 1 3` for a 3-socket Long Sword to try a shuf
 
 Built, pushed and installed, still to check in game:
 
+- [ ] Class without a kill: a new character in town gets a banner and chat line saying rewards and locks wait
+      (kill a monster or ap-claim). **Claim Character** (F9) or `ap-claim`: the skills unlock, the locks apply
+      (belt potions set aside), and an Archipelago Ledger arrives. Save and Exit, join again: everything works
+      at once, no kill or claim needed (the Ledger says the class). With the Ledger in the shared stash it
+      doesn't count. A character with a Ledger from before this gets it swapped for a new one (log: "swapped").
+- [ ] With Merchant Access locked, an Identify scroll or tome works outside a shop; buying and selling stay
+      blocked. If something is still blocked, the log names the UI message.
+
 - [ ] Debug tools: on a new character, **Starter Kit** puts its 10 items in the inventory (the chat lists them)
       and `ap-missing` shows no new checks; with the Cube lock on, the Cube still arrives. Cubing the four
       essences makes a Token, which sends the Token of Absolution check (if `special_item_checks` is on).

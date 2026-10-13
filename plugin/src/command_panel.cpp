@@ -27,6 +27,7 @@ constexpr std::array MainRight {
 	Button { "remaining", "Items Left", "!remaining" },
 	Button { "players", "Multiworld Status", "!status" },
 	Button { "collect", "Collect", "!collect" },
+	Button { "claim", "Claim Character", "ap-claim" },
 	Button { "reconnect", "Reconnect", "ap-reconnect" },
 	Button { "disconnect", "Disconnect", "ap-disconnect" },
 };
