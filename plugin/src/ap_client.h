@@ -27,16 +27,6 @@ struct NetworkItem {
 
 enum class ConnectionState { Idle, Connecting, Connected, Refused };
 
-// The received-item list with the state it belongs to, taken under one lock so a delivery pass
-// can't mix one session's items with another's flags.
-struct ItemSnapshot {
-	std::vector<NetworkItem> items;
-	uint64_t generation = 0;
-	uint64_t session    = 0;
-	// Whether the list is the server's full list for this session (see Client::ItemsSynced).
-	bool synced = false;
-};
-
 // One of this player's important items, for hints found in game.
 struct HintEntry {
 	int64_t location = 0;
@@ -105,6 +95,17 @@ struct SlotData {
 	// D2RLoader settings d2r-ap-setup writes as the mod's overrides: dotted
 	// path ("d2rcore.stash.add_shared_tabs") and TOML value ("50", "true").
 	std::vector<std::pair<std::string, std::string>> loaderSettings;
+};
+
+// The received-item list with the state it belongs to, taken under one lock so a delivery pass
+// can't mix one session's items with another's settings or flags.
+struct ItemSnapshot {
+	std::vector<NetworkItem> items;
+	SlotData slots;
+	uint64_t generation = 0;
+	uint64_t session    = 0;
+	// Whether the list is the server's full list for this session (see Client::ItemsSynced).
+	bool synced = false;
 };
 
 // Archipelago protocol client. Runs its own network thread; every public

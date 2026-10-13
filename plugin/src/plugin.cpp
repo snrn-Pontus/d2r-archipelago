@@ -108,6 +108,9 @@ uint64_t              gBoundSession = 0;
 // True while GameWork delivers from a snapshot: OnFrame doesn't rebind until it's done, so a pass
 // never spans two sessions (its rewards and its save writes stay with the session it started in).
 bool                  gDelivering = false;
+// Set by OnFrame under gMutex when it has decided to rebind, so a delivery pass that starts in
+// between sees the bind coming and stays out; BindSession clears it.
+bool                  gBindPending = false;
 // Checks found before the first connection, waiting for a seed to bind to.
 std::set<int64_t>     gUnbound;
 bool                  gInGame       = false;
@@ -712,6 +715,7 @@ void BindSession(uint64_t session) {
 		level = gPlayerLevel;
 		gBoundSession = session;
 		gRepairOffer.Cancel();
+		gBindPending = false;
 		gCodexDirty = true;
 	}
 	SendReady();
@@ -1232,7 +1236,8 @@ auto CodexSeed(uint32_t chunk, int playerClass, uint32_t fingerprint) -> uint32_
 
 // Make sure each chunk with skills has exactly one up-to-date Codex charm in the
 // inventory, and the rest have none. Returns false when an update couldn't be placed.
-bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& allSkills, int playerClass, const ap::Config& config) {
+bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& allSkills, int playerClass, const ap::Config& config,
+               const ap::SlotData& slots) {
 	CodexScan scan { ap::loot::CodeFromText(config.codexItem.c_str()), {} };
 	const D2RL::Inventory::ItemFilter filter {
 		.structSize    = D2RL::Inventory::ItemFilterSize,
@@ -1242,7 +1247,7 @@ bool SyncCodex(D2RL::PlayerHandle player, const std::vector<ap::codex::Entry>& a
 		return false;
 	}
 	const auto chunks = ap::codex::Chunks(allSkills, playerClass >= 0 && playerClass < static_cast<int>(std::size(ClassNames)) ? ClassNames[playerClass] : "",
-		CodexMaxSkills, gClient->Slots().randomizer.skillTree);
+		CodexMaxSkills, slots.randomizer.skillTree);
 	// Charms from older recipes count as chunk 0, so each is replaced once.
 	auto chunkOf = [](uint32_t seed) { return (seed & CodexMarkerMask) == CodexMarker ? (seed >> 16) & 0xF : 0U; };
 	bool ok = true;
@@ -1931,8 +1936,9 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	} guard;
 	{
 		std::lock_guard lock(gMutex);
-		// Not bound, or bound to another session than the snapshot's: the next frame rebinds.
-		if (gBoundSession == 0 || gBoundSession != snapshot.session) {
+		// Not bound, bound to another session than the snapshot's, or a rebind already decided on:
+		// the next frame sorts it out.
+		if (gBoundSession == 0 || gBoundSession != snapshot.session || gBindPending) {
 			return;
 		}
 		gDelivering = true;
@@ -1958,7 +1964,8 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			return;
 		}
 	}
-	const ap::SlotData slots = gClient->Slots();
+	// The slot settings from the same snapshot as the items, never re-read during the pass.
+	const ap::SlotData& slots = snapshot.slots;
 	auto skills = ap::codex::Entries(items, EffectiveLevel(), slots.skillScaling, slots.skillScalingCap);
 	{
 		// Lord of Destruction characters have no Warlock skills (D2R asserts on them).
@@ -1987,14 +1994,14 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		playerClass = gPlayerClass;
 	}
 	if (playerClass < 0) {
-		playerClass = ClassIndex(gClient->Slots().characterClass);
+		playerClass = ClassIndex(slots.characterClass);
 	}
 	// Tree mode unlocks skills in the tree instead of building a Codex.
-	const bool treeMode = gClient->Slots().randomizer.treeMode;
+	const bool treeMode = slots.randomizer.treeMode;
 	if (treeMode) {
 		DeliverTreeSkills(items);
 	}
-	const bool codexOk = treeMode || SyncCodex(player, skills, playerClass, config);
+	const bool codexOk = treeMode || SyncCodex(player, skills, playerClass, config, slots);
 
 	std::mt19937 random(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
 	const int characterLevel = EffectiveLevel();
@@ -2746,7 +2753,11 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	{
 		std::lock_guard lock(gMutex);
 		// A delivery pass on the game thread finishes with its session first; the bind waits a frame.
+		// Reserving the bind here, under the same lock the pass takes, keeps the two from crossing.
 		bind = session != 0 && session != gBoundSession && !gDelivering;
+		if (bind) {
+			gBindPending = true;
+		}
 	}
 	if (bind) {
 		BindSession(session);

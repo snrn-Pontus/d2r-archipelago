@@ -614,7 +614,7 @@ auto Client::ItemsSynced() const -> bool {
 
 auto Client::Snapshot() const -> ItemSnapshot {
 	std::lock_guard lock(mutex_);
-	return { items_, itemsGeneration_, sessionGeneration_, itemsSynced_ };
+	return { items_, slotData_, itemsGeneration_, sessionGeneration_, itemsSynced_ };
 }
 
 auto Client::ItemsGeneration() const -> uint64_t {
