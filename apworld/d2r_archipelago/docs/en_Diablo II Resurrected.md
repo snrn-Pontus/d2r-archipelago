@@ -119,6 +119,10 @@ Optional locks block part of the game until their item turns up from the multiwo
 - `waypoint_lock`: the waypoints of Acts I to III need that act's **Waypoints** item (Act I Waypoints...).
   Acts IV and V keep theirs: a waypoint is the only way back from them, so a check left behind stays reachable.
 
+Each lock item needs a location that isn't filler-only, so in a short game they crowd out skills: a one-act
+game should use at most a couple of locks. A lock that gates no check in your seed (the Cube Lock in a one-act
+game, or the Merchant Lock with no shop checks and no cow level) counts as filler and can turn up anywhere.
+
 ## What else is randomized?
 
 The setup tool rewrites the game's tables for your seed:

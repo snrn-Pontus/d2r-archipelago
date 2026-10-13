@@ -387,6 +387,7 @@ class TestLocks(D2RTestBase):
         self.assertTrue(self.world.create_item("Horadric Cube Access").advancement)
         self.assertTrue(self.world.create_item("Merchant Access").advancement)
         self.assertFalse(self.world.create_item("Stash Access").advancement)
+        self.assertTrue(self.world.create_item("Stash Access").useful)
         self.assertEqual(self.world.fill_slot_data()["locks"]["cube"], True)
 
     def test_late_waypoints_never_lock(self) -> None:

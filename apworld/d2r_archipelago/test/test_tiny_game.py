@@ -1,5 +1,6 @@
 import unittest
 
+from BaseClasses import ItemClassification
 from Fill import distribute_items_restrictive
 from Options import OptionError
 from test.general import setup_multiworld
@@ -24,11 +25,21 @@ class TestTinyGame(unittest.TestCase):
         return multiworld
 
     def test_more_locks_than_locations_is_refused(self) -> None:
-        # Six lock items (five locks and Act I Waypoints) for five locations.
+        # Six lock items (five locks and Act I Waypoints) for five locations, even counting the two idle ones.
         with self.assertRaises(OptionError) as refused:
             self.generate({**TINY, **ALL_LOCKS})
         self.assertIn("5 locations", str(refused.exception))
         self.assertIn("6 such items", str(refused.exception))
+
+    def test_idle_locks_take_filler_only_locations(self) -> None:
+        # Cube and Merchant Access gate nothing in a one-act game with no shops, so they're filler: they
+        # go on the rune checks' filler-only locations and leave the skill pool as it was.
+        runes = {**TINY, "rune_checks": 2}
+        plain = self.generate(runes).worlds[1]
+        world = self.generate({**runes, "cube_lock": True, "merchant_lock": True}).worlds[1]
+        self.assertEqual(len(world.skill_pool), len(plain.skill_pool))
+        for name in ("Horadric Cube Access", "Merchant Access"):
+            self.assertEqual(world.create_item(name).classification, ItemClassification.filler, name)
 
     def test_as_many_locks_as_locations_generates(self) -> None:
         multiworld = self.generate({**TINY, **ALL_LOCKS, "waypoint_lock": False})
