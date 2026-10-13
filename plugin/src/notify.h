@@ -22,6 +22,9 @@ enum class Style {
 // files' own level (banner_volume). Call before the first Show.
 void SetSounds(const std::wstring& folder, bool enabled, int volume);
 
+// Stops a banner sound mid-play, which reads our memory: call before unloading.
+void StopSounds();
+
 // Queues a banner line. Thread-safe.
 void Show(const std::string& text, Style style);
 

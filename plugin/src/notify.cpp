@@ -361,7 +361,7 @@ void TickStatus(const RECT& client, POINT origin, Clock::time_point now) {
 } // namespace
 
 void SetSounds(const std::wstring& folder, bool enabled, int volume) {
-	PlaySoundW(nullptr, nullptr, 0); // stop one playing from a buffer about to change
+	StopSounds(); // one playing reads a buffer about to change
 	for (size_t i = 0; i < std::size(ap::sounds::All); ++i) {
 		gSounds[i].clear();
 		if (!enabled || volume <= 0) {
@@ -373,6 +373,10 @@ void SetSounds(const std::wstring& folder, bool enabled, int volume) {
 			ap::sounds::ScaleWav(gSounds[i], volume);
 		}
 	}
+}
+
+void StopSounds() {
+	PlaySoundW(nullptr, nullptr, 0);
 }
 
 void Show(const std::string& text, Style style) {
