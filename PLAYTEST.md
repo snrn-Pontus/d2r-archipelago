@@ -64,6 +64,10 @@ Built, pushed and installed, still to check in game:
       Ledger from before this gets it swapped for a new one (log: "swapped"). (Belt potions aren't set aside by
       design: only inventory potions are, and the belt hotkeys are blocked instead.)
 - [x] With Merchant Access locked, an Identify scroll works outside a shop; buying stays blocked (2026-10-13).
+- [ ] Reward runes after a rejoin (#108), seed with `rune_checks` on: `ap-debug give r08` (or `/send` a Low
+      Rune reward), "Find Ral Rune" isn't sent. Save and Exit, join again: still not sent, and the seed's save
+      has a `rewardcopies` line. Then a Ral you find (or `ap-debug spawn r08`) sends it. Same with a
+      reward gem.
 
 - [x] Debug tools: on a new character, **Starter Kit** puts its 10 items in the inventory (the chat lists them)
       and `ap-missing` shows no new checks; with the Cube lock on, the Cube still arrives (2026-10-13).

@@ -10,6 +10,7 @@ namespace ap {
 
 // One "key value" pair per line: "check <id>", "fillers <count>", "goal 1", "level <n>",
 // "kills_<difficulty * 10 + act> <count>", "cows_<difficulty> <count>", "unique <seed>", "set <seed>",
+// "rewardcopies <code> <count>",
 // "command <item> <text>" (the text runs to the end of the line).
 bool SaveState::Load(const std::filesystem::path& path) {
 	std::ifstream file(path);
@@ -48,6 +49,10 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			foundUniques.insert(static_cast<uint32_t>(value));
 		} else if (key == "set") {
 			foundSets.insert(static_cast<uint32_t>(value));
+		} else if (key == "rewardcopies") {
+			if (const size_t gap = rest.find(' '); gap != std::string::npos) {
+				rewardCopies[static_cast<uint32_t>(value)] = std::atoi(rest.c_str() + gap + 1);
+			}
 		} else if (key == "hint") {
 			ownHints.insert(static_cast<int>(value));
 		} else if (key == "otherhint") {
@@ -116,6 +121,9 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		}
 		for (const uint32_t seed : foundSets) {
 			file << "set " << seed << "\n";
+		}
+		for (const auto& [code, count] : rewardCopies) {
+			file << "rewardcopies " << code << " " << count << "\n";
 		}
 		for (const int hint : ownHints) {
 			file << "hint " << hint << "\n";

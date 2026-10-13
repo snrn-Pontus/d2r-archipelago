@@ -263,6 +263,9 @@ int                   gCodexClass   = -1;
 // Why this game has said rewards wait, so each reason is said once: 1 the class isn't
 // known yet, 2 another class.
 int                   gCharacterWarned = 0;
+// Copies of each item code the character held without the reward marker at this
+// game's first item scan, for FoundCodes (#108).
+std::optional<std::map<uint32_t, int>> gHeldAtJoin;
 // Tree mode: whether received skills are unlocked in the Skills table (UnlockInTable)
 // rather than with a free level. Then a respec takes nothing, so Relearn isn't needed.
 bool                  gTableUnlock = false;
@@ -275,6 +278,7 @@ void ForgetPlayer() {
 	gCodexClass   = -1;
 	gCharacterWarned = 0;
 	gCurrentLevel = -1;
+	gHeldAtJoin.reset();
 }
 
 // D2 class ids, in order.
@@ -1499,6 +1503,9 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 		                   : container == Cube    ? "cube"
 		                                          : "stash";
 		Log("Archipelago: placed " + pick.name + " in the " + name + (skipped.empty() ? std::string {} : " (" + skipped.substr(2) + ")") + ".");
+		std::lock_guard lock(gMutex);
+		++gSave.rewardCopies[pick.code];
+		gSaveDue = true;
 	};
 	std::string results;
 	bool noRoom = true;
@@ -1803,7 +1810,9 @@ struct ItemScan {
 	// Seeds of the uniques and set items you found (not rewards, not the Codex).
 	std::set<uint32_t> uniqueSeeds;
 	std::set<uint32_t> setSeeds;
-	// Codes and set/unique rows of the items you found yourself (not rewards).
+	// Copies held of each code without the reward marker, and from those (FoundCodes)
+	// the codes you found yourself. Set/unique rows of the items you found (not rewards).
+	std::map<uint32_t, int> held;
 	std::set<uint32_t> codes;
 	std::set<int32_t>  setRecords;
 	std::set<int32_t>  uniqueRecords;
@@ -1819,7 +1828,7 @@ auto __cdecl CollectItems(const D2RL::PluginContext*, const D2RL::Items::ItemInf
 		scan->questFlags.insert(*flag);
 	}
 	if (!IsReward(*item)) {
-		scan->codes.insert(item->code);
+		++scan->held[item->code];
 		const uint32_t seed = item->itemSeed != 0 ? item->itemSeed : item->generationSeed;
 		if (item->quality == D2RL::Items::Quality::Set) {
 			scan->setRecords.insert(item->qualityRecordId);
@@ -1895,6 +1904,13 @@ void ScanItems(D2RL::PlayerHandle player) {
 		return;
 	}
 	const ap::SlotData slots = gClient->Slots();
+	{
+		std::lock_guard lock(gMutex);
+		if (!gHeldAtJoin) {
+			gHeldAtJoin = scan.held;
+		}
+		scan.codes = ap::FoundCodes(scan.held, *gHeldAtJoin, gSave.rewardCopies);
+	}
 	auto checks = CollectionChecks(scan, slots);
 	std::lock_guard lock(gMutex);
 	for (const uint8_t flag : scan.questFlags) {

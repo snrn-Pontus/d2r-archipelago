@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -37,6 +38,10 @@ struct SaveState {
 	// Item seeds of the uniques and set items you found (not rewards), for the find-count checks.
 	std::set<uint32_t> foundUniques;
 	std::set<uint32_t> foundSets;
+	// Reward copies handed out per item code. Runes, gems and other simple items
+	// keep no seed in the character's save, so after a reload a reward one has lost
+	// its marker and looks like a find (#108); FoundCodes leaves these out.
+	std::map<uint32_t, int> rewardCopies;
 	// Hints found in game: indexes into the seed's hint list, and our own locations
 	// hinted for other players. Scrolls of Prophecy bought (the next tier to buy).
 	std::set<int> ownHints;
@@ -91,5 +96,25 @@ private:
 	bool InLostRange(const PendingCommand& command) const;
 	void RequeueLostCommands();
 };
+
+// The item codes the character found itself, from how many copies of each it holds
+// without the reward marker. Some of those may be rewards that lost the marker in a
+// reload: at most the copies held when the game was joined (rewards handed out since
+// still carry it), and at most the rewardCopies ever handed out. A code counts once it
+// holds more than that, so using up a reward doesn't hide a later find.
+inline auto FoundCodes(const std::map<uint32_t, int>& held, const std::map<uint32_t, int>& heldAtJoin, const std::map<uint32_t, int>& rewardCopies)
+	-> std::set<uint32_t> {
+	const auto count = [](const std::map<uint32_t, int>& counts, uint32_t code) {
+		const auto found = counts.find(code);
+		return found != counts.end() ? found->second : 0;
+	};
+	std::set<uint32_t> codes;
+	for (const auto& [code, copies] : held) {
+		if (copies > std::min(count(heldAtJoin, code), count(rewardCopies, code))) {
+			codes.insert(code);
+		}
+	}
+	return codes;
+}
 
 } // namespace ap

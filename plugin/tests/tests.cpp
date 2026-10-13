@@ -295,6 +295,7 @@ void TestSaveStateRoundTrip() {
 	state.portalTomeGiven = true;
 	state.notifiedItems = 12;
 	state.heldPotions = { 0x20317068, 0x20317068, 0x206C7672 };
+	state.rewardCopies = { { ap::loot::CodeFromText("r08"), 2 }, { ap::loot::CodeFromText("gpv"), 1 } };
 	EXPECT(state.Save(path));
 	ap::SaveState loaded;
 	EXPECT(loaded.Load(path));
@@ -306,6 +307,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12);
 	EXPECT(loaded.heldPotions == state.heldPotions);
+	EXPECT(loaded.rewardCopies == state.rewardCopies);
 	EXPECT(loaded.commands.empty() && loaded.checkpoint == 0 && !loaded.redeliver);
 	// A save that can't be written says so (the plugin pauses rewards on it): here the
 	// folder it would go in is a file.
@@ -489,6 +491,28 @@ void TestSaveStatePendingCommands() {
 	// Its rewards count as kept, not as lost in a crash.
 	EXPECT(older.checkpoint == 3 && !older.DetectUncleanExit());
 	std::filesystem::remove_all(path.parent_path());
+}
+
+// A reward rune or gem loses its marker when the character is reloaded, and still
+// doesn't count as found; one you find yourself does (#108).
+void TestRewardCopiesAfterReload() {
+	using ap::FoundCodes;
+	const uint32_t ral = ap::loot::CodeFromText("r08");
+	const uint32_t amn = ap::loot::CodeFromText("r11");
+	const std::map<uint32_t, int> none;
+	// A Ral reward was handed out; after the reload the character holds it without the marker.
+	const std::map<uint32_t, int> rewards { { ral, 1 } };
+	const std::map<uint32_t, int> oneRal { { ral, 1 } };
+	EXPECT(FoundCodes(oneRal, oneRal, rewards).empty());
+	// A second Ral found in that game counts.
+	EXPECT(FoundCodes({ { ral, 2 } }, oneRal, rewards) == std::set<uint32_t> { ral });
+	// The reward was socketed before the reload: a Ral found afterwards counts.
+	EXPECT(FoundCodes(oneRal, none, rewards) == std::set<uint32_t> { ral });
+	// Dropping the reward and picking it up again doesn't.
+	EXPECT(FoundCodes(none, oneRal, rewards).empty() && FoundCodes(oneRal, oneRal, rewards).empty());
+	// Copies held at the join beyond the rewards ever handed out are finds; other codes aren't held back.
+	EXPECT((FoundCodes({ { ral, 3 }, { amn, 1 } }, { { ral, 3 }, { amn, 1 } }, rewards) == std::set<uint32_t> { ral, amn }));
+	EXPECT(FoundCodes(oneRal, oneRal, none) == std::set<uint32_t> { ral });
 }
 
 // A game never left (a crash) offers its rewards again with ap-redeliver (#70).
@@ -1794,6 +1818,7 @@ int main() {
 	TestMilestoneRecovery();
 	TestLifetimeCows();
 	TestSaveStatePendingCommands();
+	TestRewardCopiesAfterReload();
 	TestUncleanExit();
 	TestSessionLog();
 	TestStarterKit();
