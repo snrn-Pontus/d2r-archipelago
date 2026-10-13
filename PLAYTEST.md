@@ -60,7 +60,7 @@ Built, pushed and installed, still to check in game:
       and `ap-missing` shows no new checks; with the Cube lock on, the Cube still arrives (2026-10-13).
 - [ ] Still open: with Horadric Cube Access, cubing the four essences makes a Token, which sends the Token of
       Absolution check (if `special_item_checks` is on). `ap-debug give lsd 1 3` makes a Long Sword with 3
-      sockets (the log only says "gave lsd", so check the sockets in game).
+      sockets (`ap-debug give lsd 1 2` made a 2-socket one, 2026-10-13).
 - [x] Session log: `d2rloader\archipelago\logs\` has a `session-<date>_<time>.log` for this launch that can be
       opened while the game runs. It starts with the plugin version and config, has "seed options:" after
       connecting, "found ... checks", "sending ... checks", "received #..." and "shown: ..." lines as you play,
@@ -495,6 +495,17 @@ a guess checked against the item before writing, so test the command first.
   arrived at 13:50; on the next join the plugin sent "Find Amn Rune". The reward marker lives in the item
   seed, which runes and other simple items don't keep in the save, so `IsReward` misses them after a reload.
   Gems and other simple items likely do the same.
+- **Crash (2026-10-13, 14:09:32, #109):** getting all the lock items at once with a full inventory (the debug Long
+  Swords had already gone to the stash) crashed D2R right after "Potion Access! Your 8 set-aside potions are
+  back.". The loader log has `BC_ASSERT: hRoom` and `DungeonTestRoomGame(hRoom, nX, nY)` (UnitRoom.cpp), then
+  an access violation (crash report and `CrashDumps\D2RLoader.exe.39564.dmp`). Likely the ground fallback:
+  the Tome of Town Portal and 8 potions created on the ground in one go. The Ledger was in the stash at the
+  time, but neither GiveLedger nor CharacterReady makes anything in that case.
+- **Bug (2026-10-13, #110):** `runewords.txt` lists the Reign of the Warlock bank's recipes, but the two banks are
+  shuffled separately (same random stream, different rows), so 91 of the 94 complete runewords differ for a
+  Lord of Destruction character. Steel is Tir Tir in the list and in `excel/runes.txt`, but El Eld in
+  `excel/base/runes.txt`; Tir Tir in a 2-socket Long Sword stayed a plain 'TirTir' sword. Neither bank has
+  duplicate recipes.
 
 - `ap-core <command>` runs any D2RCore command for testing, e.g. `ap-core skillpoints 3`.
 - D2RCore runs gold, experience, mspawn, pcloud, killme, skadd and the rest only as cheats
