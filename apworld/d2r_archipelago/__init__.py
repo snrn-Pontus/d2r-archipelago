@@ -614,6 +614,10 @@ class D2RWorld(World):
                 "superunique_shuffle": self.options.superunique_shuffle.value,
                 "main_path_superunique_cap": self.options.main_path_superunique_cap.value,
                 "main_path_superunique_minions": self.options.main_path_superunique_minions.value,
+                "main_path_superunique_strength": self.options.main_path_superunique_strength.value,
+                # None ("off") keeps the new monster's level on Normal.
+                "main_path_superunique_level": None if self.options.main_path_superunique_level.value == -11
+                else self.options.main_path_superunique_level.value,
                 "superunique_shuffle_spread": self.options.superunique_shuffle_spread.value,
                 "superunique_minions": self.options.superunique_minions.value,
                 "monster_shuffle_tolerance": self.options.monster_shuffle_tolerance.value,

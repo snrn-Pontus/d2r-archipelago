@@ -851,6 +851,55 @@ void TestSuperUniqueMonsters() {
 	EXPECT(ap::randomizer::Settings {}.Stamp().find("superunique_checks") == std::string::npos);
 }
 
+void TestMainPathSuperUniqueTuning() {
+	// Griswold (main path) became a mummy; Bonebreak (optional) a fallen.
+	auto monstats = ap::Table::Parse("Id\tminion1\tLevel\tminHP\tmaxHP\tMinHP(N)\tMaxHP(H)\tA1MinD\tA1MaxD(H)\tEl1MaxD\r\n"
+	                                 "griswold\t\t5\t40\t50\t300\t900\t10\t60\t\r\nmummy2\t\t15\t100\t120\t500\t1500\t20\t80\t8\r\n"
+	                                 "skeleton1\t\t2\t10\t12\t80\t240\t2\t9\t\r\nfallen2\t\t5\t8\t10\t60\t180\t2\t8\t\r\n");
+	const auto before = ap::Table::Parse("Superunique\tClass\r\nGriswold\tgriswold\r\nBonebreak\tskeleton1\r\n");
+	auto superUniques = ap::Table::Parse("Superunique\tClass\r\nGriswold\tmummy2\r\nBonebreak\tfallen2\r\n");
+	ap::randomizer::AddSuperUniqueMonsters(monstats, superUniques);
+	auto rowOf = [&](const std::string& id) {
+		for (size_t row = 0; row < monstats.Rows().size(); ++row) {
+			if (monstats.Cell(row, 0) == id) {
+				return row;
+			}
+		}
+		return size_t { 0 };
+	};
+	EXPECT(ap::randomizer::TuneMainPathSuperUniques(monstats, before, 50, 1) >= 1);
+	const size_t griswold = rowOf("ap_superunique_5"), bonebreak = rowOf("ap_superunique_1");
+	// Griswold: his own level (5) plus 1, half the mummy's HP and damage on every difficulty.
+	EXPECT(monstats.Cell(griswold, 2) == "6" && monstats.Cell(griswold, 3) == "50" && monstats.Cell(griswold, 4) == "60");
+	EXPECT(monstats.Cell(griswold, 5) == "250" && monstats.Cell(griswold, 6) == "750");
+	EXPECT(monstats.Cell(griswold, 7) == "10" && monstats.Cell(griswold, 8) == "40" && monstats.Cell(griswold, 9) == "4");
+	// Bonebreak is optional, and the plain monsters are untouched.
+	EXPECT(monstats.Cell(bonebreak, 2) == "5" && monstats.Cell(bonebreak, 3) == "8");
+	EXPECT(monstats.Cell(rowOf("mummy2"), 2) == "15" && monstats.Cell(rowOf("mummy2"), 3) == "100");
+
+	// Without a level, Normal keeps the new monster's.
+	auto kept = ap::Table::Parse("Id\tminion1\tLevel\tminHP\r\ngriswold\t\t5\t40\r\nmummy2\t\t15\t100\r\n");
+	auto table = ap::Table::Parse("Superunique\tClass\r\nGriswold\tmummy2\r\n");
+	ap::randomizer::AddSuperUniqueMonsters(kept, table);
+	ap::randomizer::TuneMainPathSuperUniques(kept, before, 100, std::nullopt);
+	bool keptLevel = false;
+	for (size_t row = 0; row < kept.Rows().size(); ++row) {
+		keptLevel = keptLevel || (kept.Cell(row, 0) == "ap_superunique_5" && kept.Cell(row, 2) == "15");
+	}
+	EXPECT(keptLevel);
+
+	ap::randomizer::Settings settings;
+	EXPECT(!settings.SuperUniqueCopies());
+	settings.mainPathSuperUniqueLevel = 0;
+	// Level 0 without a shuffle changes nothing, so no copies.
+	EXPECT(!settings.SuperUniqueCopies());
+	settings.superUniques = ap::randomizer::Shuffle::Nearby;
+	EXPECT(settings.SuperUniqueCopies() && settings.Stamp().find("superunique_level=0") != std::string::npos);
+	ap::randomizer::Settings strong;
+	strong.mainPathSuperUniqueStrength = 70;
+	EXPECT(strong.SuperUniqueCopies() && strong.Any() && strong.Stamp().find("superunique_strength=70") != std::string::npos);
+}
+
 void TestSprite() {
 	// Two 2x2 frames: the first all 1s, the second all 2s.
 	auto make = [](uint8_t first, uint8_t second) {
@@ -1111,6 +1160,7 @@ int main() {
 	TestSuperUniqueMinions();
 	TestSuperUniqueShuffle();
 	TestSuperUniqueMonsters();
+	TestMainPathSuperUniqueTuning();
 	TestShopParcels();
 	TestSkillTreeShuffle();
 	TestSprite();

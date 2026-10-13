@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <random>
 #include <string>
 #include <utility>
@@ -31,6 +32,11 @@ struct Settings {
 	int      mainPathSuperUniqueCap = -1;
 	// Most minions a main-path superunique with a new monster brings; negative is no cap.
 	int      mainPathSuperUniqueMinions = -1;
+	// HP and damage of main-path superuniques, in percent, on every difficulty.
+	int      mainPathSuperUniqueStrength = 100;
+	// Normal: a main-path superunique's level is its own monster's usual level
+	// plus this, whatever it became. Unset keeps the new monster's level.
+	std::optional<int> mainPathSuperUniqueLevel;
 	// Superuniques are swapped within groups of this many (Nearby), sorted by level.
 	int      superUniqueSpread = 6;
 	// Anywhere: an area takes a line-up only if every monster in it has a
@@ -58,6 +64,9 @@ struct Settings {
 	bool     treeMode = false;
 
 	auto Any() const -> bool;
+	// The superuniques need monster rows of their own (AddSuperUniqueMonsters):
+	// for their checks, or to change their level or strength.
+	auto SuperUniqueCopies() const -> bool;
 	// One line describing the settings, stored with the mod so the plugin can
 	// tell whether the installed mod matches the connected seed.
 	auto Stamp() const -> std::string;
@@ -133,6 +142,14 @@ auto ScaleSuperUniqueMinions(Table& superUniques, const Table& before, int perce
 // client needs to find the copy's model.
 inline constexpr const char* SuperUniqueMonsterPrefix = "ap_superunique_";
 auto AddSuperUniqueMonsters(Table& monstats, Table& superUniques, std::vector<std::pair<std::string, std::string>>* copies = nullptr) -> int;
+
+// Tunes the main-path superuniques' own monster rows (made by
+// AddSuperUniqueMonsters): HP and damage times strengthPercent / 100 on every
+// difficulty, and with `level` set, Normal's level becomes the level of the
+// monster the superunique had in `before` (superuniques.txt before the
+// shuffle) plus `level`, at least 1. Minions keep their own rows. Returns how
+// many superuniques changed.
+auto TuneMainPathSuperUniques(Table& monstats, const Table& before, int strengthPercent, std::optional<int> level) -> int;
 
 // Rewrites each runeword's recipe with runes of a similar tier. Returns the new
 // recipes, one "Name: Rune Rune ..." line each.
