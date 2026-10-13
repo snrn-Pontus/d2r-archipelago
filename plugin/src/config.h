@@ -18,6 +18,9 @@ struct Config {
 	bool autoConnect = true;
 	// The debug panel (F10), set by ap-debug on/off.
 	bool debugTools = false;
+	// Experimental: route a blocked vendor interaction to the native RepairAll
+	// action through a separate panel. The stock shop remains blocked.
+	bool repairOnly = false;
 	// On-screen banners for items received and checks sent.
 	bool notifications = true;
 	// Game sounds with the gold, red and white banners.

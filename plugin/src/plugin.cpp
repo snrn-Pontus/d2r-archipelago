@@ -15,6 +15,7 @@
 #include "personalize.h"
 #include "quest_triggers.h"
 #include "randomizer.h"
+#include "repairs.h"
 #include "save_state.h"
 #include "sounds.h"
 
@@ -86,6 +87,12 @@ const D2RL::GameRuleService* gGameRules;
 const D2RL::PanelService*     gPanels;
 D2RL::Panels::RegistrationHandle gPanel = D2RL::Panels::InvalidHandle;
 D2RL::Panels::RegistrationHandle gDebugPanel = D2RL::Panels::InvalidHandle;
+D2RL::Panels::RegistrationHandle gRepairPanel = D2RL::Panels::InvalidHandle;
+ap::repairs::Offer gRepairOffer;
+std::string gRepairVendorPanel;
+bool gRepairOfferQueued = false;
+// UI-thread-only: only our one-shot request may pass the native repair action.
+bool gNativeRepairDispatch = false;
 
 std::unique_ptr<ap::Client> gClient;
 std::atomic<bool>           gWorkQueued;
@@ -701,6 +708,7 @@ void BindSession(uint64_t session) {
 		gSave.playerClass = gPlayerClass;
 		level = gPlayerLevel;
 		gBoundSession = session;
+		gRepairOffer.Cancel();
 		gCodexDirty = true;
 	}
 	SendReady();
@@ -2219,6 +2227,7 @@ void PlayerDied(const std::string& how) {
 			return;
 		}
 		gPlayerDead = true;
+		gRepairOffer.Cancel();
 		gDeathPending = false;
 		echo = Clock::now() - gLinkKillAt < std::chrono::seconds(20);
 	}
@@ -2265,6 +2274,9 @@ void UpdateLocks() {
 	    + (locks.potions ? "yes" : "no") + ", stash " + (locks.stash ? "yes" : "no") + ", merchants " + (locks.merchants ? "yes" : "no")
 	    + ", waypoints " + (locks.waypoints[0] ? "I " : "") + (locks.waypoints[1] ? "II " : "") + (locks.waypoints[2] ? "III" : "") + ".");
 	std::lock_guard lock(gMutex);
+	if (gLocks.merchants != locks.merchants) {
+		gRepairOffer.Cancel();
+	}
 	gLocks = locks;
 	gSlots = slots;
 }
@@ -2303,6 +2315,62 @@ auto LockedPanel(std::string panel) -> std::string {
 		return "merchants won't trade with you until you find Merchant Access.";
 	}
 	return {};
+}
+
+// The stock Vendor panel is never allowed through Merchant Lock. The prototype
+// only broadcasts the native RepairAll action from this separate modal, using
+// the NPC interaction D2R established before asking to open its vendor panel.
+auto RepairEligible() -> bool {
+	// gMutex is held by the caller.
+	return gConfig.repairOnly && gInGame && !gPlayerDead && IsTown(gCurrentLevel)
+		&& gBoundSession != 0 && gClient != nullptr && gClient->State() == ap::ConnectionState::Connected
+		&& gClient->SessionGeneration() == gBoundSession && gLocks.merchants && gWidgets != nullptr && gPanels != nullptr
+		&& gRepairPanel != D2RL::Panels::InvalidHandle;
+}
+
+void __cdecl OpenRepairWork(const D2RL::PluginContext*, void*) noexcept {
+	std::string vendor;
+	{
+		std::lock_guard lock(gMutex);
+		gRepairOfferQueued = false;
+		if (!gRepairOffer.Ready(RepairEligible(), Clock::now())) {
+			gRepairOffer.Cancel();
+			return;
+		}
+		vendor = gRepairVendorPanel;
+	}
+	D2RL::Widgets::WidgetHandle widget = D2RL::Widgets::InvalidHandle;
+	if (gWidgets->findPanel(gContext, vendor.c_str(), &widget) != D2RL::Widgets::Result::Success
+		|| gPanels->openPanel(gContext, gRepairPanel) != D2RL::Panels::Result::Success) {
+		{
+			std::lock_guard lock(gMutex);
+			gRepairOffer.Cancel();
+		}
+		Feed("Archipelago: the repair prototype couldn't find the NPC panel. Shopping remains locked.");
+		Log("Archipelago: repair offer failed for " + vendor + ".");
+	}
+}
+
+bool OfferRepairs(std::string_view vendor) {
+	{
+		std::lock_guard lock(gMutex);
+		if (!RepairEligible()) {
+			return false;
+		}
+		gRepairVendorPanel = ap::repairs::PanelName(vendor);
+		gRepairOffer.Begin(Clock::now());
+		if (gRepairOfferQueued) {
+			return true;
+		}
+		gRepairOfferQueued = true;
+	}
+	if (gThreads->runOnUiThread(gContext, OpenRepairWork, nullptr) != D2RL::Threads::Result::Success) {
+		std::lock_guard lock(gMutex);
+		gRepairOfferQueued = false;
+		gRepairOffer.Cancel();
+		return false;
+	}
+	return true;
 }
 
 auto MouseButtonDown(int button) -> bool {
@@ -2836,6 +2904,8 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
 			gInGame = true;
+			gRepairOffer.Cancel();
+			gRepairOfferQueued = false;
 			gCodexDirty = true;
 			gPlayerDead = false;
 			gPlayerReadyAt = Clock::now();
@@ -2866,6 +2936,8 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
 			gInGame = false;
+			gRepairOffer.Cancel();
+			gRepairOfferQueued = false;
 			gRespecToken = D2RL::InvalidItemHandle;
 			break;
 		}
@@ -2886,6 +2958,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 		}
 		case Kind::LevelChanged: {
 			std::lock_guard lock(gMutex);
+			gRepairOffer.Cancel();
 			// A nonzero difficulty can only be real; zero may just mean unset.
 			if (event->difficulty > 0 && event->difficulty < 3) {
 				gDifficulty = static_cast<int>(event->difficulty);
@@ -3073,6 +3146,18 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::U
 		return D2RL::SharedEvents::UiMessageAction::Continue;
 	}
 	const std::string key = std::string(event->target) + ":" + event->command;
+	if (std::string_view(event->target) == "VendorPanelMessage") {
+		bool locked = false;
+		{
+			std::lock_guard lock(gMutex);
+			locked = gLocks.merchants;
+		}
+		if (locked && !(gNativeRepairDispatch && std::string_view(event->command) == "RepairAll")
+			&& std::string_view(event->command) != "Close") {
+			LockMessage("shopping is locked until you find Merchant Access.");
+			return D2RL::SharedEvents::UiMessageAction::Consume;
+		}
+	}
 	std::string lower = key + ":" + (event->text != nullptr ? event->text : "");
 	std::ranges::transform(lower, lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 	if (lower.find("youdied") != std::string::npos || lower.find("playerdied") != std::string::npos) {
@@ -3083,10 +3168,25 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::U
 		return D2RL::SharedEvents::UiMessageAction::Consume;
 	}
 	if (std::string_view(event->target) == "PanelManager" && event->text != nullptr
-		&& (std::string_view(event->command) == "OpenPanel" || std::string_view(event->command) == "OpenExclusivePanel")) {
+		&& (std::string_view(event->command) == "OpenPanel" || std::string_view(event->command) == "OpenExclusivePanel"
+			|| std::string_view(event->command) == "TogglePanel")) {
 		if (const std::string reason = LockedPanel(event->text); !reason.empty()) {
+			if (std::string_view(event->command) != "TogglePanel" && ap::repairs::IsVendorPanel(event->text) && OfferRepairs(event->text)) {
+				Log("Archipelago: blocked vendor panel; offering experimental repairs.");
+				return D2RL::SharedEvents::UiMessageAction::Consume;
+			}
 			LockMessage(reason);
 			return D2RL::SharedEvents::UiMessageAction::Consume;
+		}
+	}
+	if (std::string_view(event->target) == "PanelManager") {
+		const std::string_view command = event->command;
+		const std::string_view panel = event->text == nullptr ? std::string_view() : ap::repairs::PanelName(event->text);
+		if ((command == "ClosePanel" && panel == ap::panel::Repairs().name)
+			|| ((command == "OpenPanel" || command == "OpenExclusivePanel" || command == "TogglePanel")
+				&& panel != ap::panel::Repairs().name)) {
+			std::lock_guard lock(gMutex);
+			gRepairOffer.Cancel();
 		}
 	}
 	if (seen.size() >= 400) {
@@ -3211,6 +3311,10 @@ auto CommandConnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 }
 
 auto CommandDisconnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
+	{
+		std::lock_guard lock(gMutex);
+		gRepairOffer.Cancel();
+	}
 	gClient->Disconnect();
 	Reply("Disconnected from Archipelago.");
 	return D2RL::ConsoleCommandResult::Handled;
@@ -3511,6 +3615,7 @@ auto CommandReconnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, vo
 	{
 		std::lock_guard lock(gMutex);
 		config = gConfig;
+		gRepairOffer.Cancel();
 	}
 	if (config.server.empty() || config.slot.empty()) {
 		Reply("No server saved yet: connect once with ap-connect <server[:port]> <slot> [password].");
@@ -3551,6 +3656,62 @@ auto CommandPanel(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 	}
 	TogglePanelWork(gContext, &gPanel);
 	return D2RL::ConsoleCommandResult::Handled;
+}
+
+auto CommandRepairs(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
+	const auto args = SplitArgs(command);
+	if (args.size() == 1 && (args[0] == "on" || args[0] == "off")) {
+		ap::Config config;
+		{
+			std::lock_guard lock(gMutex);
+			gConfig.repairOnly = args[0] == "on";
+			gRepairOffer.Cancel();
+			config = gConfig;
+		}
+		if (!gContext->WriteConfig(ap::FormatConfig(config).c_str())) {
+			Reply("ap-repairs: couldn't save the setting; it applies until the plugin reloads.");
+		}
+		if (gPanels != nullptr && gRepairPanel != D2RL::Panels::InvalidHandle) {
+			gPanels->closePanel(gContext, gRepairPanel);
+		}
+		Reply(config.repairOnly
+			? "Repair prototype on. While merchants are locked, talk to a blacksmith and choose Trade/Repair."
+			: "Repair prototype off.");
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	if (args.size() != 1 || args[0] != "all") {
+		Reply("Usage: ap-repairs on|off. Use Repair All on the panel after talking to a blacksmith.");
+		return D2RL::ConsoleCommandResult::InvalidArguments;
+	}
+	D2RL::Panels::PanelInfo info { .structSize = D2RL::Panels::PanelInfoSize };
+	const bool open = gPanels != nullptr && gRepairPanel != D2RL::Panels::InvalidHandle
+		&& gPanels->getPanelInfo(gContext, gRepairPanel, &info) == D2RL::Panels::Result::Success
+		&& info.presentationState == D2RL::Panels::PresentationState::Open;
+	bool ready = false;
+	{
+		std::lock_guard lock(gMutex);
+		ready = gRepairOffer.Take(open && RepairEligible(), Clock::now());
+	}
+	if (!ready) {
+		Reply("ap-repairs: talk to a blacksmith again; the repair offer expired or isn't active.");
+		return D2RL::ConsoleCommandResult::Failed;
+	}
+	const D2RL::Widgets::UiAction action {
+		.structSize = D2RL::Widgets::UiActionSize,
+		.target = "VendorPanelMessage",
+		.command = "RepairAll",
+		.text = "",
+	};
+	gNativeRepairDispatch = true;
+	const auto result = gWidgets->dispatchUiAction(gContext, &action);
+	gNativeRepairDispatch = false;
+	gPanels->closePanel(gContext, gRepairPanel);
+	Log("Archipelago: native RepairAll dispatch result " + std::to_string(static_cast<uint32_t>(result)) + ".");
+	// Dispatch success only acknowledges routing, not whether D2R repaired gear.
+	Reply(result == D2RL::Widgets::Result::Success
+		? "Repair request sent. Check your gear and gold; D2R decides the cost and whether repairs are possible."
+		: "D2R couldn't route the repair request. Shopping remains locked.");
+	return result == D2RL::Widgets::Result::Success ? D2RL::ConsoleCommandResult::Handled : D2RL::ConsoleCommandResult::Failed;
 }
 
 // Key presses arrive during input processing, so the toggle waits for the UI thread.
@@ -3683,6 +3844,7 @@ void RunPanelCommand(std::string_view action) {
 		{ "ap-core", CommandCore },
 		{ "ap-relearn", CommandRelearn },
 		{ "ap-debug", CommandDebug },
+		{ "ap-repairs", CommandRepairs },
 	};
 	const size_t           space   = action.find(' ');
 	const std::string_view name    = action.substr(0, space);
@@ -3708,6 +3870,12 @@ void RunPanelCommand(std::string_view action) {
 // shows, and runs the button's commands. Debug buttons only run while the
 // debug tools are on.
 void RunPanelButton(std::string_view id) {
+	if (ap::panel::Find(ap::panel::Repairs(), id) != nullptr) {
+		// CommandRepairs requires this modal to still be open and consumes its
+		// one-shot offer before dispatch. Unlike other buttons, don't close first.
+		RunPanelCommand("ap-repairs all");
+		return;
+	}
 	auto* handle = &gPanel;
 	const auto* button = ap::panel::Find(ap::panel::Main(), id);
 	if (button == nullptr && DebugToolsOn()) {
@@ -3790,7 +3958,8 @@ void RegisterPanels(const D2RL::PluginContext* context) {
 	}
 	const bool main = RegisterPanel(context, resources, input, ap::panel::Main(), gPanel, "command-panel", "Archipelago Commands", D2RL::Input::Key::F9);
 	const bool debug = RegisterPanel(context, resources, input, ap::panel::Debug(), gDebugPanel, "debug-panel", "Archipelago Debug Panel", D2RL::Input::Key::F10);
-	if (!main && !debug) {
+	const bool repairs = RegisterPanel(context, resources, nullptr, ap::panel::Repairs(), gRepairPanel, "repairs", "Repairs", D2RL::Input::Key::None);
+	if (!main && !debug && !repairs) {
 		gPanels = nullptr;
 	}
 }
@@ -3927,6 +4096,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-ledger", CommandLedger, "Get a new Archipelago Ledger if you lost yours.")
 	                   && context->RegisterConsoleCommand("ap-missing", CommandMissing, "List the checks left in this act: ap-missing [all].")
 	                   && context->RegisterConsoleCommand("ap-panel", CommandPanel, "Open or close the Archipelago command panel (F9).")
+	                   && context->RegisterConsoleCommand("ap-repairs", CommandRepairs, "Experimental repairs with Merchant Lock: ap-repairs on|off; use the NPC repair panel.")
 	                   && context->RegisterConsoleCommand("ap-debug", CommandDebug, "Debug tools: ap-debug on|off, ap-debug opens the debug panel (F10), ap-debug spawn <item code> [unique].")
 	                   && context->RegisterConsoleCommand("ap-ui", CommandUi, "Send a D2R UI message: ap-ui <target> <command> [text].");
 	if (!commands) {
