@@ -2,6 +2,13 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.7.1 - 2026-10-13
+
+- New Hell runs ending before Baal no longer include special-item checks that require inaccessible later
+  acts; generate a new seed to apply this correction (#68)
+- Invalid numeric Codex settings no longer crash the game at startup; the plugin keeps safe values and
+  logs which setting needs fixing (#73)
+
 ## 0.7.0 - 2026-10-13
 
 - Monster shuffling keeps the Ancients on Arreat Summit and leaves areas without random spawns alone;
