@@ -2850,7 +2850,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		                          : gLocks.cube               ? "inventory or stash"
 		                          : gLocks.stash              ? "inventory or cube"
 		                                                      : "inventory, cube or stash";
-		QueueLine("Archipelago: rewards are waiting; make room in your " + rooms + ".");
+		QueueLine("Archipelago: rewards are waiting; make room in your " + rooms + " and they arrive within 30 seconds.");
 	}
 }
 

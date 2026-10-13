@@ -173,13 +173,14 @@ Built, pushed and installed, still to check in game:
       from the base bank's recipe; the list itself is #110).
 - [ ] Writ name (#113, rerun setup): the Writ of Absolution in a potion seller's Misc tab is named "Writ of
       Absolution", not "An Evil Force".
-- [ ] Nothing drops on the ground (#109; one paced ground drop still crashed, 2026-10-13): with full bags
-      (inventory, cube and stash), `/send Snrn Random Unique` a few times: no crash, nothing at your feet, the
-      chat says "rewards are waiting; make room", and they arrive once you make room. With potions and Town
-      Portal locked, set potions aside (`ap-debug give hp1 4`), fill the inventory, then `!getitem` Town
-      Portal Access and Potion Access together: the chat asks for room for the Tome and says the potions come
-      back as you make room; freeing cells brings them, ending with "the last of your set-aside potions is
-      back".
+- [x] Nothing drops on the ground (#109; one paced ground drop still crashed): with full bags, Random Uniques
+      no longer crash (2026-10-13). Rewards that only lack room now wait ("rewards are waiting; make room ...
+      and they arrive within 30 seconds", retried every 30 seconds) instead of rerolling into smaller uniques or
+      a mid rune; that last change wasn't replayed in game.
+- [ ] With potions and Town Portal locked, set potions aside (`ap-debug give hp1 4`), fill the inventory, then
+      `!getitem` Town Portal Access and Potion Access together: the chat asks for room for the Tome and says
+      the potions come back as you make room; freeing cells brings them, ending with "the last of your
+      set-aside potions is back" (#109).
 - [ ] Runeword banks agree (#110, rerun setup): `excel\runes.txt` and `excel\base\runes.txt` in the mod give
       every runeword both have the same runes, and `runewords.txt` marks the five Reign of the Warlock words
       (Authority, Coven, Ritual, Vigilance, Void) "(Reign of the Warlock only)". On a Lord of Destruction
