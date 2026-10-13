@@ -2,6 +2,19 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.11.0 - 2026-10-13
+
+Rerun `d2r-ap-setup` for this version: the Ledger is gone from the mod and the Emblem is new.
+
+- The Archipelago Ledger is gone: the status line shows your check counts, and F9's "Checks Left by Act"
+  (`ap-missing all`) the rest. In tree mode a small Archipelago Emblem takes over its other job: it tells the
+  plugin your character's class, so rewards arrive in later games without a kill first (#54)
+- The chat now shows items other players send each other, greyed and behind your own lines. Set
+  `other_sends` in `archipelago.toml` to `mine` (none), `progression` (the default) or `all`; a big release
+  shows a few and counts the rest (#49)
+- A rune or gem handed out as a reward no longer sends its "Find" check after you rejoin the game; one you
+  find yourself still does (#108)
+
 ## 0.10.1 - 2026-10-13
 
 New seeds only; existing seeds and the mod are unchanged, so there's no need to rerun `d2r-ap-setup`.
