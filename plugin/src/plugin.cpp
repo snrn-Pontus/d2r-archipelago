@@ -111,6 +111,10 @@ constexpr const char* QuestSourceNames[] = { "the quest event", "a boss kill", "
 // Area triggers queue difficulty 3, the one you're on once it's known.
 std::vector<int>      gQuestQueue;
 constexpr int         CurrentDifficulty = 3;
+// Drops area triggers still waiting for the difficulty, when the game changes (gMutex held).
+void DropUnresolvedAreaQuests() {
+	std::erase_if(gQuestQueue, [](int quest) { return quest % 1000 / 100 == CurrentDifficulty; });
+}
 // Den of Evil kills per difficulty this session.
 uint32_t              gDenKills[3] = {};
 // Field superunique kills (server thread), as difficulty * 100 + superunique id.
@@ -2317,14 +2321,15 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 			questDifficulty = std::clamp(gDifficulty, 0, 2);
 		}
 	}
+	// An area trigger waiting for the difficulty holds back everything after it, to keep the order.
 	std::vector<int> waiting;
 	for (const int quest : quests) {
 		int difficulty = quest % 1000 / 100;
+		if (!waiting.empty() || (difficulty == CurrentDifficulty && questDifficulty < 0)) {
+			waiting.push_back(quest);
+			continue;
+		}
 		if (difficulty == CurrentDifficulty) {
-			if (questDifficulty < 0) {
-				waiting.push_back(quest);
-				continue;
-			}
 			difficulty = questDifficulty;
 		}
 		if (static_cast<QuestSource>(quest / 1000) == QuestSource::Event) {
@@ -2470,6 +2475,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gPlayerReadyAt = Clock::now();
 			gDifficultyKnown = false;
 			gPendingAreas.clear();
+			DropUnresolvedAreaQuests();
 			break;
 		}
 		case Kind::PlayerResurrected: {
