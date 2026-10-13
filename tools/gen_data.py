@@ -24,6 +24,18 @@ CLASSES = {
 EXTRA_AREAS = [8, 17, 38, 73, 102, 108, 131, 132]
 # Towns you arrive in by killing the previous act boss; the Rogue Encampment is free.
 SKIP_AREAS = {1}
+# Side areas for Side Area Checks: the bottom of optional dungeons, by level id. A
+# name the game also uses elsewhere gets the place it's in, so check names stay unique.
+SIDE_AREAS = {
+    13: "Cave Level 2", 14: "Underground Passage Level 2", 15: "Hole Level 2", 16: "Pit Level 2",
+    18: "Crypt", 19: "Mausoleum", 25: "Tower Cellar Level 5",
+    49: "Lut Gholein Sewers Level 3", 59: "Stony Tomb Level 2", 61: "Claw Viper Temple Level 2",
+    64: "Maggot Lair Level 3", 65: "Ancient Tunnels",
+    84: "Arachnid Lair", 85: "Spider Cavern", 90: "Swampy Pit Level 3", 91: "Flayer Dungeon Level 3",
+    93: "Kurast Sewers Level 2", 94: "Ruined Temple", 95: "Disused Fane", 96: "Forgotten Reliquary",
+    97: "Forgotten Temple", 98: "Ruined Fane", 99: "Disused Reliquary",
+    116: "Drifter Cavern", 119: "Icy Cellar", 125: "Abaddon", 126: "Pit of Acheron", 127: "Infernal Pit",
+}
 
 # Story quests: (quest flag id, act index, name). Flag ids follow D2's quest
 # state rows (A1Q1 = 1, A2Q1 = 9, ...); Act IV is 25 Fallen Angel, 27 Hell's
@@ -194,6 +206,8 @@ def main() -> None:
             continue
         areas.append((level_id, int(row["Act"]), row["*StringName"]))
     areas.sort()
+    side_areas = [(level_id, level_acts[level_id], name) for level_id, name in sorted(SIDE_AREAS.items())]
+    assert not {lid for lid, _act, _name in areas} & set(SIDE_AREAS), "a side area is also an area check"
 
     # (superunique row, act index, name, check label). The act comes from the
     # treasure class ("Act 2 Super A"); Griswold has his own, in Act I.
@@ -341,6 +355,9 @@ def main() -> None:
     py += ["]"]
     py += ["", "# (level id, act index, name)", "AREAS = ["]
     py += [f"    ({lid}, {act}, {name!r})," for lid, act, name in areas]
+    py += ["]", "", "# (level id, act index, name): optional dungeons, some picked per difficulty by Side Area Checks.",
+           "SIDE_AREAS = ["]
+    py += [f"    ({lid}, {act}, {name!r})," for lid, act, name in side_areas]
     py += ["]", "", "# (quest flag id, act index, name)", "QUESTS = ["]
     py += [f"    ({qid}, {act}, {name!r})," for qid, act, name in QUESTS]
     py += ["]", "", "# (superunique id, act index, name, check label): the field superuniques, one check each per difficulty.",
@@ -383,6 +400,9 @@ def main() -> None:
     h += [f"\t{{ {sid}, {cstr(name)}, {cstr(CLASSES[cls])} }}," for sid, name, cls in skills]
     h += ["};", "", "inline constexpr Area Areas[] = {"]
     h += [f"\t{{ {lid}, {act}, {cstr(name)} }}," for lid, act, name in areas]
+    h += ["};", "", "// Optional dungeons; the seed picks which are checks on each difficulty (slot data side_areas).",
+          "inline constexpr Area SideAreas[] = {"]
+    h += [f"	{{ {lid}, {act}, {cstr(name)} }}," for lid, act, name in side_areas]
     h += ["};", "", "inline constexpr Quest Quests[] = {"]
     h += [f"\t{{ {qid}, {act}, {cstr(name)} }}," for qid, act, name in QUESTS]
     h += ["};", "", "// The field superuniques (SuperUniques row, act, name, check label), one check each per difficulty.",

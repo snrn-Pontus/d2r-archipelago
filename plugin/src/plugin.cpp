@@ -37,6 +37,7 @@
 #include <optional>
 #include <random>
 #include <set>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -381,9 +382,11 @@ auto ActOfLocation(int64_t location, const ap::SlotData& slots) -> int {
 			}
 		}
 	} else if (offset >= 1000 && offset < 1600) {
-		for (const auto& area : ap::data::Areas) {
-			if (area.id == (offset - 1000) % 200) {
-				return static_cast<int>((offset - 1000) / 200) * 5 + area.act;
+		for (const std::span<const ap::data::Area> areas : { std::span<const ap::data::Area>(ap::data::Areas), std::span<const ap::data::Area>(ap::data::SideAreas) }) {
+			for (const auto& area : areas) {
+				if (area.id == (offset - 1000) % 200) {
+					return static_cast<int>((offset - 1000) / 200) * 5 + area.act;
+				}
 			}
 		}
 	} else if (offset >= 2000 && offset < 2100) {
@@ -2471,13 +2474,16 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	}
 	std::vector<int> areas;
 	int difficulty = 0;
+	bool bound = false;
 	{
 		std::lock_guard lock(gMutex);
 		if (gDifficultyKnown) {
 			areas.swap(gPendingAreas);
 			difficulty = std::clamp(gDifficulty, 0, 2);
 		}
+		bound = gBoundSession != 0;
 	}
+	const std::set<int64_t> sideAreas = areas.empty() ? std::set<int64_t> {} : gClient->Slots().sideAreas;
 	UpdateLocks();
 	for (const int level : areas) {
 		EnforceActKeys(difficulty, level);
@@ -2488,6 +2494,13 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		for (const auto& area : ap::data::Areas) {
 			if (area.id == level) {
 				AddChecks({ ap::ids::AreaLocation(static_cast<uint32_t>(difficulty), area.id) });
+			}
+		}
+		// Only the side areas the seed picked; before a seed is bound, keep them all (the server skips the rest).
+		for (const auto& area : ap::data::SideAreas) {
+			const int64_t location = ap::ids::AreaLocation(static_cast<uint32_t>(difficulty), area.id);
+			if (area.id == level && (!bound || sideAreas.contains(location))) {
+				AddChecks({ location });
 			}
 		}
 	}

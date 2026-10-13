@@ -311,7 +311,7 @@ void TestClientParsesServerPackets() {
 	EXPECT(client.Missing() == std::vector<int64_t> { 2420002 });
 	client.Handle(R"json([{"cmd":"RoomUpdate","checked_locations":[2420002]}])json");
 	EXPECT(client.Missing().empty() && client.LocationCount() == 2);
-	EXPECT(client.Slots().goal == 2 && !client.Slots().areaChecks && client.Slots().levelCap == 90);
+	EXPECT(client.Slots().goal == 2 && !client.Slots().areaChecks && client.Slots().levelCap == 90 && client.Slots().sideAreas.empty());
 	EXPECT(client.Items().size() == 1 && client.Items()[0].item == 2430054);
 	EXPECT(client.ItemName(2430054, 1) == "Teleport (Sorceress)");
 	// A gap in the item index must not append anything.
@@ -328,7 +328,7 @@ void TestClientDeathLink() {
 	client.Connect("localhost", "Snrn", "");
 	client.Disconnect();
 	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[],"missing_locations":[],"checked_locations":[],
-		"slot_data":{"death_link":true,"superunique_checks":true,"shop_checks":3,"enforce_act_keys":true,
+		"slot_data":{"death_link":true,"superunique_checks":true,"shop_checks":3,"enforce_act_keys":true,"side_areas":[2421019,2421325],
 		"hints":[[77,2,2430951],[2420001,1,2430054]],"hint_balance":30,"hint_sources":{"cain":true,"page_chance":25,"prophecy_shop":true},
 		"locks":{"cube":true,"waypoints":true}},"slot_info":{}}])json");
 	EXPECT(client.Slots().hints.size() == 2 && client.Slots().hints[0].location == 77 && client.Slots().hints[0].player == 2
@@ -339,6 +339,7 @@ void TestClientDeathLink() {
 	EXPECT(client.Slots().shopChecks == 3 && client.Slots().enforceActKeys && client.Slots().locks.cube && client.Slots().locks.waypoints
 	       && !client.Slots().locks.stash);
 	EXPECT(client.Slots().deathLink && client.Slots().superUniqueChecks && client.Slots().randomizer.superUniqueChecks);
+	EXPECT(client.Slots().sideAreas == std::set<int64_t>({ ap::ids::AreaLocation(0, 19), ap::ids::AreaLocation(1, 125) }));
 	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":1.0,"source":"Other","cause":"Other was slain by a cow."}}])json");
 	// Our own death comes back from the server too; it's not a new one.
 	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":2.0,"source":"Snrn","cause":"Snrn died."}}])json");

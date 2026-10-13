@@ -311,6 +311,38 @@ inline constexpr Area Areas[] = {
 	{ 132, 4, "The Worldstone Chamber" },
 };
 
+// Optional dungeons; the seed picks which are checks on each difficulty (slot data side_areas).
+inline constexpr Area SideAreas[] = {
+	{ 13, 0, "Cave Level 2" },
+	{ 14, 0, "Underground Passage Level 2" },
+	{ 15, 0, "Hole Level 2" },
+	{ 16, 0, "Pit Level 2" },
+	{ 18, 0, "Crypt" },
+	{ 19, 0, "Mausoleum" },
+	{ 25, 0, "Tower Cellar Level 5" },
+	{ 49, 1, "Lut Gholein Sewers Level 3" },
+	{ 59, 1, "Stony Tomb Level 2" },
+	{ 61, 1, "Claw Viper Temple Level 2" },
+	{ 64, 1, "Maggot Lair Level 3" },
+	{ 65, 1, "Ancient Tunnels" },
+	{ 84, 2, "Arachnid Lair" },
+	{ 85, 2, "Spider Cavern" },
+	{ 90, 2, "Swampy Pit Level 3" },
+	{ 91, 2, "Flayer Dungeon Level 3" },
+	{ 93, 2, "Kurast Sewers Level 2" },
+	{ 94, 2, "Ruined Temple" },
+	{ 95, 2, "Disused Fane" },
+	{ 96, 2, "Forgotten Reliquary" },
+	{ 97, 2, "Forgotten Temple" },
+	{ 98, 2, "Ruined Fane" },
+	{ 99, 2, "Disused Reliquary" },
+	{ 116, 4, "Drifter Cavern" },
+	{ 119, 4, "Icy Cellar" },
+	{ 125, 4, "Abaddon" },
+	{ 126, 4, "Pit of Acheron" },
+	{ 127, 4, "Infernal Pit" },
+};
+
 inline constexpr Quest Quests[] = {
 	{ 1, 0, "Den of Evil" },
 	{ 2, 0, "Sisters' Burial Grounds" },

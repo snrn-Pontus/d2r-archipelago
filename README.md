@@ -10,9 +10,9 @@ skill points on the trees; instead each skill you receive is added to your **Arc
 charm that grants every skill you've found (D2's `oskill` property, which works for any class), at a
 level set by copies found, Codex Empowerments and your character level.
 
-Locations are story quests, kills of the 31 field superuniques and first visits to waypoint and landmark
-areas, each on every difficulty up to the goal, every fifth character level, and the Secret Cow Level on
-difficulties finished before the goal. Optional collection checks (runes, gems, complete sets, Hell's keys,
+Locations are story quests, kills of the 31 field superuniques, first visits to waypoint and landmark
+areas and to a few randomly picked side areas (optional dungeons), each on every difficulty up to the goal,
+every fifth character level, and the Secret Cow Level on difficulties finished before the goal. Optional collection checks (runes, gems, complete sets, Hell's keys,
 organs, essences, the Torch and Annihilus) only hold filler, and so do uber, kill-count and find-count checks.
 Quest item pickups and Archipelago Parcels bought from each act's potion seller are checks too. Optional
 locks keep the Horadric Cube, Town Portal, potions, the stash, merchants and the waypoints of Acts I to III closed until

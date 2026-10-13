@@ -161,6 +161,17 @@ class AreaChecks(DefaultOnToggle):
     display_name = "Area Checks"
 
 
+class SideAreaChecks(Range):
+    """How many side areas are checks on each difficulty in play: the bottom of an optional dungeon you'd
+    usually skip, like the Mausoleum, the Ancient Tunnels, the Kurast temples or Abaddon. Each difficulty
+    picks its own at random, so Normal, Nightmare and Hell send you to different places. The check is
+    entering the area. 0 turns them off; 28 makes every side area a check on every difficulty."""
+    display_name = "Side Area Checks"
+    range_start = 0
+    range_end = 28
+    default = 5
+
+
 class LevelChecks(DefaultOnToggle):
     """Reaching every fifth character level is a check, up to a cap set by the goal
     (30 on Normal, 60 on Nightmare, 90 on Hell). Past level 70 they only hold filler."""
@@ -594,6 +605,7 @@ class D2ROptions(PerGameCommonOptions):
     include_warlock: IncludeWarlock
     skills_per_act: SkillsPerAct
     area_checks: AreaChecks
+    side_area_checks: SideAreaChecks
     level_checks: LevelChecks
     superunique_checks: SuperUniqueChecks
     quest_item_checks: QuestItemChecks
@@ -656,7 +668,7 @@ OPTION_GROUPS = [
     OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, ActKeyWindow, SkillsPerAct]),
     OptionGroup("Skills and Codex", [CharacterClass, SkillMode, SkillTreeShuffle, SkillPoints, SkillPoolSize, SkillCopies, SkillFocus, ScaleWithLength, StartingSkills,
                                      SkillClasses, IncludeWarlock, SkillLevelScaling, SkillScalingCap, CodexEmpowerments]),
-    OptionGroup("Checks", [AreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, CowLevelChecks]),
+    OptionGroup("Checks", [AreaChecks, SideAreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, CowLevelChecks]),
     OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,
                                                FindCountChecks], start_collapsed=True),
     OptionGroup("Locks", [CubeLock, TownPortalLock, PotionLock, StashLock, MerchantLock, WaypointLock]),

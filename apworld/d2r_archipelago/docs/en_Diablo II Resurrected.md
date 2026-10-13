@@ -30,6 +30,9 @@ shapeshifts. It works in both modes; in tree mode, the shuffled tree is the one 
 - Completing each story quest, on every difficulty up to your goal.
 - Entering each waypoint area, plus a few landmarks (Den of Evil, Tristram, the Chaos Sanctuary and more),
   for the first time, on every difficulty up to your goal.
+- Entering a few side areas, the bottom of optional dungeons you'd usually skip (the Mausoleum, the Ancient
+  Tunnels, the Kurast temples, Abaddon and more): `side_area_checks` of them on each difficulty (5 by
+  default), picked at random, so each difficulty sends you somewhere different.
 - Reaching every fifth character level. Past level 70 these only hold filler.
 - Killing each of the 31 superuniques that roam the field (Bishibosh, Rakanishu, Pindleskin and the rest), on
   every difficulty up to your goal (`superunique_checks`). Quest bosses and the Chaos Sanctuary seal bosses
