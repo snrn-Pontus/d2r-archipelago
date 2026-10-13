@@ -2734,7 +2734,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		cows.swap(gCowQueue);
 		collections.swap(gCollectionQueue);
 		commands = (!gCommandQueue.empty() && Clock::now() >= gNextCommandsAt)
-		        ||(!gTrapQueue.empty() && gInGame && Clock::now() >= gNextTrapAt && (!gSlots.traps.waitForTown || !IsTown(gCurrentLevel)));
+		        || (!gTrapQueue.empty() && gInGame && Clock::now() >= gNextTrapAt && (!gSlots.traps.waitForTown || !IsTown(gCurrentLevel)));
 	}
 	if (gClient->Slots().cowLevelChecks) {
 		for (const int cow : cows) {
