@@ -173,14 +173,13 @@ Built, pushed and installed, still to check in game:
       from the base bank's recipe; the list itself is #110).
 - [ ] Writ name (#113, rerun setup): the Writ of Absolution in a potion seller's Misc tab is named "Writ of
       Absolution", not "An Evil Force".
-- [ ] Ground drops one at a time (#109): with potions and Town Portal locked, fill the inventory, set potions
-      aside (`ap-debug give hp1 4` makes them, the lock takes them), then `!getitem` Town Portal Access and
-      Potion Access together (or the debug panel's From the Server). No crash: the Tome lands at your feet,
-      the chat says your inventory is full so the potions come back one at a time, and they drop about one
-      every five seconds (or go straight to the inventory once you make room), ending with "the last of your
-      set-aside potions is back". A few rewards `/send` with full bags and a locked cube and stash drop one a
-      second, with "rewards drop at your feet one at a time". Nothing drops right after joining a game: it
-      waits until you're in an area for a couple of seconds.
+- [ ] Nothing drops on the ground (#109; one paced ground drop still crashed, 2026-10-13): with full bags
+      (inventory, cube and stash), `/send Snrn Random Unique` a few times: no crash, nothing at your feet, the
+      chat says "rewards are waiting; make room", and they arrive once you make room. With potions and Town
+      Portal locked, set potions aside (`ap-debug give hp1 4`), fill the inventory, then `!getitem` Town
+      Portal Access and Potion Access together: the chat asks for room for the Tome and says the potions come
+      back as you make room; freeing cells brings them, ending with "the last of your set-aside potions is
+      back".
 - [ ] Runeword banks agree (#110, rerun setup): `excel\runes.txt` and `excel\base\runes.txt` in the mod give
       every runeword both have the same runes, and `runewords.txt` marks the five Reign of the Warlock words
       (Authority, Coven, Ritual, Vigilance, Void) "(Reign of the Warlock only)". On a Lord of Destruction
@@ -431,7 +430,7 @@ Defaults (`act_keys` and `enforce_act_keys` on).
   - [ ] Ctrl+click the Horadric Scroll into the stash: its check doesn't send.
 - [ ] D2RLoader 1.3.1-beta logs inventory activations (container 4) for potions now: if a plain right click
       on an inventory potion is logged, the set-aside on pickup could go.
-- [ ] Potion Access gives the set-aside potions back (to the ground if the inventory is full). **4 Healing
+- [ ] Potion Access gives the set-aside potions back (as room frees up if the inventory is full). **4 Healing
       Potions** on the debug panel gives some to set aside.
 - [x] Town Portal: D2RLoader doesn't report scroll use, so within 5 seconds every scroll and tome on the
       character crumbles, with a chat message (the starting scroll too).

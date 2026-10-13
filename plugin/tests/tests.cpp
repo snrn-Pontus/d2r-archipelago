@@ -7,7 +7,6 @@
 #include "config.h"
 #include "repairs.h"
 #include "game_data.h"
-#include "ground_drops.h"
 #include "ids.h"
 #include "loot.h"
 #include "milestones.h"
@@ -1754,25 +1753,10 @@ void TestRepairOffers() {
 	EXPECT(!ap::repairs::IsVendorPanel("PlayerInventoryPanel"));
 }
 
-void TestGroundGate() {
-	using std::chrono::milliseconds;
-	using ap::drops::GroundGate;
-	const auto now = GroundGate::Clock::time_point {} + std::chrono::seconds(100);
-	GroundGate gate;
-	EXPECT(!gate.Take(false, now)); // Loading, dead or the area not known yet.
-	EXPECT(gate.Take(true, now));
-	EXPECT(!gate.Take(true, now)); // A second item in the same tick waits (#109).
-	EXPECT(!gate.Take(true, now + milliseconds(40)));
-	EXPECT(gate.Take(true, now + GroundGate::Gap));
-	EXPECT(!gate.Take(false, now + GroundGate::Gap * 3)); // A refused turn isn't used up...
-	EXPECT(gate.Take(true, now + GroundGate::Gap * 3)); // ...so it's there once settled.
-}
-
 int main() {
 	TestCommandPanel();
 	TestDeferredPanelScope();
 	TestRepairOffers();
-	TestGroundGate();
 	TestQuestTriggers();
 	TestCodexLevels();
 	TestTableRoundTrip();
