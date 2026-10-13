@@ -30,6 +30,8 @@ Built, pushed and installed, still to check in game:
       switch them to a 1x1 picture (size and picture must match).
 - [ ] Parcels and scrolls are no longer quest items: check whether a vendor buys them back, and that a
       bought one doesn't stay in the inventory.
+- [ ] Shuffled superuniques are visible now (they had no HD model): after rerunning setup, Rakanishu in
+      Stony Field and his minions show their new monster's model (section 8).
 
 Ideas, not started:
 
