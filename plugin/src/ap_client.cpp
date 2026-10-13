@@ -204,6 +204,14 @@ void Client::Handle(const std::string& text) {
 			std::lock_guard lock(mutex_);
 			team_ = packet.value("team", 0);
 			mySlot_ = packet.value("slot", 0);
+			// A new session: the previous slot's items and players must not carry over. The server
+			// follows with ReceivedItems index 0 when this slot has any items (same reply), and sends
+			// nothing when it has none, so the list stays empty and unsynced until then.
+			items_.clear();
+			itemsSynced_ = false;
+			++itemsGeneration_;
+			playerNames_.clear();
+			playerGames_.clear();
 			for (const json& player : packet.value("players", json::array())) {
 				if (player.value("team", 0) == team_) {
 					playerNames_[player.value("slot", 0)] = player.value("alias", player.value("name", ""));
@@ -341,6 +349,7 @@ void Client::Handle(const std::string& text) {
 				std::lock_guard lock(mutex_);
 				if (index == 0) {
 					items_.clear();
+					itemsSynced_ = true;
 				}
 				if (index != items_.size()) {
 					resync = true;
@@ -596,6 +605,16 @@ auto Client::Missing() const -> std::vector<int64_t> {
 		}
 	}
 	return missing;
+}
+
+auto Client::ItemsSynced() const -> bool {
+	std::lock_guard lock(mutex_);
+	return itemsSynced_;
+}
+
+auto Client::Snapshot() const -> ItemSnapshot {
+	std::lock_guard lock(mutex_);
+	return { items_, slotData_, itemsGeneration_, sessionGeneration_, itemsSynced_ };
 }
 
 auto Client::ItemsGeneration() const -> uint64_t {
