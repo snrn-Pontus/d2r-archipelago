@@ -30,6 +30,15 @@ Built, pushed and installed, still to check in game:
       switch them to a 1x1 picture (size and picture must match).
 - [ ] Parcels and scrolls are no longer quest items: check whether a vendor buys them back, and that a
       bought one doesn't stay in the inventory.
+- [ ] Class-usable skills (PR #18, new seed needed): a Sorceress pool and tree hold no claw skills, no
+      Assassin traps (Fire Blast froze a Sorceress), no Frenzy or Double Swing, and no wolf or bear attacks.
+      A Druid only gets Feral Rage, Maul and the like alongside Werewolf or Werebear.
+- [ ] A Barbarian with an Assassin trap in the pool (allowed: they have the S2 animation) can cast it
+      without freezing.
+- [ ] Werewolf or Werebear on another class: does the form work? If not, keep forms Druid-only too.
+- [ ] `ap-relearn` (tree mode): with all skills unlocked it says so; after a respec at Akara it lists the
+      lost skills and asks for `ap-relearn confirm`, which gives each one level back; running `confirm`
+      again changes nothing.
 
 Ideas, not started:
 
