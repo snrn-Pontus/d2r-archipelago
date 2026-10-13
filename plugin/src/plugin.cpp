@@ -3364,8 +3364,9 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 		const bool bound = gBoundSession != 0;
 		int& cows = bound ? gSave.cowKills[difficulty] : gCowKills[difficulty];
 		bool milestone = false;
+		// A seed without cow checks never saves the check, so don't queue (and save) it on every cow.
 		for (const int64_t location : ap::milestones::CowChecks(difficulty, ++cows)) {
-			if (!(bound ? gSave.checks : gUnbound).contains(location)) {
+			if ((!bound || gSlots.cowLevelChecks) && !(bound ? gSave.checks : gUnbound).contains(location)) {
 				gCowQueue.insert(difficulty * 10 + 2);
 				milestone = true;
 			}
