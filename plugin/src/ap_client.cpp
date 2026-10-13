@@ -292,13 +292,24 @@ void Client::Handle(const std::string& text) {
 			slotData_.randomizer.monsters = static_cast<randomizer::Shuffle>(randomizer.value("monster_shuffle", 0));
 			slotData_.randomizer.superUniques = static_cast<randomizer::Shuffle>(randomizer.value("superunique_shuffle", 0));
 			slotData_.randomizer.mainPathSuperUniqueCap = randomizer.value("main_path_superunique_cap", -1);
+			slotData_.randomizer.mainPathSuperUniqueMinions = randomizer.value("main_path_superunique_minions", -1);
+			slotData_.randomizer.superUniqueSpread = randomizer.value("superunique_shuffle_spread", 6);
+			slotData_.randomizer.superUniqueMinions = randomizer.value("superunique_minions", 100);
+			slotData_.randomizer.shuffleTolerance = randomizer.value("monster_shuffle_tolerance", 3);
+			slotData_.randomizer.shuffleCowLevel = randomizer.value("shuffle_cow_level", false);
 			slotData_.randomizer.runewords = randomizer.value("runeword_shuffle", false);
-			slotData_.randomizer.xpPercent = randomizer.value("xp_multiplier", 100);
+			slotData_.randomizer.runeSpread = randomizer.value("runeword_rune_spread", 2);
+			// Nightmare and Hell follow Normal unless the slot sets them.
+			const int xp = randomizer.value("xp_multiplier", 100);
+			slotData_.randomizer.xpPercent = { xp, randomizer.value("xp_multiplier_nightmare", xp), randomizer.value("xp_multiplier_hell", xp) };
 			slotData_.randomizer.itemLevelRequirements = randomizer.value("item_level_requirements", true);
 			slotData_.randomizer.itemStatRequirements = randomizer.value("item_stat_requirements", true);
-			slotData_.randomizer.monsterDensity = randomizer.value("monster_density", 100);
+			const int density = randomizer.value("monster_density", 100);
+			slotData_.randomizer.monsterDensity = { density, randomizer.value("monster_density_nightmare", density),
+				randomizer.value("monster_density_hell", density) };
 			slotData_.randomizer.championPacks = randomizer.value("champion_packs", 100);
 			slotData_.randomizer.betterDrops = randomizer.value("better_drops", 100);
+			slotData_.randomizer.betterMagic = randomizer.value("better_magic", 100);
 			slotData_.randomizer.skillTree.clear();
 			for (const json& pair : randomizer.value("skill_tree", json::array())) {
 				if (pair.is_array() && pair.size() == 2) {

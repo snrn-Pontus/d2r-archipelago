@@ -742,30 +742,35 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 		}
 		std::printf("  %s: locked %d class skills\n", label, blocked);
 
-		if (settings.monsters != rnd::Shuffle::Off || settings.monsterDensity != 100 || settings.championPacks != 100) {
+		const rnd::PerDifficulty unchanged = { 100, 100, 100 };
+		const auto& density = settings.monsterDensity;
+		if (settings.monsters != rnd::Shuffle::Off || density != unchanged || settings.championPacks != 100) {
 			std::string stats;
 			ReadCascFile(storage, "data\\global\\excel\\" + bank + "monstats.txt", stats);
 			const Table monstats = Table::Parse(stats);
 			int changed = 0;
 			auto random = TableRandom(settings.seed, "levels");
 			PatchTable(storage, excel, bank, "levels.txt", [&](Table& t) {
-				changed = rnd::ShuffleMonsters(t, monstats, settings.monsters, random);
-				rnd::ScaleDensity(t, settings.monsterDensity, settings.championPacks);
+				changed = rnd::ShuffleMonsters(t, monstats, settings.monsters, random, settings.shuffleTolerance, settings.shuffleCowLevel);
+				rnd::ScaleDensity(t, density, settings.championPacks);
 			});
-			std::printf("  %s: new monsters in %d areas, density %d%%, champion packs %d%%\n", label, changed, settings.monsterDensity, settings.championPacks);
+			std::printf("  %s: new monsters in %d areas, density %d/%d/%d%%, champion packs %d%%\n", label, changed, density[0], density[1], density[2],
+			            settings.championPacks);
 		}
-		if (settings.betterDrops > 100) {
-			PatchTable(storage, excel, bank, "itemratio.txt", [&](Table& t) { rnd::BoostDrops(t, settings.betterDrops); });
-			std::printf("  %s: uniques, sets and rares drop at %d%%\n", label, settings.betterDrops);
+		if (settings.betterDrops != 100 || settings.betterMagic != 100) {
+			PatchTable(storage, excel, bank, "itemratio.txt", [&](Table& t) { rnd::BoostDrops(t, settings.betterDrops, settings.betterMagic); });
+			std::printf("  %s: uniques, sets and rares drop at %d%%, magic items at %d%%\n", label, settings.betterDrops, settings.betterMagic);
 		}
-		if (settings.superUniques != rnd::Shuffle::Off || settings.superUniqueChecks) {
+		if (settings.superUniques != rnd::Shuffle::Off || settings.superUniqueChecks || settings.superUniqueMinions != 100) {
 			std::string stats;
 			ReadCascFile(storage, "data\\global\\excel\\" + bank + "monstats.txt", stats);
 			Table monstats = Table::Parse(stats);
-			int changed = 0, linked = 0;
+			int changed = 0, linked = 0, minions = 0;
 			auto random = TableRandom(settings.seed, "superuniques");
 			PatchTable(storage, excel, bank, "superuniques.txt", [&](Table& t) {
-				changed = rnd::ShuffleSuperUniques(t, monstats, settings.superUniques, random, settings.mainPathSuperUniqueCap);
+				const Table before = t;
+				changed = rnd::ShuffleSuperUniques(t, monstats, settings.superUniques, random, settings.mainPathSuperUniqueCap, settings.superUniqueSpread);
+				minions = rnd::ScaleSuperUniqueMinions(t, before, settings.superUniqueMinions, settings.mainPathSuperUniqueMinions);
 				if (settings.superUniqueChecks) {
 					linked = rnd::AddSuperUniqueMonsters(monstats, t, &superUniqueCopies);
 				}
@@ -773,20 +778,20 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			if (settings.superUniqueChecks) {
 				PatchTable(storage, excel, bank, "monstats.txt", [&](Table& t) { t = monstats; });
 			}
-			std::printf("  %s: %d superuniques changed shape, %d count as checks\n", label, changed, linked);
+			std::printf("  %s: %d superuniques changed shape, %d got a new minion count, %d count as checks\n", label, changed, minions, linked);
 		}
 		if (settings.runewords) {
 			auto random = TableRandom(settings.seed, "runes");
 			PatchTable(storage, excel, bank, "runes.txt", [&](Table& t) {
-				auto list = rnd::ShuffleRunewords(t, random);
+				auto list = rnd::ShuffleRunewords(t, random, settings.runeSpread);
 				if (bank.empty()) {
 					recipes = std::move(list);
 				}
 			});
 		}
-		if (settings.xpPercent != 100) {
-			PatchTable(storage, excel, bank, "monlvl.txt", [&](Table& t) { rnd::ScaleExperience(t, settings.xpPercent); });
-			std::printf("  %s: monster experience at %d%%\n", label, settings.xpPercent);
+		if (const auto& xp = settings.xpPercent; xp != unchanged) {
+			PatchTable(storage, excel, bank, "monlvl.txt", [&](Table& t) { rnd::ScaleExperience(t, xp); });
+			std::printf("  %s: monster experience at %d/%d/%d%%\n", label, xp[0], xp[1], xp[2]);
 		}
 		const bool clearRequirements = !settings.itemLevelRequirements || !settings.itemStatRequirements;
 		if (clearRequirements) {
