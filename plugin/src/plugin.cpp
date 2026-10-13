@@ -1466,9 +1466,13 @@ auto CreateIn(D2RL::PlayerHandle player, const ap::loot::Pick& pick, uint32_t re
 // can't reach it. Nothing goes to the ground: D2RLoader's ground placement
 // crashes D2R (#109), so with full bags the item waits for room. If D2R rejects a
 // forced unique or set record, it retries with any record that fits the base.
-// Returns false only when nothing could be placed. owner, when set, is the
-// sender's name for a unique or set item.
+// Returns false only when nothing could be placed; gLootNoRoom then says whether
+// it was only for lack of room (D2R answers Conflict in every container), not an
+// item D2R won't make. owner, when set, is the sender's name for a unique or set item.
+bool gLootNoRoom = false;
+
 bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::string& owner = {}) {
+	gLootNoRoom = false;
 	bool cubeLocked = false, stashLocked = false;
 	{
 		std::lock_guard lock(gMutex);
@@ -1497,6 +1501,7 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 		Log("Archipelago: placed " + pick.name + " in the " + name + (skipped.empty() ? std::string {} : " (" + skipped.substr(2) + ")") + ".");
 	};
 	std::string results;
+	bool noRoom = true;
 	for (const auto container : { D2RL::Items::ItemContainer::Inventory, D2RL::Items::ItemContainer::Cube, D2RL::Items::ItemContainer::PersonalStash }) {
 		if ((container == D2RL::Items::ItemContainer::Cube && cubeLocked) || (container == D2RL::Items::ItemContainer::PersonalStash && stashLocked)) {
 			continue;
@@ -1519,8 +1524,10 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 			return true;
 		}
 		results += " " + std::to_string(static_cast<uint32_t>(container)) + "=" + std::to_string(static_cast<uint32_t>(result));
+		noRoom = noRoom && result == D2RL::Items::Result::Conflict;
 	}
 	Log("Archipelago: no room for " + pick.name + " (container=result:" + results + skipped + ").");
+	gLootNoRoom = noRoom;
 	return false;
 }
 
@@ -2717,8 +2724,9 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		}
 		// An item D2R refuses everywhere may not exist for this character, so roll
 		// others. If none fit, a mid rune stands in; if even that won't fit, the
-		// containers are full and we wait for the player to make room.
-		// Uniques and sets from another player carry that player's name.
+		// containers are full and we wait for the player to make room. An item that
+		// only lacks room (gLootNoRoom) waits too, rather than shrinking into a smaller
+		// one or a rune. Uniques and sets from another player carry that player's name.
 		const int         sender = items[index].player;
 		const std::string owner = sender > 0 && sender != gClient->MySlot() ? ap::personal::Name(gClient->PlayerName(sender)) : std::string {};
 		ap::loot::Pick pick {};
@@ -2729,6 +2737,9 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 				break;
 			}
 			placed = GiveLoot(player, pick, owner);
+			if (!placed && gLootNoRoom) {
+				return false;
+			}
 			if (!placed) {
 				Log("Archipelago: couldn't place " + pick.name + "; rolling another.");
 			}
