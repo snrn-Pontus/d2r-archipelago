@@ -90,6 +90,8 @@ def draft_lines(since: str | None) -> list[str]:
 def bump(version: str) -> None:
     if not VERSION.match(version):
         sys.exit(f"{version} isn't x.y.z.")
+    if git("status", "--porcelain"):
+        sys.exit("The tree has uncommitted changes; the release commit must hold only the bump and the changelog.")
     old = current_version()
     tag = last_tag()
     if key(version) <= key(tag[1:] if tag else "0.0.0") or key(version) < key(old):
