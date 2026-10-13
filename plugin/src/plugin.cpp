@@ -2139,7 +2139,8 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 			gCollectionQueue.push_back(*check);
 		}
 	}
-	if (respecs && info.code == ap::loot::CodeFromText("toa")) {
+	// A token only works from the inventory; anywhere else the click doesn't use it.
+	if (respecs && info.code == ap::loot::CodeFromText("toa") && event->container == D2RL::Items::ItemContainer::Inventory) {
 		std::lock_guard lock(gMutex);
 		gRespecToken = event->item;
 		gRespecTokenAt = Clock::now();
@@ -2604,6 +2605,8 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gDifficultyKnown = false;
 			gPendingAreas.clear();
 			DropUnresolvedAreaQuests();
+			// The old game's item handles are stale, which would look like a used token.
+			gRespecToken = D2RL::InvalidItemHandle;
 			break;
 		}
 		case Kind::PlayerResurrected: {
@@ -2626,6 +2629,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
 			gInGame = false;
+			gRespecToken = D2RL::InvalidItemHandle;
 			break;
 		}
 		case Kind::QuestCompleted: {
