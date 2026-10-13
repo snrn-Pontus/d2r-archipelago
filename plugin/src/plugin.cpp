@@ -19,7 +19,9 @@
 #include "randomizer.h"
 #include "repairs.h"
 #include "save_state.h"
+#include "session_log.h"
 #include "sounds.h"
+#include "starter_kit.h"
 
 #include <D2RLPlugin/api.h>
 #include <D2RLPlugin/core_exports.h>
@@ -297,10 +299,32 @@ Clock::time_point     gRetryAt;
 D2RL::ItemHandle      gRespecToken = D2RL::InvalidItemHandle;
 Clock::time_point     gRespecTokenAt;
 
+// Log lines go to D2RLoader's log and the plugin's session log (session_log.h),
+// which outlasts a relaunch.
 void Log(const std::string& text) {
 	if (gContext != nullptr) {
 		gContext->LogInfo(text.c_str());
 	}
+	ap::session_log::Write("INFO", text);
+}
+
+void LogWarning(const std::string& text) {
+	if (gContext != nullptr) {
+		gContext->LogWarn(text.c_str());
+	}
+	ap::session_log::Write("WARN", text);
+}
+
+void LogFailure(const std::string& text) {
+	if (gContext != nullptr) {
+		gContext->LogError(text.c_str());
+	}
+	ap::session_log::Write("ERROR", text);
+}
+
+// A line the player is shown (console and chat), logged when it's queued.
+void LogShown(const std::string& text) {
+	Log("shown: " + text);
 }
 
 // Messages waiting to be echoed to the D2RLoader console on the UI thread.
@@ -364,9 +388,7 @@ void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 		inGame = gInGame;
 		gNextFlushAt = Clock::now() + FlushGap;
 	}
-	for (const auto& line : skipped) {
-		Log(line);
-	}
+	// The skipped lines were logged when they were queued.
 	if (!skipped.empty()) {
 		lines.insert(lines.begin(), "Archipelago: " + std::to_string(skipped.size()) + " more messages are in the D2RLoader log.");
 	}
@@ -381,6 +403,7 @@ void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 // A command's answer, on the UI thread: the console, and the chat in game, so
 // answers to the command panel's buttons can be seen.
 void Reply(const std::string& text) {
+	LogShown(text);
 	gContext->WriteConsoleMessage(text.c_str());
 	bool inGame = false;
 	{
@@ -424,12 +447,19 @@ std::deque<std::string> gHistory;
 constexpr size_t        HistoryLines = 8;
 
 void Feed(const std::string& text) {
+	LogShown(text);
 	std::lock_guard lock(gMutex);
 	gHistory.push_back(text);
 	while (gHistory.size() > HistoryLines) {
 		gHistory.pop_front();
 	}
 	gConsoleQueue.push_back(text);
+}
+
+// Queues a console and chat line without the Codex history. gMutex must be held.
+void QueueLine(std::string text) {
+	LogShown(text);
+	gConsoleQueue.push_back(std::move(text));
 }
 
 // ---- Save file ----------------------------------------------------------------
@@ -685,6 +715,28 @@ auto CowsShuffled(const ap::SlotData& slots) -> bool {
 	return slots.randomizer.shuffleCowLevel && slots.randomizer.monsters != ap::randomizer::Shuffle::Off;
 }
 
+// The seed's options that decide what the plugin does, on one line for the log.
+auto SlotSummary(const ap::SlotData& slots) -> std::string {
+	const auto on = [](bool value) { return value ? "on" : "off"; };
+	const auto& r = slots.randomizer;
+	return "apworld " + (slots.worldVersion.empty() ? std::string("?") : slots.worldVersion) + ", class "
+	     + (slots.characterClass.empty() ? std::string("any") : slots.characterClass) + ", goal " + std::to_string(slots.goal) + "/act "
+	     + std::to_string(slots.goalAct) + "/quest " + std::to_string(slots.goalQuest) + ", act keys " + on(slots.actKeys) + " (enforced "
+	     + on(slots.enforceActKeys) + "), checks: areas " + on(slots.areaChecks) + ", side areas " + std::to_string(slots.sideAreas.size())
+	     + ", levels " + on(slots.levelChecks) + " every " + std::to_string(slots.levelStep) + " to " + std::to_string(slots.levelCap)
+	     + ", superuniques " + on(slots.superUniqueChecks) + ", cows " + on(slots.cowLevelChecks) + ", runes " + std::to_string(slots.runeChecks)
+	     + ", gems " + on(slots.gemChecks) + ", sets " + on(slots.setChecks) + ", specials " + on(slots.specialItemChecks) + ", quest items "
+	     + on(slots.questItemChecks) + ", shops " + std::to_string(slots.shopChecks) + ", ubers " + on(slots.uberChecks) + ", kill counts "
+	     + on(slots.killCountChecks) + ", find counts " + on(slots.findCountChecks) + "; locks: cube " + on(slots.locks.cube) + ", town portal "
+	     + on(slots.locks.townPortal) + ", potions " + on(slots.locks.potions) + ", stash " + on(slots.locks.stash) + ", merchants "
+	     + on(slots.locks.merchants) + ", waypoints " + on(slots.locks.waypoints) + "; hints: " + std::to_string(slots.hints.size()) + ", Cain "
+	     + on(slots.cainHints) + ", pages " + std::to_string(slots.pageHintChance) + "%, prophecy shop " + on(slots.prophecyShop)
+	     + "; skill scaling " + std::to_string(slots.skillScaling) + " (cap " + std::to_string(slots.skillScalingCap) + "), tree mode "
+	     + on(r.treeMode) + ", tree shuffle " + std::to_string(r.skillTree.size()) + " skills, monsters " + std::to_string(static_cast<int>(r.monsters))
+	     + ", superunique shuffle " + std::to_string(static_cast<int>(r.superUniques)) + ", runewords " + on(r.runewords) + "; DeathLink "
+	     + on(slots.deathLink) + ", traps wait for town " + on(slots.traps.waitForTown) + ".";
+}
+
 // Sends every recorded check (and the goal) that isn't held behind a key.
 void SendReady() {
 	if (!gClient || gClient->State() != ap::ConnectionState::Connected) {
@@ -710,8 +762,16 @@ void SendReady() {
 		goal = gSave.goalReached && !gGoalSent && open(slots.goal * 5 + slots.goalAct - 1);
 		gGoalSent = gGoalSent || goal;
 	}
+	if (!ready.empty()) {
+		std::string ids;
+		for (const int64_t check : ready) {
+			ids += (ids.empty() ? "" : ", ") + std::to_string(check);
+		}
+		Log("Archipelago: sending " + std::to_string(ready.size()) + " checks to the server: " + ids + ".");
+	}
 	gClient->SendChecks(ready);
 	if (goal) {
+		Log("Archipelago: sending the goal.");
 		gClient->SendGoal();
 		Feed("Archipelago: goal complete!");
 	}
@@ -730,15 +790,19 @@ void Banner(const std::string& text, ap::notify::Style style) {
 
 void AddChecks(const std::vector<int64_t>& locations) {
 	bool added = false;
+	bool bound = false;
 	std::vector<int> locked;
 	std::vector<std::pair<int64_t, bool>> announce; // new checks, and whether they're held
+	std::vector<int64_t> fresh;
 	const ap::SlotData slots = gClient ? gClient->Slots() : ap::SlotData {};
 	const std::set<int> unlocked = gClient ? UnlockedActs() : std::set<int> { 0 };
 	{
 		std::lock_guard lock(gMutex);
+		bound = gBoundSession != 0;
 		for (const int64_t location : locations) {
 			if (gBoundSession != 0 ? gSave.checks.insert(location).second : gUnbound.insert(location).second) {
 				added = true;
+				fresh.push_back(location);
 				const int act = ActOfLocation(location, slots);
 				if (gBoundSession != 0) {
 					announce.emplace_back(location, slots.actKeys && act > 0 && !unlocked.contains(act));
@@ -751,6 +815,14 @@ void AddChecks(const std::vector<int64_t>& locations) {
 		if (added && gBoundSession != 0) {
 			SaveNow();
 		}
+	}
+	if (!fresh.empty()) {
+		const int me = gClient ? gClient->MySlot() : 0;
+		std::string names;
+		for (const int64_t location : fresh) {
+			names += (names.empty() ? "" : ", ") + (gClient ? gClient->LocationName(location, me) : std::string("?")) + " [" + std::to_string(location) + "]";
+		}
+		Log("Archipelago: found " + std::to_string(fresh.size()) + (bound ? " checks: " : " checks while no seed is bound (kept for it): ") + names + ".");
 	}
 	for (const int act : locked) {
 		Feed("Archipelago: " + ActLabel(act) + " is locked; its checks are held until you find the " + ActLabel(act) + " Key.");
@@ -1010,6 +1082,7 @@ void BindSession(uint64_t session) {
 	}
 	Log("Archipelago: bound to seed " + seed + " slot " + slot + ", " + std::to_string(unsent) + " checks not on the server yet, "
 	    + std::to_string(ownHints.size() + otherHints.size()) + " hints sent again.");
+	Log("Archipelago: seed options: " + SlotSummary(slots));
 	if (unclean) {
 		Log("Archipelago: the last game was never left; " + std::to_string(lost) + " received items and commands may be lost.");
 		Feed(resumed ? "Archipelago: D2R closed during your last game without leaving it, so the rewards from the crashed game are handed out "
@@ -1854,12 +1927,12 @@ void ScanParcels(D2RL::PlayerHandle player) {
 		}
 		if (number < checks) {
 			gCollectionQueue.push_back(ap::ids::ShopLocation(act, number));
-			gConsoleQueue.push_back("Archipelago: parcel delivered (" + std::string(ActNames[act]) + " shop, " + std::to_string(number + 1) + " of "
+			QueueLine("Archipelago: parcel delivered (" + std::string(ActNames[act]) + " shop, " + std::to_string(number + 1) + " of "
 			                        + std::to_string(checks) + ").");
 		} else {
 			QueueReward(-1, "gold " + std::to_string(ap::randomizer::ParcelCosts[act]));
 			SaveNow();
-			gConsoleQueue.push_back("Archipelago: no more parcels to deliver in " + std::string(ActNames[act]) + "; your gold is refunded.");
+			QueueLine("Archipelago: no more parcels to deliver in " + std::string(ActNames[act]) + "; your gold is refunded.");
 		}
 	}
 	// Scrolls of Prophecy: only the next price tier counts (the last one repeats);
@@ -1875,7 +1948,7 @@ void ScanParcels(D2RL::PlayerHandle player) {
 		if (!prophecyShop || static_cast<int>(tier) < next) {
 			QueueReward(-1, "gold " + std::to_string(ap::randomizer::ProphecyCosts[tier]));
 			SaveNow();
-			gConsoleQueue.push_back(!prophecyShop ? "Archipelago: Scrolls of Prophecy aren't part of this seed; your gold is refunded."
+			QueueLine(!prophecyShop ? "Archipelago: Scrolls of Prophecy aren't part of this seed; your gold is refunded."
 			                                      : "Archipelago: you already know that prophecy; the next is the " + std::to_string(ap::randomizer::ProphecyCosts[next])
 			                                            + "-gold scroll. Your gold is refunded.");
 			continue;
@@ -2429,7 +2502,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 					queued.push_back({ static_cast<int64_t>(index), std::move(command) });
 				}
 				std::lock_guard lock(gMutex);
-				gConsoleQueue.push_back("Archipelago: " + commands.message);
+				QueueLine("Archipelago: " + commands.message);
 			}
 			return true;
 		}
@@ -2539,7 +2612,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		// leaves the rest for when it catches up. The range is cleared when the game is left
 		// (Checkpoint), so a crash before that hands it out once more.
 		if (again >= gSave.lostTo && againStart < gSave.lostTo) {
-			gConsoleQueue.push_back("Archipelago: the rewards from the crashed game are all handed out again.");
+			QueueLine("Archipelago: the rewards from the crashed game are all handed out again.");
 		}
 	}
 	const bool redelivering = gSave.redeliver && gSave.lostFrom < gSave.lostTo;
@@ -2557,7 +2630,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 	if (!codexOk && Clock::now() - gLastRoomWarning > std::chrono::seconds(30)) {
 		gLastRoomWarning = Clock::now();
-		gConsoleQueue.push_back("Archipelago: couldn't place the Codex charm; make room in your inventory (details in the log).");
+		QueueLine("Archipelago: couldn't place the Codex charm; make room in your inventory (details in the log).");
 	}
 	if (roomFull && Clock::now() - gLastRoomWarning > std::chrono::seconds(30)) {
 		gLastRoomWarning = Clock::now();
@@ -2566,7 +2639,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		                          : gLocks.cube               ? "inventory or stash"
 		                          : gLocks.stash              ? "inventory or cube"
 		                                                      : "inventory, cube or stash";
-		gConsoleQueue.push_back("Archipelago: rewards are waiting; make room in your " + rooms + ".");
+		QueueLine("Archipelago: rewards are waiting; make room in your " + rooms + ".");
 	}
 }
 
@@ -2652,7 +2725,7 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 			gNextRewardCommandsAt = Clock::now() + std::chrono::seconds(10);
 			if (!gRewardRefused) {
 				gRewardRefused = true;
-				gConsoleQueue.push_back("Archipelago: couldn't add a reward (D2RCore refused \"" + reward.text + "\"); trying again in a moment.");
+				QueueLine("Archipelago: couldn't add a reward (D2RCore refused \"" + reward.text + "\"); trying again in a moment.");
 			}
 			break;
 		}
@@ -2755,6 +2828,19 @@ void PlayerDied(const std::string& how) {
 
 // ---- Locks -------------------------------------------------------------------
 
+// "cube yes, town portal no, ..., waypoints Act I Act II" for the log.
+auto LocksText(const LockState& locks) -> std::string {
+	std::string waypoints;
+	for (int act = 0; act < 5; ++act) {
+		if (locks.waypoints[act]) {
+			waypoints += (waypoints.empty() ? "" : " ") + std::string(ActNames[act]);
+		}
+	}
+	return std::string("cube ") + (locks.cube ? "yes" : "no") + ", town portal " + (locks.townPortal ? "yes" : "no") + ", potions "
+	     + (locks.potions ? "yes" : "no") + ", stash " + (locks.stash ? "yes" : "no") + ", merchants " + (locks.merchants ? "yes" : "no")
+	     + ", waypoints " + (waypoints.empty() ? "none" : waypoints);
+}
+
 // Recomputes what's locked when the received items or the seed change.
 void UpdateLocks() {
 	static uint64_t seen = UINT64_MAX;
@@ -2790,9 +2876,7 @@ void UpdateLocks() {
 	for (uint32_t act = 0; act < 3; ++act) {
 		locks.waypoints[act] = locked(slots.locks.waypoints, static_cast<uint32_t>(Lock::Waypoints) + act);
 	}
-	Log(std::string("Archipelago: locked: cube ") + (locks.cube ? "yes" : "no") + ", town portal " + (locks.townPortal ? "yes" : "no") + ", potions "
-	    + (locks.potions ? "yes" : "no") + ", stash " + (locks.stash ? "yes" : "no") + ", merchants " + (locks.merchants ? "yes" : "no")
-	    + ", waypoints " + (locks.waypoints[0] ? "I " : "") + (locks.waypoints[1] ? "II " : "") + (locks.waypoints[2] ? "III" : "") + ".");
+	Log("Archipelago: locked: " + LocksText(locks) + ".");
 	std::lock_guard lock(gMutex);
 	if (gLocks.merchants != locks.merchants) {
 		gRepairOffer.Cancel();
@@ -3107,6 +3191,12 @@ void AnnounceItems() {
 		return;
 	}
 	const int me = gClient->MySlot();
+	for (size_t i = from; i < items.size(); ++i) {
+		const auto& item = items[i];
+		Log("Archipelago: received #" + std::to_string(i) + ": " + gClient->ItemName(item.item, me) + " [" + std::to_string(item.item) + "] from "
+		    + (item.player == me ? std::string("your world") : gClient->PlayerName(item.player)) + " at "
+		    + gClient->LocationName(item.location, item.player) + " [" + std::to_string(item.location) + "], flags " + std::to_string(item.flags) + ".");
+	}
 	// A big catch-up (reconnecting, a new save) is one line. Otherwise keys,
 	// locks, skills and traps each get a banner, and ordinary loot is summed up
 	// when more than three arrive together.
@@ -3237,6 +3327,17 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	}
 	if (gOverlayTest) {
 		DrawOverlayTest(frame);
+	}
+	// Connection changes, with a server that stays down logged once rather than every retry.
+	static std::string lastStatus, lastRetry;
+	if (const std::string status = gClient->StatusText(); status != lastStatus) {
+		const bool retry = status.ends_with("Retrying in 5 seconds.");
+		const bool connecting = status.starts_with("Connecting to ");
+		if (!(retry && status == lastRetry) && !(connecting && !lastRetry.empty())) {
+			Log("Archipelago: connection: " + status);
+		}
+		lastRetry = retry ? status : connecting ? lastRetry : std::string();
+		lastStatus = status;
 	}
 	AnnounceItems();
 	UpdateStatusLine();
@@ -3431,6 +3532,18 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 
 // ---- Gameplay events (UI thread) --------------------------------------------
 
+// "Cold Plains (3)" for the log, or "area 3" if it isn't one with checks.
+auto AreaLabel(int level) -> std::string {
+	for (const auto& areas : { std::span<const ap::data::Area>(ap::data::Areas), std::span<const ap::data::Area>(ap::data::SideAreas) }) {
+		for (const auto& area : areas) {
+			if (area.id == level) {
+				return std::string(area.name) + " (" + std::to_string(level) + ")";
+			}
+		}
+	}
+	return "area " + std::to_string(level);
+}
+
 void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::GameplayEvent* event, void*) noexcept {
 	using Kind = D2RL::Lifecycle::GameplayEventKind;
 	if (!D2RL::Lifecycle::HasGameplayEventField(event, D2RL::Lifecycle::GameplayEventRequiredSize)) {
@@ -3456,6 +3569,8 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			DropUnresolvedAreaQuests();
 			// The old game's item handles are stale, which would look like a used token.
 			gRespecToken = D2RL::InvalidItemHandle;
+			Log(std::string("Archipelago: ") + (event->kind == Kind::GameJoined ? "joined a game" : "local player ready") + " (session "
+			    + std::to_string(event->sessionGeneration) + "; " + (gClient ? gClient->StatusText() : std::string("no client")) + ").");
 			break;
 		}
 		case Kind::PlayerResurrected: {
@@ -3482,6 +3597,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gRepairOffer.Cancel();
 			gRepairOfferQueued = false;
 			gRespecToken = D2RL::InvalidItemHandle;
+			Log("Archipelago: left the game.");
 			// Kill and cow counters only reach the file every so often; leaving the game
 			// (or closing D2R) writes the rest, so the next game carries on from them.
 			// Leaving also saves the character, rewards and all: a crash later can't take them.
@@ -3515,6 +3631,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			break;
 		}
 		case Kind::LevelChanged: {
+			Log("Archipelago: entered " + AreaLabel(event->currentValue) + " (event difficulty " + std::to_string(event->difficulty) + ").");
 			std::lock_guard lock(gMutex);
 			gRepairOffer.Cancel();
 			// A nonzero difficulty can only be real; zero may just mean unset.
@@ -3536,6 +3653,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			break;
 		}
 		case Kind::PlayerLevelChanged: {
+			Log("Archipelago: character level " + std::to_string(event->previousValue) + " -> " + std::to_string(event->currentValue) + ".");
 			{
 				std::lock_guard lock(gMutex);
 				gPlayerLevel = std::max(gPlayerLevel, event->currentValue);
@@ -3704,6 +3822,10 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::U
 		return D2RL::SharedEvents::UiMessageAction::Continue;
 	}
 	const std::string key = std::string(event->target) + ":" + event->command;
+	if (key == "FrontEndNavigation:ToExit") {
+		// Marks the session log as ended normally, even if D2RLoader doesn't unload plugins on exit.
+		Log("Archipelago: " + std::string(ap::session_log::ExitLine));
+	}
 	if (std::string_view(event->target) == "VendorPanelMessage") {
 		bool locked = false;
 		{
@@ -3962,7 +4084,7 @@ bool gRelearnConfirmed = false;
 void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 	auto say = [](const std::string& text) {
 		std::lock_guard lock(gMutex);
-		gConsoleQueue.push_back(text);
+		QueueLine(text);
 	};
 	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
 	if (gInventory->getLocalPlayer(gContext, &player) != D2RL::Inventory::Result::Success) {
@@ -3999,7 +4121,7 @@ void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 	for (const uint32_t skill : refused) {
 		gCommandQueue.push_back("skadd " + SkillName(skill) + ",1");
 	}
-	gConsoleQueue.push_back("Archipelago: unlocked again: " + names + ".");
+	QueueLine("Archipelago: unlocked again: " + names + ".");
 }
 
 auto CommandRelearn(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
@@ -4038,7 +4160,7 @@ void __cdecl PersonalizeCursorWork(const D2RL::PluginContext*, void*) noexcept {
 		                    : "ap-personalize: wrote " + name + ". Save and Exit, then rejoin, to see it.";
 	}
 	std::lock_guard lock(gMutex);
-	gConsoleQueue.push_back(line);
+	QueueLine(line);
 }
 
 auto CommandPersonalize(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
@@ -4344,14 +4466,56 @@ auto __cdecl OnPanelKey(const D2RL::PluginContext*, const D2RL::Input::ActionEve
 	return D2RL::Input::ActionResult::Handled;
 }
 
-// Items made by ap-debug spawn, waiting for the game thread: a code, and
-// whether it's a unique.
-std::vector<std::pair<uint32_t, bool>> gSpawnQueue;
+// Items made by ap-debug spawn, give and kit, waiting for the game thread.
+// Spawned ones count as found; given ones are made as rewards, so they send no
+// checks. A batch (one command) ends at the item with last set.
+struct DebugItem {
+	uint32_t    code    = 0;
+	bool        unique  = false;
+	bool        reward  = false;
+	uint32_t    sockets = 0;
+	std::string name;
+	bool        last    = true;
+};
+std::vector<DebugItem> gSpawnQueue;
 
-// Makes the queued items in the inventory, or at your feet if it's full. They
-// aren't marked as rewards, so they count as found.
+// Makes the queued rewards like any reward (inventory, then cube, stash and
+// ground), one line per batch.
+void GiveDebugItems(D2RL::PlayerHandle player, std::span<const DebugItem> items) {
+	std::map<std::string, int> given, failed;
+	for (const auto& item : items) {
+		const ap::loot::Pick pick {
+			.code      = item.code,
+			.itemLevel = item.sockets > 0 ? 41U : 1U,
+			.sockets   = item.sockets,
+			.name      = item.name,
+		};
+		++(GiveLoot(player, pick) ? given : failed)[item.name];
+		if (!item.last) {
+			continue;
+		}
+		const auto list = [](const std::map<std::string, int>& names) {
+			std::string text;
+			for (const auto& [name, count] : names) {
+				text += (text.empty() ? "" : ", ") + (count > 1 ? std::to_string(count) + " x " : "") + name;
+			}
+			return text;
+		};
+		std::lock_guard lock(gMutex);
+		if (!given.empty()) {
+			QueueLine("ap-debug: gave " + list(given) + " (as rewards: no checks).");
+		}
+		if (!failed.empty()) {
+			QueueLine("ap-debug: no room for " + list(failed) + "; the log has why.");
+		}
+		given.clear();
+		failed.clear();
+	}
+}
+
+// Makes the queued items in the inventory, or at your feet if it's full.
 void __cdecl SpawnWork(const D2RL::PluginContext*, void*) noexcept {
-	std::vector<std::pair<uint32_t, bool>> spawns;
+	std::vector<DebugItem> spawns;
 	{
 		std::lock_guard lock(gMutex);
 		spawns.swap(gSpawnQueue);
@@ -4359,12 +4523,18 @@ void __cdecl SpawnWork(const D2RL::PluginContext*, void*) noexcept {
 	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
 	if (gInventory->getLocalPlayer(gContext, &player) != D2RL::Inventory::Result::Success) {
 		std::lock_guard lock(gMutex);
-		gConsoleQueue.push_back("ap-debug: join a game first.");
+		QueueLine("ap-debug: join a game first.");
 		return;
 	}
-	for (const auto& [code, unique] : spawns) {
-		auto spec = MakeSpec(code, unique ? D2RL::Items::Quality::Unique : D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
-		spec.itemLevel = unique ? 99 : 1;
+	std::vector<DebugItem> found, rewards;
+	for (auto& spawn : spawns) {
+		(spawn.reward ? rewards : found).push_back(std::move(spawn));
+	}
+	GiveDebugItems(player, rewards);
+	// Not marked as rewards, so they count as found.
+	for (const auto& spawn : found) {
+		auto spec = MakeSpec(spawn.code, spawn.unique ? D2RL::Items::Quality::Unique : D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
+		spec.itemLevel = spawn.unique ? 99 : 1;
 		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
 		auto result = gItems->createItem(gContext, player, &spec, &item);
 		if (result != D2RL::Items::Result::Success) {
@@ -4377,9 +4547,59 @@ void __cdecl SpawnWork(const D2RL::PluginContext*, void*) noexcept {
 			name = DescribeItem(info);
 		}
 		std::lock_guard lock(gMutex);
-		gConsoleQueue.push_back(result == D2RL::Items::Result::Success
+		QueueLine(result == D2RL::Items::Result::Success
 			? "ap-debug: made " + name + "."
 			: "ap-debug: couldn't make that item (result " + std::to_string(static_cast<uint32_t>(result)) + ").");
+	}
+}
+
+// ap-debug state: what the plugin knows, in the log, for a bug report.
+void LogState() {
+	std::vector<std::string> lines;
+	const std::set<int64_t> server = gClient->Checked();
+	{
+		std::lock_guard lock(gMutex);
+		const auto verdict = CharacterVerdict(gSlots);
+		lines.push_back(std::string("game: ") + (gInGame ? "in a game" : "not in a game") + ", character level " + std::to_string(gPlayerLevel) + ", class "
+		                + ClassName(GameClass()) + " (seed's: " + ClassName(SeedClass(gSlots)) + ", "
+		                + (verdict == ap::character::Verdict::Match ? "match" : verdict == ap::character::Verdict::Mismatch ? "mismatch" : "unknown")
+		                + "), difficulty " + (gDifficultyKnown ? DifficultyNames[std::clamp(gDifficulty, 0, 2)] : "not known yet") + ", "
+		                + ActNames[std::clamp(gAct, 0, 4)] + ", " + AreaLabel(gCurrentLevel) + (gPlayerDead ? ", dead" : "") + ".");
+		size_t unsent = 0;
+		for (const int64_t check : gSave.checks) {
+			unsent += server.contains(check) ? 0 : 1;
+		}
+		lines.push_back("save: " + (gSavePath.empty() ? std::string("none bound") : gSavePath.filename().string()) + (gSaveFailed ? " (SAVING FAILS)" : "")
+		                + ", bound session " + std::to_string(gBoundSession) + ", " + std::to_string(gSave.checks.size()) + " checks ("
+		                + std::to_string(unsent) + " not on the server, " + std::to_string(gSent.size()) + " sent this session), "
+		                + std::to_string(gUnbound.size()) + " found while unbound, goal " + (gSave.goalReached ? "reached" : "not reached")
+		                + (gGoalSent ? " and sent" : "") + ", level " + std::to_string(gSave.level) + ", class " + std::to_string(gSave.playerClass) + ".");
+		lines.push_back("rewards: " + std::to_string(gSave.fillersDelivered) + " items handed out, " + std::to_string(gSave.notifiedItems)
+		                + " announced, " + std::to_string(gSave.commands.size()) + " reward commands waiting, " + std::to_string(gCommandQueue.size())
+		                + " queued commands, " + std::to_string(gTrapQueue.size()) + " traps queued" + (gRewardRefused ? ", last reward refused" : "")
+		                + ", lost to a crash " + std::to_string(gSave.lostFrom) + "-" + std::to_string(gSave.lostTo) + (gSave.redeliver ? " (redelivering)" : "")
+		                + ", held potions " + std::to_string(gSave.heldPotions.size()) + ", skill points given " + std::to_string(gSave.skillPointsGiven)
+		                + ", tree skills unlocked " + std::to_string(gSave.unlockedSkills.size()) + ", prophecies " + std::to_string(gSave.prophecies) + ".");
+		lines.push_back("locked: " + LocksText(gLocks) + "; queues: " + std::to_string(gQuestQueue.size()) + " quests, " + std::to_string(gPendingAreas.size())
+		                + " areas, " + std::to_string(gHintQueue.size()) + " hints, " + std::to_string(gConsoleQueue.size()) + " chat lines.");
+	}
+	std::string acts;
+	for (const int act : UnlockedActs()) {
+		acts += (acts.empty() ? "" : ", ") + ActLabel(act);
+	}
+	const auto items = gClient->Items();
+	std::string recent;
+	for (size_t i = items.size() > 5 ? items.size() - 5 : 0; i < items.size(); ++i) {
+		recent += (recent.empty() ? "" : ", ") + gClient->ItemName(items[i].item, gClient->MySlot());
+	}
+	lines.insert(lines.begin(), "connection: " + gClient->StatusText() + " Seed " + gClient->Seed() + ", slot " + gClient->Slot() + " (#"
+	                               + std::to_string(gClient->MySlot()) + "), " + std::to_string(items.size()) + " items received (last: "
+	                               + (recent.empty() ? "none" : recent) + "), " + std::to_string(server.size()) + " checks on the server, unlocked acts "
+	                               + (acts.empty() ? "none" : acts) + ".");
+	lines.push_back("seed options: " + SlotSummary(gClient->Slots()));
+	Log("Archipelago: ---- state (plugin " + std::string(PluginVersion) + ") ----");
+	for (const auto& line : lines) {
+		Log("Archipelago: state: " + line);
 	}
 }
 
@@ -4433,18 +4653,73 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 		Reply(gOverlayTest ? "Overlay test on: coloured shapes and a yellow line of text should show." : "Overlay test off.");
 		return D2RL::ConsoleCommandResult::Handled;
 	}
-	if (args[0] == "spawn" && args.size() >= 2 && args[1].size() >= 3 && args[1].size() <= 4) {
+	const auto queueItems = [](std::vector<DebugItem> items) {
 		{
 			std::lock_guard lock(gMutex);
-			gSpawnQueue.emplace_back(ap::loot::CodeFromText(args[1].c_str()), args.size() > 2 && args[2] == "unique");
+			gSpawnQueue.insert(gSpawnQueue.end(), std::make_move_iterator(items.begin()), std::make_move_iterator(items.end()));
 		}
 		if (gThreads->runOnGameThread(gContext, SpawnWork, nullptr) != D2RL::Threads::Result::Success) {
-			gContext->WriteConsoleMessage("ap-debug: join a game first.");
+			std::lock_guard lock(gMutex);
+			gSpawnQueue.clear();
+			return false;
+		}
+		return true;
+	};
+	const auto validCode = [](const std::string& code) { return code.size() >= 3 && code.size() <= 4; };
+	if (args[0] == "spawn" && args.size() >= 2 && validCode(args[1])) {
+		if (!queueItems({ { .code = ap::loot::CodeFromText(args[1].c_str()), .unique = args.size() > 2 && args[2] == "unique", .name = args[1] } })) {
+			Reply("ap-debug: join a game first.");
 			return D2RL::ConsoleCommandResult::Failed;
 		}
 		return D2RL::ConsoleCommandResult::Handled;
 	}
-	gContext->WriteConsoleMessage("Usage: ap-debug [on|off], ap-debug spawn <item code> [unique], ap-debug banner [important|trap|check] <text>, ap-debug overlay");
+	// ap-debug give <code> [count] [sockets]: made as rewards, so they send no checks.
+	if (args[0] == "give" && args.size() >= 2 && validCode(args[1])) {
+		const int count = args.size() > 2 ? std::clamp(std::atoi(args[2].c_str()), 1, 40) : 1;
+		const uint32_t sockets = args.size() > 3 ? static_cast<uint32_t>(std::clamp(std::atoi(args[3].c_str()), 0, 6)) : 0;
+		std::vector<DebugItem> items(static_cast<size_t>(count),
+			{ .code = ap::loot::CodeFromText(args[1].c_str()), .reward = true, .sockets = sockets, .name = args[1], .last = false });
+		items.back().last = true;
+		if (!queueItems(std::move(items))) {
+			Reply("ap-debug: join a game first.");
+			return D2RL::ConsoleCommandResult::Failed;
+		}
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	if (args[0] == "kit") {
+		std::vector<DebugItem> items;
+		for (const auto& entry : ap::starter_kit::All()) {
+			for (int i = 0; i < entry.count; ++i) {
+				items.push_back({ .code = ap::loot::CodeFromText(entry.code), .reward = true, .name = entry.name, .last = false });
+			}
+		}
+		items.back().last = true;
+		Log("Archipelago: debug starter kit requested.");
+		if (!queueItems(std::move(items))) {
+			Reply("ap-debug: join a game first.");
+			return D2RL::ConsoleCommandResult::Failed;
+		}
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	// ap-debug mark [text]: a numbered line to find in the log ("it broke after mark 3").
+	if (args[0] == "mark") {
+		static int marks = 0;
+		std::string text;
+		for (size_t i = 1; i < args.size(); ++i) {
+			text += (text.empty() ? "" : " ") + args[i];
+		}
+		const std::string mark = "mark " + std::to_string(++marks) + (text.empty() ? "" : ": " + text);
+		Log("Archipelago: ==================== " + mark + " ====================");
+		Reply("ap-debug: " + mark + " is in the log.");
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	if (args[0] == "state") {
+		LogState();
+		Reply("ap-debug: the plugin's state is in the log (d2rloader\\archipelago\\logs).");
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	gContext->WriteConsoleMessage("Usage: ap-debug [on|off], ap-debug kit, ap-debug give <item code> [count] [sockets], ap-debug spawn <item code> [unique], "
+	                              "ap-debug mark [text], ap-debug state, ap-debug banner [important|trap|check] <text>, ap-debug overlay");
 	return D2RL::ConsoleCommandResult::InvalidArguments;
 }
 
@@ -4540,7 +4815,7 @@ bool RegisterPanel(const D2RL::PluginContext* context, const D2RL::ResourceServi
 	D2RL::Resources::RegistrationHandle resourceHandle = D2RL::Resources::InvalidHandle;
 	if (resources->registerResource(context, &resource, &resourceHandle) != D2RL::Resources::Result::Success
 		|| gPanels->registerPanel(context, &registration, &handle) != D2RL::Panels::Result::Success) {
-		context->LogWarn(("Archipelago: couldn't register the " + std::string(panel.localId) + ".").c_str());
+		LogWarning(("Archipelago: couldn't register the " + std::string(panel.localId) + ".").c_str());
 		return false;
 	}
 	if (input == nullptr) {
@@ -4558,7 +4833,7 @@ bool RegisterPanel(const D2RL::PluginContext* context, const D2RL::ResourceServi
 	};
 	D2RL::Input::ActionHandle actionHandle = D2RL::Input::InvalidHandle;
 	if (input->registerAction(context, &action, &actionHandle) != D2RL::Input::Result::Success) {
-		context->LogWarn(("Archipelago: couldn't register the key for the " + std::string(panel.localId) + "; use its console command.").c_str());
+		LogWarning(("Archipelago: couldn't register the key for the " + std::string(panel.localId) + "; use its console command.").c_str());
 	}
 	return true;
 }
@@ -4569,12 +4844,12 @@ void RegisterPanels(const D2RL::PluginContext* context) {
 	if (context->QueryService(&resources) != D2RL::ServiceQueryResult::Success || !D2RL::HasResourceServiceField(resources, D2RL::ResourceServiceRequiredSize)
 		|| context->QueryService(&gPanels) != D2RL::ServiceQueryResult::Success || !D2RL::HasPanelServiceField(gPanels, D2RL::PanelServiceRequiredSize)) {
 		gPanels = nullptr;
-		context->LogWarn("Archipelago: no panel service; the command and debug panels are off.");
+		LogWarning("Archipelago: no panel service; the command and debug panels are off.");
 		return;
 	}
 	if (context->QueryService(&input) != D2RL::ServiceQueryResult::Success || !D2RL::HasInputServiceField(input, D2RL::InputServiceRequiredSize)) {
 		input = nullptr;
-		context->LogWarn("Archipelago: no input service; open the panels with ap-panel and ap-debug.");
+		LogWarning("Archipelago: no input service; open the panels with ap-panel and ap-debug.");
 	}
 	const bool main = RegisterPanel(context, resources, input, ap::panel::Main(), gPanel, "command-panel", "Archipelago Commands", D2RL::Input::Key::F9);
 	const bool debug = RegisterPanel(context, resources, input, ap::panel::Debug(), gDebugPanel, "debug-panel", "Archipelago Debug Panel", D2RL::Input::Key::F10);
@@ -4600,12 +4875,19 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		return false;
 	}
 	gContext = context;
+	const auto session = ap::session_log::Open(GameDirectory() / ap::session_log::Folder, ap::session_log::Keep, std::chrono::system_clock::now());
+	Log("Archipelago: plugin " + std::string(PluginVersion) + " starting in " + GameDirectory().string() + ".");
+	if (session.path.empty()) {
+		LogWarning("Archipelago: couldn't start a session log in d2rloader\\archipelago\\logs; only D2RLoader's log has this session.");
+	} else if (session.previousUnclean) {
+		Log("Archipelago: the last session (" + session.previous.filename().string() + ") didn't end normally: D2R crashed, hung or was killed.");
+	}
 	if (!Query(gLifecycle, D2RL::HasLifecycleServiceField, D2RL::LifecycleServiceRequiredSize)
 		|| !Query(gInventory, D2RL::HasInventoryServiceField, D2RL::InventoryServiceRequiredSize)
 		|| !Query(gItems, D2RL::HasItemServiceField, D2RL::ItemServiceRequiredSize)
 		|| !Query(gThreads, D2RL::HasThreadServiceField, D2RL::ThreadServiceRequiredSize)
 		|| !Query(gOverlay, D2RL::HasOverlayServiceField, D2RL::OverlayServiceRequiredSize)) {
-		context->LogError("Archipelago: a required D2RLoader service is missing; update D2RLoader.");
+		LogFailure("Archipelago: a required D2RLoader service is missing; update D2RLoader.");
 		return false;
 	}
 	if (!Query(gGameRules, D2RL::HasGameRuleServiceField, D2RL::GameRuleServiceRequiredSize)) {
@@ -4613,7 +4895,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	}
 	if (context->QueryService(&gTables) != D2RL::ServiceQueryResult::Success || !D2RL::HasDataTableServiceField(gTables, D2RL::DataTableServiceRequiredSize)) {
 		gTables = nullptr;
-		context->LogWarn("Archipelago: no data table service; unique and set rows come from the generated numbers.");
+		LogWarning("Archipelago: no data table service; unique and set rows come from the generated numbers.");
 	}
 	if (context->QueryService(&gWidgets) != D2RL::ServiceQueryResult::Success || !D2RL::HasWidgetServiceField(gWidgets, D2RL::WidgetServiceRequiredSize)) {
 		gWidgets = nullptr;
@@ -4635,7 +4917,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		D2RL::SharedEvents::ListenerHandle handle = D2RL::SharedEvents::InvalidHandle;
 		if (gEvents->registerItemTooltipListener(context, &tooltip, &handle) != D2RL::SharedEvents::Result::Success
 			|| gEvents->registerUiMessageListener(context, &messages, &handle) != D2RL::SharedEvents::Result::Success) {
-			context->LogWarn("Archipelago: couldn't register the Codex tooltip or the UI-message log.");
+			LogWarning("Archipelago: couldn't register the Codex tooltip or the UI-message log.");
 		}
 	}
 	if (context->QueryService(&gInteractions) == D2RL::ServiceQueryResult::Success
@@ -4654,16 +4936,16 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		};
 		D2RL::ItemInteractions::ListenerHandle handle = D2RL::ItemInteractions::InvalidHandle;
 		if (gInteractions->registerListener(context, &listener, &handle) != D2RL::ItemInteractions::Result::Success) {
-			context->LogWarn("Archipelago: couldn't register the item-use listener; the Town Portal and Potion locks won't work, and quest items used at once may be missed.");
+			LogWarning("Archipelago: couldn't register the item-use listener; the Town Portal and Potion locks won't work, and quest items used at once may be missed.");
 		}
 	} else {
-		context->LogWarn("Archipelago: no item interaction service; the Town Portal and Potion locks won't work, and quest items used at once may be missed.");
+		LogWarning("Archipelago: no item interaction service; the Town Portal and Potion locks won't work, and quest items used at once may be missed.");
 	}
 	RegisterPanels(context);
 	std::vector<std::string> configWarnings;
 	gConfig = ap::ParseConfig(ConfigText(), &configWarnings);
 	for (const auto& warning : configWarnings) {
-		context->LogWarn(warning.c_str());
+		LogWarning(warning.c_str());
 	}
 	ap::notify::SetSounds((GameDirectory() / ap::sounds::Folder).wstring(), gConfig.bannerSounds, gConfig.bannerVolume);
 	gClient = std::make_unique<ap::Client>(Log);
@@ -4678,7 +4960,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		};
 		D2RL::Lifecycle::ListenerHandle handle = D2RL::Lifecycle::InvalidHandle;
 		if (gLifecycle->registerGameplayEventListener(context, &listener, &handle) != D2RL::Lifecycle::Result::Success) {
-			context->LogError("Archipelago: couldn't register a gameplay listener.");
+			LogFailure("Archipelago: couldn't register a gameplay listener.");
 			return false;
 		}
 	}
@@ -4688,7 +4970,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	};
 	D2RL::Lifecycle::ListenerHandle deathHandle = D2RL::Lifecycle::InvalidHandle;
 	if (gLifecycle->registerMonsterDeathListener(context, &deathListener, &deathHandle) != D2RL::Lifecycle::Result::Success) {
-		context->LogError("Archipelago: couldn't register the monster-death listener.");
+		LogFailure("Archipelago: couldn't register the monster-death listener.");
 		return false;
 	}
 	const D2RL::Overlay::CallbackRegistration frame {
@@ -4698,7 +4980,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	};
 	D2RL::Overlay::CallbackHandle frameHandle = D2RL::Overlay::InvalidCallbackHandle;
 	if (gOverlay->registerFrameCallback(context, &frame, &frameHandle) != D2RL::Overlay::Result::Success) {
-		context->LogError("Archipelago: couldn't register the overlay.");
+		LogFailure("Archipelago: couldn't register the overlay.");
 		return false;
 	}
 
@@ -4719,29 +5001,37 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-missing", CommandMissing, "List the checks left in this act: ap-missing [all].")
 	                   && context->RegisterConsoleCommand("ap-panel", CommandPanel, "Open or close the Archipelago command panel (F9).")
 	                   && context->RegisterConsoleCommand("ap-repairs", CommandRepairs, "Experimental repairs with Merchant Lock: ap-repairs on|off; use the NPC repair panel.")
-	                   && context->RegisterConsoleCommand("ap-debug", CommandDebug, "Debug tools: ap-debug on|off, ap-debug opens the debug panel (F10), ap-debug spawn <item code> [unique].")
+	                   && context->RegisterConsoleCommand("ap-debug", CommandDebug, "Debug tools: ap-debug on|off, ap-debug opens the debug panel (F10), ap-debug kit, give <code> [count] [sockets], spawn <code> [unique], mark [text], state.")
 	                   && context->RegisterConsoleCommand("ap-ui", CommandUi, "Send a D2R UI message: ap-ui <target> <command> [text].");
 	if (!commands) {
-		context->LogError("Archipelago: couldn't register console commands.");
+		LogFailure("Archipelago: couldn't register console commands.");
 		return false;
 	}
 
+	Log("Archipelago: config: server " + (gConfig.server.empty() ? std::string("(none)") : gConfig.server) + ", slot "
+	    + (gConfig.slot.empty() ? std::string("(none)") : gConfig.slot) + ", auto-connect " + (gConfig.autoConnect ? "on" : "off") + ", debug tools "
+	    + (gConfig.debugTools ? "on" : "off") + ", notifications " + (gConfig.notifications ? "on" : "off") + ", repairs "
+	    + (gConfig.repairOnly ? "on" : "off") + ".");
 	if (gConfig.autoConnect && !gConfig.server.empty() && !gConfig.slot.empty()) {
 		gClient->Connect(gConfig.server, gConfig.slot, gConfig.password);
 	}
-	context->LogInfo("Archipelago: loaded.");
+	Log("Archipelago: loaded.");
 	return true;
 }
 
 D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
+	Log("Archipelago: unloading.");
 	ap::notify::StopSounds();
 	gClient.reset();
-	std::lock_guard lock(gMutex);
-	if ((gSaveDue || gSaveFailed) && !gSavePath.empty()) {
-		SaveNow();
+	{
+		std::lock_guard lock(gMutex);
+		if ((gSaveDue || gSaveFailed) && !gSavePath.empty()) {
+			SaveNow();
+		}
+		// A last try for other seeds' progress that couldn't be saved.
+		for (const auto& [file, entry] : gUnsaved) {
+			WriteSave(entry.state, file, ++gSaveSerial);
+		}
 	}
-	// A last try for other seeds' progress that couldn't be saved.
-	for (const auto& [file, entry] : gUnsaved) {
-		WriteSave(entry.state, file, ++gSaveSerial);
-	}
+	ap::session_log::Close();
 }
