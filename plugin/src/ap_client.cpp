@@ -638,6 +638,24 @@ void Client::HintOwnLocation(int64_t location) {
 	}
 }
 
+auto HintPackets(const std::vector<HintEntry>& own, const std::vector<int64_t>& others) -> std::string {
+	json packets = json::array();
+	for (const HintEntry& hint : own) {
+		packets.push_back({ { "cmd", "CreateHints" }, { "locations", { hint.location } }, { "player", hint.player } });
+	}
+	if (!others.empty()) {
+		// 2: broadcast only if it's a new hint.
+		packets.push_back({ { "cmd", "LocationScouts" }, { "locations", others }, { "create_as_hint", 2 } });
+	}
+	return packets.empty() ? std::string() : packets.dump();
+}
+
+void Client::ResendHints(const std::vector<HintEntry>& own, const std::vector<int64_t>& others) {
+	if (const std::string packets = HintPackets(own, others); !packets.empty() && State() == ConnectionState::Connected) {
+		Send(packets);
+	}
+}
+
 auto Client::MySlot() const -> int {
 	std::lock_guard lock(mutex_);
 	return mySlot_;

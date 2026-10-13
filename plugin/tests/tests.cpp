@@ -455,6 +455,22 @@ void TestClientDeathLink() {
 	EXPECT(client.TakeDeaths().empty());
 }
 
+// Hints found in game are sent again on every bind (issue #71): each own hint is its own CreateHints, so one
+// the server rejects can't take the others with it, and other players' items go out as one LocationScouts.
+void TestHintPackets() {
+	EXPECT(ap::HintPackets({}, {}).empty());
+	const auto packets = nlohmann::json::parse(ap::HintPackets({ { 77, 2, 2430951 }, { 2420001, 1, 2430054 } }, { 2420002, 2420003 }));
+	EXPECT(packets.is_array() && packets.size() == 3);
+	EXPECT(packets[0]["cmd"] == "CreateHints" && packets[0]["locations"] == nlohmann::json::array({ 77 }) && packets[0]["player"] == 2);
+	EXPECT(packets[1]["cmd"] == "CreateHints" && packets[1]["locations"] == nlohmann::json::array({ 2420001 }) && packets[1]["player"] == 1);
+	EXPECT(packets[2]["cmd"] == "LocationScouts" && packets[2]["locations"] == nlohmann::json::array({ 2420002, 2420003 })
+	       && packets[2]["create_as_hint"] == 2);
+	const auto others = nlohmann::json::parse(ap::HintPackets({}, { 5 }));
+	EXPECT(others.size() == 1 && others[0]["cmd"] == "LocationScouts");
+	const auto own = nlohmann::json::parse(ap::HintPackets({ { 9, 1, 3 } }, {}));
+	EXPECT(own.size() == 1 && own[0]["cmd"] == "CreateHints");
+}
+
 auto FindRecord(std::span<const ap::data::QualityItem> items, uint32_t record) -> const ap::data::QualityItem* {
 	for (const auto& item : items) {
 		if (item.record == record) {
@@ -1204,6 +1220,7 @@ int main() {
 	TestClientParsesServerPackets();
 	TestClientSurvivesBadPackets();
 	TestClientDeathLink();
+	TestHintPackets();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
 	TestConfigNumericIds();
