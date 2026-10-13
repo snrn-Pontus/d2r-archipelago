@@ -2867,6 +2867,16 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	const ap::SlotData::Traps settings = gClient->Slots().traps;
 	std::vector<std::string> commands;
 	std::vector<ScopedRelearnCommand> relearn;
+	std::vector<ap::panel::SessionScope> cancelledRelearn;
+	// Called with gMutex held. Report once and remove the rest of that request's
+	// scope, including commands waiting for later batches.
+	const auto cancelRelearn = [&](const ap::panel::SessionScope& scope) {
+		if (std::ranges::find(cancelledRelearn, scope) == cancelledRelearn.end()) {
+			cancelledRelearn.push_back(scope);
+			QueueLine("Archipelago: Relearn cancelled after the connection or character changed; remaining skill commands were discarded.");
+		}
+		std::erase_if(gRelearnCommandQueue, [&](const ScopedRelearnCommand& command) { return command.scope == scope; });
+	};
 	std::vector<ap::PendingCommand> rewards;
 	std::filesystem::path rewardSave;
 	std::vector<QueuedTrap> traps;
@@ -2885,6 +2895,8 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 				gRelearnCommandQueue.pop_front();
 				if (ap::panel::SameReadyScope(command.scope, RelearnScope())) {
 					relearn.push_back(std::move(command));
+				} else {
+					cancelRelearn(command.scope);
 				}
 			}
 			gNextCommandsAt = Clock::now() + CommandGap;
@@ -2919,6 +2931,7 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 			std::lock_guard lock(gMutex);
 			// A later UI update (or an earlier batch) may have switched the slot.
 			if (!ap::panel::SameReadyScope(command.scope, RelearnScope())) {
+				cancelRelearn(command.scope);
 				continue;
 			}
 		}

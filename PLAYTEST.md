@@ -256,7 +256,8 @@ Restart D2R after updating the plugin: the game caches panel layouts.
       Relearn restores missing AP tree skills after a respec without needing to type a command.
 - [ ] Double-clicking Confirm runs the action once. Confirm Relearn then immediately switch AP slots:
       deferred work reports cancellation and adds no old-slot skills. Also switch after the first
-      Relearn batch: no remaining old-slot skill commands run in subsequent batches. Opening F9 during a dialog closes that dialog and
+      Relearn batch: no remaining old-slot skill commands run in subsequent batches, and one cancellation
+      message says the remaining commands were discarded. Opening F9 during a dialog closes that dialog and
       returns to the main panel. Cancel then opening another action never runs the cancelled action.
 - [ ] Start reconnecting to another AP slot while a confirmation is open: the old confirmation refuses
       to run even before the handshake finishes (also test a refused/unreachable server).
