@@ -287,6 +287,8 @@ void TestGameData() {
 	for (const auto& superUnique : ap::data::SuperUniques) {
 		EXPECT(superUnique.id < 100 && superUnique.act < 5);
 	}
+	EXPECT(std::string_view(ap::data::SuperUniques[1].name) == "Bonebreak"
+	       && std::string_view(ap::data::SuperUniques[1].label) == "Bonebreaker (Crypt)");
 	bool teleport = false;
 	for (const auto& skill : ap::data::Skills) {
 		teleport |= skill.id == 54 && std::string_view(skill.name) == "Teleport";
