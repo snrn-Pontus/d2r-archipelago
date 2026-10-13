@@ -73,20 +73,13 @@ Built, pushed and installed, still to check in game:
 - [ ] A Barbarian with an Assassin trap in the pool (allowed: they have the S2 animation) can cast it
       without freezing.
 - [ ] Werewolf or Werebear on another class: does the form work? If not, keep forms Druid-only too.
-- [ ] `ap-relearn` (tree mode): with all skills unlocked it says so; after a respec at Akara it lists the
-      lost skills and asks for `ap-relearn confirm`, which gives each one level back; running `confirm`
-      again changes nothing.
-- [ ] Respec with a Token of Absolution (tree mode, #8; cube the four essences for one): within about 5 seconds the chat says the Archipelago skills are
-      unlocked again and names them, and each has 1 point in the tree. Count the unspent points before and
-      after: does the respec refund the skadd levels too (then each skill comes back as an extra point)?
-- [ ] Right-clicking a Token of Absolution in the stash or Cube changes nothing, and leaving the game right
-      after using one doesn't relearn in the next game.
+- [x] Tree mode unlocks received skills in the Skills table (no free level): a new character spends its own
+      points on them, and a Token respec refunds only those points, with the skills still open (2026-10-13).
+- [ ] The same after Akara's respec (Den of Evil) and a Writ of Absolution; `ap-relearn` says there's
+      nothing to relearn, and finishing Den of Evil shows no Relearn hint.
 - [ ] Writ of Absolution (#6, rerun setup): every potion seller's Misc tab has one for 1,000 gold, with the
-      Token of Absolution's picture. Right-clicking it respecs like the token, and in tree mode the skills
-      come back on their own. Buying it doesn't count as the Token of Absolution check. Can't buy it
+      Token of Absolution's picture. Buying it doesn't count as the Token of Absolution check. Can't buy it
       before Merchant Access.
-- [ ] Finishing Den of Evil in tree mode shows the hint that Akara's respec needs Relearn Skills; only once
-      per difficulty.
 - [ ] Shuffled superuniques are visible now (they had no HD model): after rerunning setup, Rakanishu in
       Stony Field and his minions show their new monster's model (section 8).
 - [ ] Main-path superunique cap (#3, new seed needed, `superunique_shuffle: nearby`, default

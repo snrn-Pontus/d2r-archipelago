@@ -19,6 +19,7 @@ add_library(ap_core STATIC
 	src/randomizer.cpp
 	src/save_state.cpp
 	src/session_log.cpp
+	src/skill_table.cpp
 	src/sounds.cpp
 	src/sprite.cpp
 	src/table.cpp
