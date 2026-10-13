@@ -171,8 +171,8 @@ Built, pushed and installed, still to check in game:
       same rune sequence (2026-10-13: none in either bank's `runes.txt`); a shuffled runeword with a common
       base still makes the right word (El Eld in a normal 2-socket Long Sword made Steel on a LoD character,
       from the base bank's recipe; the list itself is #110).
-- [ ] Writ name (#113, rerun setup): the Writ of Absolution in a potion seller's Misc tab is named "Writ of
-      Absolution", not "An Evil Force".
+- [x] Writ name (#113, rerun setup): the Writ of Absolution in a potion seller's Misc tab is named "Writ of
+      Absolution", not "An Evil Force" (2026-10-13).
 - [x] Nothing drops on the ground (#109; one paced ground drop still crashed): with full bags, Random Uniques
       no longer crash (2026-10-13). Rewards that only lack room now wait ("rewards are waiting; make room ...
       and they arrive within 30 seconds", retried every 30 seconds) instead of rerolling into smaller uniques or
@@ -181,7 +181,8 @@ Built, pushed and installed, still to check in game:
       `!getitem` Town Portal Access and Potion Access together: the chat asks for room for the Tome and says
       the potions come back as you make room; freeing cells brings them, ending with "the last of your
       set-aside potions is back" (#109).
-- [ ] Runeword banks agree (#110, rerun setup): `excel\runes.txt` and `excel\base\runes.txt` in the mod give
+- [x] Runeword banks agree (#110, rerun setup; 2026-10-13: both banks say Steel is Tir Tir, the five words are
+      marked, and Tir Tir made Steel on a LoD character): `excel\runes.txt` and `excel\base\runes.txt` in the mod give
       every runeword both have the same runes, and `runewords.txt` marks the five Reign of the Warlock words
       (Authority, Coven, Ritual, Vigilance, Void) "(Reign of the Warlock only)". On a Lord of Destruction
       character, `runewords.txt`'s recipe for Steel (or another cheap word) in a normal sword of the right
