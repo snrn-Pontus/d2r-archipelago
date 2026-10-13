@@ -30,6 +30,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <deque>
@@ -99,6 +100,11 @@ std::string gRepairVendorPanel;
 bool gRepairOfferQueued = false;
 // UI-thread-only: only our one-shot request may pass the native repair action.
 bool gNativeRepairDispatch = false;
+// UI-thread-only: one handle per confirmation, no pending action after Cancel.
+std::array<D2RL::Panels::RegistrationHandle, 3> gConfirmPanels {};
+std::array<uint64_t, 3> gConfirmSessions {};
+std::array<uint64_t, 3> gConfirmGames {};
+uint64_t gPanelGame = 0;
 
 std::unique_ptr<ap::Client> gClient;
 std::atomic<bool>           gWorkQueued;
@@ -3729,6 +3735,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 	switch (event->kind) {
 		case Kind::GameJoined:
 		case Kind::LocalPlayerReady: {
+			gPanelGame = event->sessionGeneration;
 			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
 			// Only on joining: by LocalPlayerReady this game may already have said the level.
@@ -3767,6 +3774,15 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			break;
 		}
 		case Kind::GameLeft: {
+			gPanelGame = 0;
+			// Dialog handles are UI-thread-only, like lifecycle callbacks.
+			if (gPanels != nullptr) {
+				for (const auto handle : gConfirmPanels) {
+					if (handle != D2RL::Panels::InvalidHandle) {
+						gPanels->closePanel(gContext, handle);
+					}
+				}
+			}
 			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
 			gInGame = false;
@@ -4575,14 +4591,15 @@ void __cdecl TogglePanelWork(const D2RL::PluginContext*, void* userData) noexcep
 	if (gPanels == nullptr) {
 		return;
 	}
+	if (userData == &gPanel) {
+		for (const auto handle : gConfirmPanels) {
+			if (handle != D2RL::Panels::InvalidHandle) {
+				gPanels->closePanel(gContext, handle);
+			}
+		}
+	}
 	if (const auto result = gPanels->togglePanel(gContext, *static_cast<D2RL::Panels::RegistrationHandle*>(userData)); result != D2RL::Panels::Result::Success) {
 		Log("Archipelago: couldn't open a panel (result " + std::to_string(static_cast<uint32_t>(result)) + ").");
-	}
-}
-
-void __cdecl ClosePanelWork(const D2RL::PluginContext*, void* userData) noexcept {
-	if (gPanels != nullptr) {
-		gPanels->closePanel(gContext, *static_cast<D2RL::Panels::RegistrationHandle*>(userData));
 	}
 }
 
@@ -5023,9 +5040,17 @@ void RunPanelCommand(std::string_view action) {
 	handler->second(nullptr, &command, nullptr);
 }
 
-// A panel button (UI thread): closes its panel, so the chat with the answer
-// shows, and runs the button's commands. Debug buttons only run while the
-// debug tools are on.
+// A stale button message must not execute a closed dialog (UI thread).
+auto PanelOpen(D2RL::Panels::RegistrationHandle handle) -> bool {
+	if (gPanels == nullptr || handle == D2RL::Panels::InvalidHandle) {
+		return false;
+	}
+	D2RL::Panels::PanelInfo info { .structSize = D2RL::Panels::PanelInfoSize };
+	return gPanels->getPanelInfo(gContext, handle, &info) == D2RL::Panels::Result::Success
+		&& info.presentationState == D2RL::Panels::PresentationState::Open;
+}
+
+// Confirmation is a separate panel. Escape/Cancel just close it.
 void RunPanelButton(std::string_view id) {
 	if (ap::panel::Find(ap::panel::Repairs(), id) != nullptr) {
 		// CommandRepairs requires this modal to still be open and consumes its
@@ -5033,18 +5058,56 @@ void RunPanelButton(std::string_view id) {
 		RunPanelCommand("ap-repairs all");
 		return;
 	}
-	auto* handle = &gPanel;
+	auto handle = gPanel;
 	const auto* button = ap::panel::Find(ap::panel::Main(), id);
 	if (button == nullptr && DebugToolsOn()) {
-		handle = &gDebugPanel;
+		handle = gDebugPanel;
 		button = ap::panel::Find(ap::panel::Debug(), id);
 	}
+	const auto confirmations = ap::panel::Confirmations();
 	if (button == nullptr) {
-		Log("Archipelago: panel button " + std::string(id) + " isn't on an open panel (debug tools " + (DebugToolsOn() ? "on" : "off") + ").");
+		for (size_t i = 0; i < confirmations.size(); ++i) {
+			if (const auto* found = ap::panel::Find(confirmations[i], id); found != nullptr) {
+				handle = gConfirmPanels[i];
+				button = found;
+				if (!PanelOpen(handle)) {
+					return;
+				}
+				if (gConfirmSessions[i] != gClient->SessionGeneration() || gConfirmGames[i] != gPanelGame) {
+					gPanels->closePanel(gContext, handle);
+					Reply("The session changed. Open the command panel again.");
+					return;
+				}
+				break;
+			}
+		}
+	}
+	if (button == nullptr || !PanelOpen(handle)) {
+		return;
+	}
+	if (button->confirm) {
+		const auto* dialog = ap::panel::ConfirmationFor(id);
+		if (dialog == nullptr) {
+			return;
+		}
+		const size_t index = static_cast<size_t>(dialog - confirmations.data());
+		if (gPanels->closePanel(gContext, handle) != D2RL::Panels::Result::Success) {
+			return;
+		}
+		// Missing registrations or failed opens never fall through to the action.
+		gConfirmSessions[index] = gClient->SessionGeneration();
+		gConfirmGames[index] = gPanelGame;
+		if (gConfirmPanels[index] == D2RL::Panels::InvalidHandle
+			|| gPanels->openPanel(gContext, gConfirmPanels[index]) != D2RL::Panels::Result::Success) {
+			Reply("Couldn't open the confirmation dialog. Use the console command instead.");
+		}
+		return;
+	}
+	// Close before running, so a queued double click cannot repeat the action.
+	if (gPanels->closePanel(gContext, handle) != D2RL::Panels::Result::Success) {
 		return;
 	}
 	Log("Archipelago: panel button: " + std::string(button->action));
-	gThreads->runOnUiThread(gContext, ClosePanelWork, handle);
 	for (const auto part : ap::panel::SplitAction(button->action)) {
 		if (!part.starts_with('!')) {
 			RunPanelCommand(part);
@@ -5116,6 +5179,10 @@ void RegisterPanels(const D2RL::PluginContext* context) {
 	const bool main = RegisterPanel(context, resources, input, ap::panel::Main(), gPanel, "command-panel", "Archipelago Commands", D2RL::Input::Key::F9);
 	const bool debug = RegisterPanel(context, resources, input, ap::panel::Debug(), gDebugPanel, "debug-panel", "Archipelago Debug Panel", D2RL::Input::Key::F10);
 	const bool repairs = RegisterPanel(context, resources, nullptr, ap::panel::Repairs(), gRepairPanel, "repairs", "Repairs", D2RL::Input::Key::None);
+	const auto confirmations = ap::panel::Confirmations();
+	for (size_t i = 0; i < confirmations.size(); ++i) {
+		RegisterPanel(context, resources, nullptr, confirmations[i], gConfirmPanels[i], nullptr, nullptr, D2RL::Input::Key::None);
+	}
 	if (!main && !debug && !repairs) {
 		gPanels = nullptr;
 	}

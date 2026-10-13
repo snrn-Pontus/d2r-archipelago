@@ -27,6 +27,7 @@ struct Button {
 	// What it does: a plugin console command ("ap-core goto 3"), or server chat
 	// commands ("!hint"), several joined by "; ".
 	std::string_view action;
+	bool confirm = false;
 };
 
 // A column of buttons under an optional heading.
@@ -44,11 +45,16 @@ struct Panel {
 	std::span<const Column> columns;
 	// Space between buttons.
 	int gap;
+	bool confirmation = false;
 };
 
 auto Main() -> const Panel&;
 auto Debug() -> const Panel&;
 auto Repairs() -> const Panel&;
+
+// Dedicated dialogs; their default focus is Cancel, never the action.
+auto Confirmations() -> std::span<const Panel>;
+auto ConfirmationFor(std::string_view id) -> const Panel*;
 
 // The button with this id on the panel, or nullptr.
 auto Find(const Panel& panel, std::string_view id) -> const Button*;

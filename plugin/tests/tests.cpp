@@ -1555,9 +1555,16 @@ void TestPersonalization() {
 
 void TestCommandPanel() {
 	std::set<std::string> ids;
-	for (const auto* panel : { &ap::panel::Main(), &ap::panel::Debug(), &ap::panel::Repairs() }) {
+	std::vector<const ap::panel::Panel*> panels { &ap::panel::Main(), &ap::panel::Debug(), &ap::panel::Repairs() };
+	for (const auto& dialog : ap::panel::Confirmations()) {
+		panels.push_back(&dialog);
+	}
+	for (const auto* panel : panels) {
 		const auto layout = nlohmann::json::parse(ap::panel::Layout(*panel));
 		EXPECT(layout["type"] == "Panel" && layout["name"] == panel->name);
+		if (panel->confirmation) {
+			EXPECT(layout["fields"]["defaultWidget"] == "Close");
+		}
 		std::set<std::string> names;
 		std::set<std::string> messages;
 		for (const auto& child : layout["children"]) {
@@ -1573,6 +1580,11 @@ void TestCommandPanel() {
 				++count;
 				EXPECT(ids.insert(std::string(button.id)).second);
 				EXPECT(ap::panel::Find(*panel, button.id) == &button);
+				if (button.confirm) {
+					const auto* dialog = ap::panel::ConfirmationFor(button.id);
+					EXPECT(dialog != nullptr && dialog->confirmation);
+					EXPECT(dialog->columns[0].buttons[0].action == button.action);
+				}
 				EXPECT(messages.contains(ap::panel::ClickMessage(button.id)));
 				EXPECT(ap::panel::ClickedButton("PanelManager", "OpenPanel", ap::panel::ClickMessage(button.id).substr(23)) == button.id);
 				const auto parts = ap::panel::SplitAction(button.action);
@@ -1592,6 +1604,12 @@ void TestCommandPanel() {
 	for (const auto& column : ap::panel::Debug().columns) {
 		EXPECT(column.buttons.size() <= 12);
 	}
+	// Confirmation IDs cannot resolve as ordinary commands on the main panel.
+	for (const auto& dialog : ap::panel::Confirmations()) {
+		EXPECT(ap::panel::Find(ap::panel::Main(), dialog.columns[0].buttons[0].id) == nullptr);
+	}
+	EXPECT(ap::panel::ConfirmationFor("status") == nullptr);
+	EXPECT(ap::panel::ConfirmationFor("confirm-collect") == nullptr);
 	// Debug buttons only run from the debug panel.
 	EXPECT(ap::panel::Find(ap::panel::Main(), "debug-god") == nullptr);
 	EXPECT(ap::panel::Find(ap::panel::Debug(), "debug-god") != nullptr);
