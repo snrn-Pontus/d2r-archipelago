@@ -2,6 +2,12 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.9.3 - 2026-10-13
+
+- Tree mode: a received skill opens up in your skill tree for your own points instead of coming with a free
+  level, so a respec (Token, Writ or Akara) refunds only what you spent and the skills stay unlocked, with no
+  Relearn needed and no extra points (#106)
+
 ## 0.9.2 - 2026-10-13
 
 - A character no longer needs a kill each game before its rewards, skills and locks work: the Archipelago
