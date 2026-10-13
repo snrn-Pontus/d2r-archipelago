@@ -485,7 +485,7 @@ a guess checked against the item before writing, so test the command first.
 
 ## Found in testing
 
-- **Bug (2026-10-13):** a rune sent as a reward counts as found after rejoining. A Mid Rune reward (Amn)
+- **Bug (2026-10-13, #108):** a rune sent as a reward counts as found after rejoining. A Mid Rune reward (Amn)
   arrived at 13:50; on the next join the plugin sent "Find Amn Rune". The reward marker lives in the item
   seed, which runes and other simple items don't keep in the save, so `IsReward` misses them after a reload.
   Gems and other simple items likely do the same.
