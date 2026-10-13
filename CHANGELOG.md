@@ -2,6 +2,15 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.9.1 - 2026-10-13
+
+- The plugin keeps its own log, one file per launch in `d2rloader\archipelago\logs` (the last 10), with every
+  check found and sent, every item received and what the chat showed, so a crash's log survives relaunching;
+  attach that folder to bug reports (#104)
+- Debug panel: a Starter Kit for a fresh test character (Cube, Token of Absolution, the four essences, Tome of
+  Identify, rejuvenation potions; no checks), Mark the Log and Log State, and `ap-debug give` for any item
+  without a check (#104)
+
 ## 0.9.0 - 2026-10-13
 
 - Rewards only go to a character of the seed's class, so loading a mule no longer hands it the seed's loot,
