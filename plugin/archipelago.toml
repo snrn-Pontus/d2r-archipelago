@@ -10,6 +10,8 @@ debug_tools = false
 notifications = true
 # Game sounds with the gold, red and white banners.
 banner_sounds = true
+# Their volume in percent, 0 to 200 (the game's own loudness). Low by default, since they ignore the game's volume and are jarring louder.
+banner_volume = 10
 # The always-on checks line; status_position is top-left, top, top-right, bottom-left or bottom-right.
 status_line = true
 status_position = "top-left"

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include <algorithm>
+#include <charconv>
 #include <sstream>
 
 namespace ap {
@@ -68,6 +70,13 @@ auto ParseConfig(const std::string& text) -> Config {
 			config.notifications = value != "false";
 		} else if (key == "banner_sounds") {
 			config.bannerSounds = value != "false";
+		} else if (key == "banner_volume" && !value.empty()) {
+			// No exceptions: they'd escape the noexcept plugin load. Junk keeps the default.
+			long long volume = 0;
+			const char* last = value.data() + value.size();
+			if (const auto [end, error] = std::from_chars(value.data(), last, volume); error == std::errc {} && end == last) {
+				config.bannerVolume = static_cast<int>(std::clamp(volume, 0LL, 200LL));
+			}
 		} else if (key == "status_line") {
 			config.statusLine = value != "false";
 		} else if (key == "status_position" && !value.empty()) {
@@ -99,6 +108,8 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "notifications = " << (config.notifications ? "true" : "false") << "\n"
 	    << "# Game sounds with the gold, red and white banners.\n"
 	    << "banner_sounds = " << (config.bannerSounds ? "true" : "false") << "\n"
+	    << "# Their volume in percent, 0 to 200 (the game's own loudness). Low by default, since they ignore the game's volume and are jarring louder.\n"
+	    << "banner_volume = " << config.bannerVolume << "\n"
 	    << "# The always-on checks line; status_position is top-left, top, top-right, bottom-left or bottom-right.\n"
 	    << "status_line = " << (config.statusLine ? "true" : "false") << "\n"
 	    << "status_position = " << Quote(config.statusPosition) << "\n\n"

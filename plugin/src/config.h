@@ -20,6 +20,10 @@ struct Config {
 	bool notifications = true;
 	// Game sounds with the gold, red and white banners.
 	bool bannerSounds = true;
+	// Their loudness in percent of the d2r-ap-setup files (half the game's): 200
+	// is the game's own, 0 silent. Low by default: they play over the game's own
+	// volume setting, and much louder they're jarring.
+	int bannerVolume = 10;
 	// The always-on checks line, and its corner: top-left, top, top-right,
 	// bottom-left or bottom-right.
 	bool statusLine = true;
