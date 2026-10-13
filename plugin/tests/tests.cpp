@@ -352,6 +352,97 @@ void TestMilestoneRecovery() {
 	std::filesystem::remove_all(path.parent_path());
 }
 
+// The 100 cows add up per difficulty over the whole seed (#79): across games,
+// reconnects and kills made before a seed is bound, only in the Cow Level.
+void TestLifetimeCows() {
+	using ap::ids::CowLocation;
+	using ap::milestones::CountCow;
+	static constexpr int Cows = static_cast<int>(ap::data::CowLevel);
+	const auto path = std::filesystem::temp_directory_path() / "d2rl-ap-test-cows" / "seed_slot.txt";
+	auto kill = [](ap::SaveState& save, int difficulty, int count, int level = Cows, bool shuffled = false) {
+		std::vector<int64_t> reached;
+		for (int i = 0; i < count; ++i) {
+			for (const int64_t location : CountCow(save, difficulty, level, shuffled).reached) {
+				reached.push_back(location);
+				save.checks.insert(location); // as AddChecks does
+			}
+		}
+		return reached;
+	};
+	// 60 in one game, the save written as the game is left; 40 in the next game.
+	{
+		ap::SaveState save;
+		EXPECT(kill(save, 0, 60).empty());
+		EXPECT(save.Save(path));
+		ap::SaveState next;
+		EXPECT(next.Load(path));
+		EXPECT(next.cowKills[0] == 60);
+		EXPECT(kill(next, 0, 39).empty());
+		EXPECT(kill(next, 0, 1) == std::vector<int64_t> { CowLocation(0, 2) });
+		// Once found, more cows don't send it again.
+		EXPECT(kill(next, 0, 50).empty() && next.cowKills[0] == 150);
+	}
+	// 60, an AP reconnect in the same game (the save is written, then reloaded by
+	// the rebind), then 40.
+	{
+		ap::SaveState save;
+		kill(save, 1, 60);
+		EXPECT(save.Save(path));
+		ap::SaveState rebound;
+		EXPECT(rebound.Load(path));
+		EXPECT(kill(rebound, 1, 40) == std::vector<int64_t> { CowLocation(1, 2) });
+	}
+	// 60 bound, then 40 while unbound (ap-connect to the same slot again): they join
+	// the save on bind, and the check is recovered without another cow.
+	{
+		ap::SaveState save;
+		kill(save, 2, 60);
+		ap::milestones::HeldCows held;
+		for (int i = 0; i < 40; ++i) {
+			held.Kill(2, Cows);
+		}
+		held.MoveTo(save, false);
+		EXPECT(save.cowKills[2] == 100);
+		EXPECT(ap::milestones::Missing(save, false, true) == std::vector<int64_t> { CowLocation(2, 2) });
+		// The held cows are gone once moved.
+		held.MoveTo(save, false);
+		EXPECT(save.cowKills[2] == 100);
+	}
+	// Difficulties don't share cows.
+	{
+		ap::SaveState save;
+		EXPECT(kill(save, 0, 60).empty() && kill(save, 1, 40).empty() && kill(save, 2, 99).empty());
+		EXPECT(ap::milestones::Missing(save, false, true).empty());
+		ap::milestones::HeldCows held;
+		held.Kill(1, Cows);
+		held.Kill(3, Cows); // out of range
+		held.MoveTo(save, false);
+		EXPECT(save.cowKills[0] == 60 && save.cowKills[1] == 41 && save.cowKills[2] == 99 && !save.cowKills.contains(3));
+		EXPECT(CountCow(save, 3, Cows, false).reached.empty() && !CountCow(save, -1, Cows, false).counted);
+	}
+	// Only the Cow Level's cows count, unless the seed shuffled them into another area.
+	{
+		EXPECT(ap::milestones::CowCounts(Cows, false) && !ap::milestones::CowCounts(2, false) && ap::milestones::CowCounts(2, true));
+		ap::SaveState save;
+		EXPECT(!CountCow(save, 0, 2, false).counted && !save.cowKills.contains(0));
+		EXPECT(kill(save, 0, 150, 2).empty() && !save.cowKills.contains(0));
+		EXPECT(kill(save, 0, 100, 2, true) == std::vector<int64_t> { CowLocation(0, 2) });
+		// Held cows outside the Cow Level only count for a seed that shuffled them.
+		ap::SaveState plain;
+		ap::SaveState shuffled;
+		ap::milestones::HeldCows held;
+		for (int i = 0; i < 30; ++i) {
+			held.Kill(0, Cows);
+			held.Kill(0, 2);
+		}
+		ap::milestones::HeldCows copy = held;
+		held.MoveTo(plain, false);
+		copy.MoveTo(shuffled, true);
+		EXPECT(plain.cowKills[0] == 30 && shuffled.cowKills[0] == 60);
+	}
+	std::filesystem::remove_all(path.parent_path());
+}
+
 // Mirrors apworld/d2r_archipelago/test/test_generation.py.
 void TestIdsMatchApworld() {
 	EXPECT(ap::ids::QuestLocation(0, 1) == 2'420'001);
@@ -1277,6 +1368,7 @@ int main() {
 	TestScaleWav();
 	TestSaveStateRoundTrip();
 	TestMilestoneRecovery();
+	TestLifetimeCows();
 	TestIdsMatchApworld();
 	TestGameData();
 	TestPersonalization();
