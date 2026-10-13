@@ -258,7 +258,7 @@ std::vector<int>      gPendingAreas;
 int                   gAct          = 0;
 // The player's class id seen in this game (from the killer of a monster), or -1.
 int                   gPlayerClass  = -1;
-// The class this game's Codex charm or Ledger was made for, or -1: until a kill says, it
+// The class this game's Codex charm was made for, or -1: until a kill says, it
 // stands in for gPlayerClass (a Codex only goes to a character of its class).
 int                   gCodexClass   = -1;
 // Why this game has said rewards wait, so each reason is said once: 1 the class isn't
@@ -1597,25 +1597,6 @@ auto CodexSeedOf(const D2RL::Items::ItemInfo& item) -> uint32_t {
 	return IsCodexSeed(item.itemSeed) ? item.itemSeed : IsCodexSeed(item.generationSeed) ? item.generationSeed : 0;
 }
 
-// The Archipelago Ledger's seed: its marker, the class of the character it was made
-// for (+1, so 0 is none), and random bits.
-constexpr uint32_t LedgerMarker = 0xB8000000U;
-
-auto LedgerSeed(int playerClass, uint32_t random) -> uint32_t {
-	return LedgerMarker | ((static_cast<uint32_t>(playerClass + 1) & 0xF) << 20) | (random & 0xFFFFF);
-}
-
-// The class a Ledger was made for, or -1 (made before Ledgers carried it).
-auto LedgerClass(const D2RL::Items::ItemInfo& item) -> int {
-	for (const uint32_t seed : { item.itemSeed, item.generationSeed }) {
-		if ((seed & CodexMarkerMask) == LedgerMarker) {
-			const int playerClass = static_cast<int>((seed >> 20) & 0xF) - 1;
-			return playerClass < static_cast<int>(std::size(ClassNames)) ? playerClass : -1;
-		}
-	}
-	return -1;
-}
-
 auto DescribeItem(const D2RL::Items::ItemInfo& item) -> std::string {
 	char text[200] {};
 	std::snprintf(text, sizeof(text), "container=%u quality=%u itemSeed=%08X generationSeed=%08X prefix=%u suffix=%u", static_cast<uint32_t>(item.container),
@@ -2230,84 +2211,6 @@ void FindSuperUniqueMonsters() {
 	}
 }
 
-// Hands the character its Archipelago Ledger once per seed (ap-ledger asks for
-// another). If it can't be made (no room, or a mod without it), retries later.
-Clock::time_point gLedgerRetryAt;
-
-// The Ledgers on the character: whether one carries this class, and the ones that don't.
-struct LedgerScan {
-	int                           playerClass = -1;
-	bool                          marked      = false;
-	std::vector<D2RL::ItemHandle> unmarked;
-};
-
-auto __cdecl FindLedger(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
-	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->code == ap::loot::CodeFromText(ap::randomizer::LedgerCode)
-		&& item->container != D2RL::Items::ItemContainer::SharedStash && item->container != D2RL::Items::ItemContainer::Ground) {
-		auto* scan = static_cast<LedgerScan*>(userData);
-		if (LedgerClass(*item) == scan->playerClass) {
-			scan->marked = true;
-		} else {
-			scan->unmarked.push_back(item->handle);
-		}
-	}
-	return D2RL::Inventory::IterationAction::Continue;
-}
-
-void GiveLedger(D2RL::PlayerHandle player) {
-	LedgerScan scan;
-	bool given = false;
-	{
-		std::lock_guard lock(gMutex);
-		if (Clock::now() < gLedgerRetryAt) {
-			return;
-		}
-		given = gSave.ledgerGiven;
-		scan.playerClass = GameClass();
-	}
-	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
-	if (gInventory->forEachInventoryItem(gContext, player, &filter, FindLedger, &scan) != D2RL::Inventory::Result::Success) {
-		return;
-	}
-	// Given before and thrown away: ap-ledger asks for another. Given and kept, but from before
-	// Ledgers carried the class (or another class's): it's swapped for one that does.
-	if (scan.marked && !given) {
-		std::lock_guard lock(gMutex);
-		gSave.ledgerGiven = true;
-		SaveNow();
-	}
-	if (scan.marked || (given && scan.unmarked.empty())) {
-		return;
-	}
-	// The Ledger's seed carries the class, so later games know this character without a kill.
-	auto spec = MakeSpec(ap::loot::CodeFromText(ap::randomizer::LedgerCode), D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
-	static std::mt19937 seeds(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
-	spec.seedMode = D2RL::Items::SeedMode::Deterministic;
-	spec.generationSeed = LedgerSeed(scan.playerClass, seeds());
-	spec.itemSeed = spec.generationSeed;
-	D2RL::ItemHandle item = D2RL::InvalidItemHandle;
-	const auto result = gItems->createItem(gContext, player, &spec, &item);
-	if (result != D2RL::Items::Result::Success) {
-		Log("Archipelago: couldn't make the Archipelago Ledger (result " + std::to_string(static_cast<uint32_t>(result))
-			+ "); make room in your inventory, or rerun d2r-ap-setup if the mod predates it.");
-		std::lock_guard lock(gMutex);
-		gLedgerRetryAt = Clock::now() + std::chrono::seconds(60);
-		return;
-	}
-	// The old ones go once the new one is in.
-	for (const auto old : scan.unmarked) {
-		gItems->destroyItem(gContext, player, old, D2RL::Items::SocketedItemPolicy::DestroyContents);
-	}
-	if (scan.unmarked.empty()) {
-		Feed("Archipelago: your Archipelago Ledger counts the checks done in each act; hover over it.");
-	} else {
-		Log("Archipelago: swapped " + std::to_string(scan.unmarked.size()) + " Ledger(s) for one that knows this " + ClassName(scan.playerClass) + ".");
-	}
-	std::lock_guard lock(gMutex);
-	gSave.ledgerGiven = true;
-	SaveNow();
-}
-
 // Tree mode: unlocks each received skill in the tree with D2RCore's skadd (its
 // first point; the tree's self-prerequisite lock then lets you spend more), and
 // hands out extra copies and Skill Points as unspent skill points.
@@ -2517,30 +2420,6 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 			}
 		}
 	}
-	// Tree mode has no Codex: the Ledger says the class, from anywhere on the character but
-	// the shared stash (another character could have put it there).
-	{
-		std::lock_guard lock(gMutex);
-		known = GameClass() >= 0;
-	}
-	if (!known) {
-		int ledgerClass = -1;
-		const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
-		gInventory->forEachInventoryItem(gContext, player, &filter,
-			[](const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept {
-				if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->code == ap::loot::CodeFromText(ap::randomizer::LedgerCode)
-					&& item->container != D2RL::Items::ItemContainer::SharedStash && item->container != D2RL::Items::ItemContainer::Ground && LedgerClass(*item) >= 0) {
-					*static_cast<int*>(userData) = LedgerClass(*item);
-					return D2RL::Inventory::IterationAction::Stop;
-				}
-				return D2RL::Inventory::IterationAction::Continue;
-			},
-			&ledgerClass);
-		if (ledgerClass >= 0) {
-			std::lock_guard lock(gMutex);
-			gCodexClass = ledgerClass;
-		}
-	}
 	std::string message;
 	bool banner = false;
 	bool ready = false;
@@ -2620,7 +2499,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 	// The slot settings from the same snapshot as the items, never re-read during the pass.
 	const ap::SlotData& slots = snapshot.slots;
-	// Nothing touches a character that isn't the seed's: no rewards, Codex, Ledger or locks.
+	// Nothing touches a character that isn't the seed's: no rewards, Codex or locks.
 	bool pending = false;
 	{
 		std::lock_guard lock(gMutex);
@@ -2647,7 +2526,6 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	ScanParcels(player);
 	EnforceTownPortalLock(player);
 	EnforcePotionLock(player);
-	GiveLedger(player);
 	{
 		auto records = UniqueRecords("Archipelago Codex");
 		std::lock_guard lock(gMutex);
@@ -3976,9 +3854,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 
 // ---- Codex tooltip and UI messages (UI thread) --------------------------------
 
-// The Ledger's tooltip: checks done (sent, or held for a key) out of each act's
-// total, with the act you're in marked, then the ones not tied to an act.
-// Checks done and total per act (-1 for none), with the act you're in and how
+// Checks done (sent, or held for a key) and total per act (-1 for none), with the act you're in and how
 // many found checks are held for a missing act key.
 struct CheckCounts {
 	std::map<int, std::pair<size_t, size_t>> acts;
@@ -4015,29 +3891,6 @@ auto CountChecks() -> CheckCounts {
 	return counts;
 }
 
-auto LedgerText() -> std::string {
-	if (gClient->State() != ap::ConnectionState::Connected) {
-		return "Archipelago: not connected";
-	}
-	const CheckCounts counts = CountChecks();
-	auto line = [](const std::string& label, const std::pair<size_t, size_t>& pair) {
-		return "\n" + label + ": " + std::to_string(pair.first) + "/" + std::to_string(pair.second) + (pair.first == pair.second ? " done" : "");
-	};
-	std::string text = "Archipelago: " + std::to_string(counts.done) + "/" + std::to_string(counts.total) + " checks";
-	for (const auto& [act, pair] : counts.acts) {
-		if (act >= 0) {
-			text += line((act == counts.here ? "> " : "") + ActLabel(act), pair);
-		}
-	}
-	if (const auto other = counts.acts.find(-1); other != counts.acts.end()) {
-		text += line("Not tied to an act", other->second);
-	}
-	if (counts.held > 0) {
-		text += "\n" + std::to_string(counts.held) + " held until their act's key arrives";
-	}
-	return text;
-}
-
 // The always-on status line: "Archipelago 34/210 - Normal Act I 12/40".
 auto StatusLine() -> std::string {
 	if (gClient->State() != ap::ConnectionState::Connected) {
@@ -4062,14 +3915,6 @@ void __cdecl OnItemTooltip(const D2RL::PluginContext*, D2RL::SharedEvents::ItemT
 	}
 	D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
 	if (gItems->getItemInfo(gContext, event->item, &info) != D2RL::Items::Result::Success || event->capacity < 2) {
-		return;
-	}
-	if (info.code == ap::loot::CodeFromText(ap::randomizer::LedgerCode)) {
-		const std::string text = LedgerText();
-		const size_t length = std::min<size_t>(text.size(), event->capacity - 1);
-		std::memcpy(event->text, text.data(), length);
-		event->text[length] = '\0';
-		event->length = static_cast<uint32_t>(length);
 		return;
 	}
 	// The Codex is the Archipelago Codex unique; a fallback Magic Codex keeps its seed marker.
@@ -4635,24 +4480,13 @@ auto CommandMissing(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
-// ap-ledger: a new Archipelago Ledger, if you lost yours.
-auto CommandLedger(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
-	{
-		std::lock_guard lock(gMutex);
-		gSave.ledgerGiven = false;
-		gLedgerRetryAt = {};
-	}
-	Reply("A new Archipelago Ledger is on its way.");
-	return D2RL::ConsoleCommandResult::Handled;
-}
-
 // ap-claim: this game's character becomes the seed's, the one rewards go to (by class:
 // D2RLoader doesn't say the character's name).
 auto CommandClaim(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
 	std::string reply;
 	{
 		std::lock_guard lock(gMutex);
-		// Not known yet (no kill this game, no Ledger that says): your word that it's the seed's
+		// Not known yet (no kill this game, no Codex that says): your word that it's the seed's
 		// class. A kill by another class still overrides it (OnMonsterDeath).
 		const bool vouched = gBoundSession != 0 && gInGame && GameClass() < 0 && SeedClass(gSlots) >= 0;
 		if (vouched) {
@@ -4668,10 +4502,6 @@ auto CommandClaim(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 			reply = "Kill a monster first, so the plugin can tell this character's class.";
 		} else {
 			gSave.playerClass = gameClass;
-			// This character gets a Ledger that carries its class, if it has none, so later
-			// games know it without a kill.
-			gSave.ledgerGiven = false;
-			gLedgerRetryAt = {};
 			SaveNow();
 			gCharacterWarned = 0;
 			gCodexDirty = true;
@@ -5159,7 +4989,6 @@ void RunPanelCommand(std::string_view action) {
 		{ "ap-status", CommandStatus },
 		{ "ap-missing", CommandMissing },
 		{ "ap-hints", CommandHints },
-		{ "ap-ledger", CommandLedger },
 		{ "ap-claim", CommandClaim },
 		{ "ap-redeliver", CommandRedeliver },
 		{ "ap-codex", CommandCodex },
@@ -5494,7 +5323,6 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-chat", CommandChat, "Show a line in the game chat: ap-chat [grey] <text>.")
 	                   && context->RegisterConsoleCommand("ap-codex", CommandCodex, "Rebuild the Archipelago Codex charm.")
 	                   && context->RegisterConsoleCommand("ap-hints", CommandHints, "List the hints you've found in game.")
-	                   && context->RegisterConsoleCommand("ap-ledger", CommandLedger, "Get a new Archipelago Ledger if you lost yours.")
 	                   && context->RegisterConsoleCommand("ap-claim", CommandClaim, "Make this character the one the seed's rewards go to (they go to its class).")
 	                   && context->RegisterConsoleCommand("ap-redeliver", CommandRedeliver, "Get the rewards of a game D2R crashed in again, if your character lost them.")
 	                   && context->RegisterConsoleCommand("ap-missing", CommandMissing, "List the checks left in this act: ap-missing [all].")

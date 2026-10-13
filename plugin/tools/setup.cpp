@@ -607,7 +607,7 @@ auto AddParcelGraphics(HANDLE storage, const fs::path& mpq) -> bool {
 		return false;
 	}
 	// Parcels borrow the Standard of Heroes' flag, Scrolls of Prophecy the Scroll of Inifuss,
-	// the Ledger and the Writ of Absolution the Token of Absolution.
+	// the Writ of Absolution the Token of Absolution.
 	nlohmann::json graphics, scroll, token;
 	for (const auto& entry : items) {
 		if (entry.contains(rnd::ParcelCodes[0])) {
@@ -632,7 +632,6 @@ auto AddParcelGraphics(HANDLE storage, const fs::path& mpq) -> bool {
 	for (const char* code : rnd::ProphecyCodes) {
 		items.push_back({ { code, scroll.is_null() ? graphics : scroll } });
 	}
-	items.push_back({ { rnd::LedgerCode, token.is_null() ? graphics : token } });
 	items.push_back({ { rnd::RespecCode, token.is_null() ? graphics : token } });
 	const fs::path target = mpq / "data" / "hd" / "items" / "items.json";
 	fs::create_directories(target.parent_path());
@@ -696,7 +695,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	fs::remove_all(mpq / "data" / "hd" / "global" / "ui" / "controller" / "panel" / "spells", error);
 	// And the superunique models, which only Superunique Checks write.
 	fs::remove(mpq / "data" / "hd" / "character" / "monsters.json", error);
-	if (!AddItemNames(storage, mpq, { "Archipelago Codex", rnd::ParcelName, rnd::ProphecyName, rnd::LedgerName, rnd::RespecName })) {
+	if (!AddItemNames(storage, mpq, { "Archipelago Codex", rnd::ParcelName, rnd::ProphecyName, rnd::RespecName })) {
 		std::printf("  couldn't add the Codex's name; it will show as \"An Evil Force\"\n");
 	}
 	if (!AddParcelGraphics(storage, mpq)) {
@@ -836,7 +835,6 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 				rnd::PadMiscRows(t, rotwMisc);
 			}
 			parcels = rnd::AddShopParcels(t) + rnd::AddProphecyScrolls(t);
-			rnd::AddLedger(t);
 			rnd::AddRespecWrit(t);
 		});
 		std::printf("  %s: %s\n", label, parcels > 0 ? "each act's potion seller sells an Archipelago Parcel" : "couldn't add the shop parcels");

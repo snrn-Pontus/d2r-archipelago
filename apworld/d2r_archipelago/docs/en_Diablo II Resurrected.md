@@ -59,10 +59,9 @@ shapeshifts. It works in both modes; in tree mode, the shuffled tree is the one 
 
 ## Keeping track
 
-You start with an **Archipelago Ledger**, a small item whose tooltip shows the checks done in each act out of
-its total, with the act you're in marked, and the ones not tied to an act (collections,
-find counts). In the console, `ap-missing` lists the checks left in your current act and `ap-missing all`
-counts them per act.
+A status line at the top of the screen shows the checks done out of the total, and in the act you're in.
+In the console, `ap-missing` lists the checks left in your current act and `ap-missing all` counts them per
+act and the ones not tied to an act (collections, find counts). F9's **Checks Left by Act** does the same.
 
 ## What is the goal?
 

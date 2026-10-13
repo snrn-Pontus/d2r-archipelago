@@ -28,7 +28,6 @@ constexpr std::array MainRight {
 };
 
 constexpr std::array MainTools {
-	Button { "ledger", "New Ledger", "ap-ledger" },
 	Button { "codex", "Rebuild Codex", "ap-codex" },
 	Button { "relearn", "Relearn Skills...", "ap-relearn confirm", true },
 	Button { "collect", "Collect...", "!collect", true },

@@ -97,7 +97,7 @@ See [the setup guide](apworld/d2r_archipelago/docs/setup_en.md).
 Played in game (D2R 3.3, D2RLoader 1.3.1-beta, Lord of Destruction characters): connecting, the Codex
 charm and its oskills, its tooltip, loot rewards, quest checks, quest-item checks and messages in the game
 chat. Everything added since (DeathLink, traps, locks, shop parcels, in-game hints, superunique and cow
-checks, the shuffles, the Archipelago Ledger) still needs a session; [PLAYTEST.md](PLAYTEST.md) lists what
+checks, the shuffles) still needs a session; [PLAYTEST.md](PLAYTEST.md) lists what
 to check.
 
 What playing has shown about D2RLoader:
@@ -111,8 +111,7 @@ What playing has shown about D2RLoader:
 
 ## Known limits
 
-- No Universal Tracker or PopTracker support. In game, the Archipelago Ledger's tooltip and `ap-missing` show
-  what's left.
+- No Universal Tracker or PopTracker support. In game, the status line and `ap-missing` show what's left.
 
 - One character per seed: fillers are handed out once per seed, to whichever character is playing.
 - Superunique kills are told apart by giving each field superunique a monster row of its own (D2RLoader's
