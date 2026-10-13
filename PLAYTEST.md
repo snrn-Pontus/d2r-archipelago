@@ -41,6 +41,11 @@ Built, pushed and installed, still to check in game:
       again changes nothing.
 - [ ] Shuffled superuniques are visible now (they had no HD model): after rerunning setup, Rakanishu in
       Stony Field and his minions show their new monster's model (section 8).
+- [ ] Unspawnable superuniques dropped (issue #28, new seed needed): `ap-missing` and the Ledger list 31
+      superunique checks per difficulty, none without an area. Frigid Highlands has Eldritch, Sharptooth
+      Slayer and Eyeback but no Axe Dweller, Anodized Elite, Vinvear Molech, Magma Torquer or Blaze Ripper.
+- [ ] With `superunique_checks` and a mod from the old setup tool, the plugin says the mod doesn't match;
+      after rerunning setup, killing Bishibosh and Corpsefire sends their own checks (not a neighbour's).
 
 Ideas, not started:
 

@@ -10,7 +10,7 @@ skill points on the trees; instead each skill you receive is added to your **Arc
 charm that grants every skill you've found (D2's `oskill` property, which works for any class), at a
 level set by copies found, Codex Empowerments and your character level.
 
-Locations are story quests, kills of the 41 field superuniques and first visits to waypoint and landmark
+Locations are story quests, kills of the 31 field superuniques and first visits to waypoint and landmark
 areas, each on every difficulty up to the goal, every fifth character level, and the Secret Cow Level on
 difficulties finished before the goal. Optional collection checks (runes, gems, complete sets, Hell's keys,
 organs, essences, the Torch and Annihilus) only hold filler, and so do uber, kill-count and find-count checks.

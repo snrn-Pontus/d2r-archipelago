@@ -277,7 +277,7 @@ void TestIdsMatchApworld() {
 void TestGameData() {
 	EXPECT(std::size(ap::data::Skills) == 240);
 	EXPECT(std::size(ap::data::Quests) == 27);
-	EXPECT(std::size(ap::data::SuperUniques) == 41);
+	EXPECT(std::size(ap::data::SuperUniques) == 31);
 	EXPECT(std::size(ap::data::Gems) == 35 && std::size(ap::data::Sets) == 32 && std::size(ap::data::Specials) == 13);
 	EXPECT(std::string_view(ap::data::Sets[0].pieces[0]) == "Civerb's Ward" && ap::data::Sets[0].pieces[3] == nullptr);
 	EXPECT(ap::data::Experience[0] == 0 && ap::data::Experience[1] == 500 && std::size(ap::data::Experience) == 99);
@@ -617,7 +617,7 @@ void TestSuperUniqueMonsters() {
 
 	ap::randomizer::Settings settings;
 	settings.superUniqueChecks = true;
-	EXPECT(settings.Any() && settings.Stamp().find("superunique_checks=1") != std::string::npos);
+	EXPECT(settings.Any() && settings.Stamp().find("superunique_checks=31") != std::string::npos);
 	EXPECT(ap::randomizer::Settings {}.Stamp().find("superunique_checks") == std::string::npos);
 }
 

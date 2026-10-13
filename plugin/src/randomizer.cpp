@@ -73,8 +73,10 @@ auto Settings::Stamp() const -> std::string {
 	     + std::to_string(static_cast<int>(superUniques)) + " runewords=" + (runewords ? "1" : "0") + " xp=" + std::to_string(xpPercent)
 	     + " levelreqs=" + (itemLevelRequirements ? "1" : "0") + " statreqs=" + (itemStatRequirements ? "1" : "0") + " density="
 	     + std::to_string(monsterDensity) + " packs=" + std::to_string(championPacks) + " drops=" + std::to_string(betterDrops)
-	     + (superUniqueChecks ? " superunique_checks=1" : "") + (skillTree.empty() ? "" : " skill_tree=" + TreeStamp(skillTree))
-	     + (treeMode ? " tree_mode=1" : "");
+	     // The count, so a mod written for an older superunique list doesn't
+	     // match: the plugin finds each copy by its distance from the end.
+	     + (superUniqueChecks ? " superunique_checks=" + std::to_string(std::size(data::SuperUniques)) : "")
+	     + (skillTree.empty() ? "" : " skill_tree=" + TreeStamp(skillTree)) + (treeMode ? " tree_mode=1" : "");
 }
 
 auto BlockClassSkills(Table& skills, bool keepLevels) -> int {
