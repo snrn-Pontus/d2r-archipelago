@@ -30,6 +30,8 @@ Built, pushed and installed, still to check in game:
       switch them to a 1x1 picture (size and picture must match).
 - [ ] Parcels and scrolls are no longer quest items: check whether a vendor buys them back, and that a
       bought one doesn't stay in the inventory.
+- [ ] Shuffled superuniques are visible now (they had no HD model): after rerunning setup, Rakanishu in
+      Stony Field and his minions show their new monster's model (section 8).
 
 Ideas, not started:
 
@@ -284,6 +286,8 @@ on `death_link: true` in both.
       Normal).
 - [ ] Bishibosh is a different monster but still sends his check. (2026-10-12: he was a Flayer shaman, as
       the seed said; the check is still to confirm.)
+- [ ] With `superunique_checks` on too, the shuffled superuniques (Rakanishu in Stony Field) are visible,
+      with their new monster's model, and their minions are too.
 - [ ] `mods\Archipelago\runewords.txt` lists new recipes, and one made from low runes works in game.
 - [ ] More monsters, and faster levelling than usual.
 

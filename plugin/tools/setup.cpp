@@ -637,6 +637,36 @@ auto AddParcelGraphics(HANDLE storage, const fs::path& mpq) -> bool {
 	return true;
 }
 
+// Gives each superunique's own monster (rnd::AddSuperUniqueMonsters) the HD
+// model of the monster it copies: monsters.json maps each monstats Id to a
+// model, and an Id without one is invisible.
+auto AddSuperUniqueModels(HANDLE storage, const fs::path& mpq, const std::vector<std::pair<std::string, std::string>>& copies) -> int {
+	constexpr const char* Path = "data\\hd\\character\\monsters.json";
+	std::string text;
+	if (copies.empty() || !ReadCascFile(storage, Path, text)) {
+		return 0;
+	}
+	const bool bom = text.rfind("\xEF\xBB\xBF", 0) == 0;
+	auto models = nlohmann::ordered_json::parse(bom ? text.substr(3) : text, nullptr, false);
+	if (!models.is_object()) {
+		return 0;
+	}
+	// Both banks share the file; the later bank's copy (Classic/LoD's) wins.
+	std::set<std::string> added;
+	for (const auto& [copy, original] : copies) {
+		if (models.contains(original)) {
+			// Copy first: adding a key to an ordered_json moves its entries.
+			const auto model = models[original];
+			models[copy] = model;
+			added.insert(copy);
+		}
+	}
+	const fs::path target = mpq / "data" / "hd" / "character" / "monsters.json";
+	fs::create_directories(target.parent_path());
+	std::ofstream(target, std::ios::binary | std::ios::trunc) << (bom ? "\xEF\xBB\xBF" : "") << models.dump(2);
+	return static_cast<int>(added.size());
+}
+
 // A generator per table, so each table's shuffle depends only on the seed and
 // the table (FNV-1a of its name), never on which other tables were edited.
 auto TableRandom(uint32_t seed, const std::string& table) -> std::mt19937 {
@@ -661,6 +691,8 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	// And the previous seed's skill icon sheets, which only a tree shuffle writes.
 	fs::remove_all(mpq / "data" / "hd" / "global" / "ui" / "spells", error);
 	fs::remove_all(mpq / "data" / "hd" / "global" / "ui" / "controller" / "panel" / "spells", error);
+	// And the superunique models, which only Superunique Checks write.
+	fs::remove(mpq / "data" / "hd" / "character" / "monsters.json", error);
 	if (!AddItemNames(storage, mpq, { "Archipelago Codex", rnd::ParcelName, rnd::ProphecyName, rnd::LedgerName })) {
 		std::printf("  couldn't add the Codex's name; it will show as \"An Evil Force\"\n");
 	}
@@ -674,6 +706,8 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	std::vector<rnd::IconMove> icons;
 	// RotW's misc codes in order, so Classic/LoD can hold the places of the ones it lacks.
 	std::vector<std::string> rotwMisc;
+	// Each superunique's own monster and the one it copies, from either bank (both share monsters.json).
+	std::vector<std::pair<std::string, std::string>> superUniqueCopies;
 	{
 		std::string text;
 		ReadCascFile(storage, "data\\global\\excel\\misc.txt", text);
@@ -731,7 +765,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			PatchTable(storage, excel, bank, "superuniques.txt", [&](Table& t) {
 				changed = rnd::ShuffleSuperUniques(t, monstats, settings.superUniques, random);
 				if (settings.superUniqueChecks) {
-					linked = rnd::AddSuperUniqueMonsters(monstats, t);
+					linked = rnd::AddSuperUniqueMonsters(monstats, t, &superUniqueCopies);
 				}
 			});
 			if (settings.superUniqueChecks) {
@@ -782,6 +816,9 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 		});
 	}
 
+	if (!superUniqueCopies.empty()) {
+		std::printf("  %d superunique monsters given their HD models\n", AddSuperUniqueModels(storage, mpq, superUniqueCopies));
+	}
 	if (!icons.empty()) {
 		const int sheets = WriteSkillIcons(storage, mpq, icons);
 		const int trees = WriteSkillTreeArt(storage, mpq);
