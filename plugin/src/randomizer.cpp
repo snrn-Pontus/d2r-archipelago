@@ -18,8 +18,8 @@ namespace {
 
 const std::set<std::string> ClassCodes = { "ama", "sor", "nec", "pal", "bar", "dru", "ass", "war" };
 
-// The Cow Level and the Pandemonium (uber) levels keep their monsters.
-const std::set<int> FixedLevels = { 39, 133, 134, 135, 136 };
+// The Cow Level, Arreat Summit and the Pandemonium (uber) levels keep their monsters.
+const std::set<int> FixedLevels = { 39, 120, 133, 134, 135, 136 };
 
 // Superuniques that roam the field (gen_data.py's list). Quest bosses, the
 // Chaos Sanctuary seal bosses and Baal's minion waves are scripted, so they
@@ -393,10 +393,21 @@ auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt
 		return 0;
 	}
 	// Group the areas that have monsters, by act unless anything goes.
+	std::vector<int> densityColumns;
+	for (const char* name : { "MonDen", "MonDen(N)", "MonDen(H)" }) {
+		if (const int column = levels.Column(name); column >= 0) {
+			densityColumns.push_back(column);
+		}
+	}
 	std::map<int, std::vector<size_t>> groups;
 	for (size_t row = 0; row < levels.Rows().size(); ++row) {
 		const std::string levelId = levels.Cell(row, id);
 		if (levelId.empty() || levels.Cell(row, first).empty() || FixedLevels.contains(ParseInt(levelId))) {
+			continue;
+		}
+		// Scripted areas with no random spawns must neither donate nor receive a line-up.
+		// An area with density only on Nightmare or Hell still participates.
+		if (!densityColumns.empty() && std::ranges::none_of(densityColumns, [&](int column) { return ParseInt(levels.Cell(row, column)) > 0; })) {
 			continue;
 		}
 		groups[mode == Shuffle::Nearby ? ParseInt(levels.Cell(row, act)) : 0].push_back(row);
