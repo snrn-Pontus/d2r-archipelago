@@ -1,8 +1,15 @@
 # Playtest checklist
 
 The parts that still need checking in game, grouped so each session tests one area. Tick a box once it
-works; if it doesn't, note what happened and attach `mods\Archipelago\d2rloader\logs\` and `d2rloader\logs\` (the plugin logs every check, reward,
-console command and refused item).
+works; if it doesn't, note what happened and the mark number (below), and attach `d2rloader\archipelago\logs\`
+(the plugin's own log, one file per launch, the last 10 kept, so a crash's log survives the relaunch). It has
+every check found and sent, every item received, what the chat showed, area and level changes, connection
+changes, console commands and refused items. `mods\Archipelago\d2rloader\logs\` and `d2rloader\logs\` (wiped on
+every launch) have D2RLoader's side.
+
+**Logs for a bug report:** press **Mark the Log** on the debug panel (or `ap-debug mark <what you're testing>`)
+before each test, and say "it broke after mark 3". **Log State** (`ap-debug state`) writes what the plugin
+knows (connection, seed options, save, locks, queued rewards) to the log; press it when something looks wrong.
 
 **Before every session:** after changing the plugin or the seed, rerun `d2r-ap-setup.exe` so the mod
 matches, then start a new Lord of Destruction character. Most sessions test faster with items handed out
@@ -17,10 +24,32 @@ from the server console: `/send <slot> <item name>` (for example `/send Snrn Act
   found, so they send their checks.
 - **From the Server:** `!getitem` for all the lock items, the Normal act keys, a bundle of rewards, Codex
   Empowerment, Skill Point and each trap, the same as `/send`. They stay in the seed's save.
+- **Testing:** **Starter Kit** for a fresh character: a Horadric Cube, a Token of Absolution, the four essences
+  (cube them into a second Token), a Tome of Identify and 3 Full Rejuvenation Potions. They're made as rewards,
+  so none sends a check (a Token cubed from the essences does, like a real one). Then **Mark the Log** and
+  **Log State** (above).
+
+`ap-debug give <code> [count] [sockets]` makes any item as a reward (no check), e.g. `ap-debug give r08 2` for
+two Ral runes or `ap-debug give lsd 1 3` for a 3-socket Long Sword to try a shuffled runeword.
+`ap-debug spawn <code>` makes it as if found, so it sends its check.
 
 ## Next up (from the 2026-10-12 session)
 
 Built, pushed and installed, still to check in game:
+
+- [ ] Debug tools: on a new character, **Starter Kit** puts its 10 items in the inventory (the chat lists them)
+      and `ap-missing` shows no new checks; with the Cube lock on, the Cube still arrives. Cubing the four
+      essences makes a Token, which sends the Token of Absolution check (if `special_item_checks` is on).
+      `ap-debug give lsd 1 3` makes a Long Sword with 3 sockets.
+- [ ] Session log: `d2rloader\archipelago\logs\` has a `session-<date>_<time>.log` for this launch that can be
+      opened while the game runs. It starts with the plugin version and config, has "seed options:" after
+      connecting, "found ... checks", "sending ... checks", "received #..." and "shown: ..." lines as you play,
+      and "entered <area>" on each area change. **Mark the Log** twice adds "mark 1" and "mark 2"; **Log
+      State** adds the "state:" lines. Quit with the menu's Exit and relaunch: the new file doesn't say the
+      last session "has no normal exit". End D2R in Task Manager and relaunch: it does. (Does Alt+F4 count as
+      a normal exit? Note which.)
+- [ ] With the server down, the session log says "Could not connect" once, not every 5 seconds. While it
+      retries, `ap-connect` to another server: the log shows "Connecting to" the new one right away.
 
 - [ ] The **Archipelago Parcel** is in Akara's Misc tab now (shop item type fix) and buying it sends a check
       (section 2).

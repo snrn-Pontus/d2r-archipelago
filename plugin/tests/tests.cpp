@@ -15,7 +15,9 @@
 #include "randomizer.h"
 #include "table.h"
 #include "save_state.h"
+#include "session_log.h"
 #include "sounds.h"
+#include "starter_kit.h"
 #include "sprite.h"
 
 #include <nlohmann/json.hpp>
@@ -544,6 +546,62 @@ void TestUncleanExit() {
 }
 
 // Rewards only go to a character of the seed's class (#70).
+void TestSessionLog() {
+	namespace log = ap::session_log;
+	using namespace std::chrono;
+	const auto start = system_clock::now();
+	// Names sort in time order, and only session files are pruned, oldest first.
+	EXPECT(log::FileName(start) < log::FileName(start + seconds(1)));
+	EXPECT(log::FileName(start) < log::FileName(start + milliseconds(1)));
+	const std::vector<std::filesystem::path> files {
+		"session-2026-10-13_10-00-00-000.log", "notes.txt", "session-2026-10-12_10-00-00-000.log", "session-2026-10-13_09-00-00-000.log" };
+	EXPECT((log::Stale(files, 1) == std::vector<std::filesystem::path> { files[2], files[3] }));
+	EXPECT(log::Stale(files, 3).empty());
+
+	const auto folder = std::filesystem::temp_directory_path() / "d2rl-ap-test-logs";
+	std::filesystem::remove_all(folder);
+	auto opened = log::Open(folder, 3, start);
+	EXPECT(!opened.path.empty() && opened.previous.empty() && !opened.previousUnclean);
+	log::Write("INFO", "first session");
+	log::Close();
+	log::Write("INFO", "after closing: dropped");
+	// A closed session is clean; one without an end line (a crash) isn't.
+	opened = log::Open(folder, 3, start + seconds(1));
+	EXPECT(opened.previous.filename() == log::FileName(start) && !opened.previousUnclean);
+	log::Write("INFO", "crashed session");
+	opened = log::Open(folder, 3, start + seconds(2));
+	EXPECT(opened.previous.filename() == log::FileName(start + seconds(1)) && opened.previousUnclean);
+	log::Write("INFO", "Archipelago: D2R is closing.");
+	opened = log::Open(folder, 3, start + seconds(3));
+	EXPECT(!opened.previousUnclean);
+	log::Close();
+	// Keep counts the new file: the oldest went.
+	size_t count = 0;
+	for (const auto& entry : std::filesystem::directory_iterator(folder)) {
+		EXPECT(entry.path().filename() != log::FileName(start));
+		++count;
+	}
+	EXPECT(count == 3);
+	std::ifstream first(folder / log::FileName(start + seconds(1)));
+	const std::string text((std::istreambuf_iterator<char>(first)), std::istreambuf_iterator<char>());
+	EXPECT(text.find("INFO crashed session") != std::string::npos && text.find("dropped") == std::string::npos);
+	first.close();
+	std::filesystem::remove_all(folder);
+}
+
+void TestStarterKit() {
+	int cells = 0;
+	for (const auto& entry : ap::starter_kit::All()) {
+		const size_t length = std::strlen(entry.code);
+		EXPECT(length >= 3 && length <= 4);
+		EXPECT(entry.count > 0 && std::strlen(entry.name) > 0);
+		cells += entry.count;
+	}
+	// Small items, so the kit fits in a fresh character's inventory (40 cells) next to its starting gear.
+	EXPECT(cells <= 12);
+	EXPECT(ap::panel::Find(ap::panel::Debug(), "debug-kit") != nullptr);
+}
+
 void TestCharacterCheck() {
 	using ap::character::Verdict;
 	EXPECT(ap::character::Check(4, -1) == Verdict::Unknown);
@@ -1534,6 +1592,8 @@ int main() {
 	TestLifetimeCows();
 	TestSaveStatePendingCommands();
 	TestUncleanExit();
+	TestSessionLog();
+	TestStarterKit();
 	TestCharacterCheck();
 	TestIdsMatchApworld();
 	TestGameData();

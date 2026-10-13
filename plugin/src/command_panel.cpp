@@ -105,11 +105,19 @@ constexpr std::array DebugServer {
 	Button { "debug-merc", "Mercenary Down Trap", "!getitem Mercenary Down Trap" },
 };
 
+// A fresh character's kit (made as rewards, no checks) and the log tools for bug reports.
+constexpr std::array DebugTesting {
+	Button { "debug-kit", "Starter Kit", "ap-debug kit" },
+	Button { "debug-mark", "Mark the Log", "ap-debug mark" },
+	Button { "debug-state", "Log State", "ap-debug state" },
+};
+
 constexpr std::array DebugColumns {
 	Column { "Go To", DebugGoTo },
 	Column { "Character", DebugCharacter },
 	Column { "Items", DebugItems },
 	Column { "From the Server", DebugServer },
+	Column { "Testing", DebugTesting },
 };
 
 const Panel MainPanel {
