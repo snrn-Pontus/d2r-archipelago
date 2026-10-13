@@ -294,8 +294,12 @@ class D2RWorld(World):
         self.multiworld.completion_condition[self.player] = lambda state: state.has("Victory", self.player)
 
     def create_item(self, name: str) -> D2RItem:
-        if name in KEY_NAMES or (name == CUBE_ACCESS and self.options.cube_lock) or (name == MERCHANT_ACCESS and self.merchants_gate_checks()):
+        if name in KEY_NAMES or (name == CUBE_ACCESS and self.cube_gates_checks()) or (name == MERCHANT_ACCESS and self.merchants_gate_checks()):
             classification = ItemClassification.progression
+        elif name in self.idle_locks():
+            # The lock is on but no check in this seed waits for it, so it can go anywhere, filler-only
+            # locations included, instead of taking a spot a skill could have.
+            classification = ItemClassification.filler
         elif name in LOCKS:
             classification = ItemClassification.useful
         elif name in TRAPS:
@@ -331,18 +335,22 @@ class D2RWorld(World):
         if self.tree_mode:
             candidates = self.tree_skills()
         keys = [self.create_item(act_key_name(index)) for index in range(1, self.act_count)] if self.options.act_keys else []
-        keys += [self.create_item(name) for name in self.lock_items()]
+        locks = [self.create_item(name) for name in self.lock_items()]
+        keys += [item for item in locks if item.classification != ItemClassification.filler]
+        idle = [item for item in locks if item.classification == ItemClassification.filler]
         unfilled = self.multiworld.get_unfilled_locations(self.player)
         # Keys, skills and empowerments can't go on filler-only locations.
         fillable = sum(1 for location in unfilled if location.progress_type != LocationProgressType.EXCLUDED)
-        if fillable < len(keys):
+        if fillable < len(keys) or len(unfilled) < len(keys) + len(idle):
             # A one-act game with every check off and all the locks on has more keys and locks than
             # places to put them; say so instead of failing deep in the pool maths.
-            raise OptionError(f"[{GAME} - '{self.player_name}'] The seed has {fillable} locations that can hold a key or "
-                              f"lock item but {len(keys)} such items. Turn on more checks (areas, side areas, levels, "
+            room, items = (fillable, len(keys)) if fillable < len(keys) else (len(unfilled), len(keys) + len(idle))
+            raise OptionError(f"[{GAME} - '{self.player_name}'] The seed has {room} locations that can hold a key or "
+                              f"lock item but {items} such items. Turn on more checks (areas, side areas, levels, "
                               f"superuniques, quest items, shops) or fewer locks.")
-        location_count = fillable - len(keys)
-        filler_only = len(unfilled) - len(keys) - location_count
+        filler_only = len(unfilled) - fillable
+        # Idle locks go on filler-only locations first, and take fillable ones only when those run out.
+        location_count = fillable - len(keys) - max(0, len(idle) - filler_only)
         starting = min(self.options.starting_skills.value, len(candidates))
         copies, distinct = self.options.skill_copies.value, self.options.skill_pool_size.value
         empowerments = self.options.codex_empowerments.value
@@ -374,8 +382,8 @@ class D2RWorld(World):
         empowerments = min(empowerments, location_count - len(pool))
         # Skill Points are useful, so like skills they need locations that aren't filler-only.
         points = min(self.options.skill_points.value, location_count - len(pool) - empowerments) if self.tree_mode else 0
-        location_count += len(keys) + filler_only
-        pool = keys + pool
+        location_count = len(unfilled)
+        pool = keys + pool + idle
         pool += [self.create_item(EMPOWERMENT) for _ in range(empowerments)]
         pool += [self.create_item(SKILL_POINT) for _ in range(points)]
 
@@ -386,7 +394,7 @@ class D2RWorld(World):
                  self.random.choices(list(trap_weights), weights=list(trap_weights.values()), k=traps)]
         # Filler-only locations can't take useful loot (uniques, sets, high runes), so enough of the
         # filler has to be plain.
-        plain = min(remaining - traps, max(0, filler_only - traps))
+        plain = min(remaining - traps, max(0, filler_only - traps - len(idle)))
         pool += [self.create_item(self.pick_loot(plain_only=True)) for _ in range(plain)]
         pool += [self.create_filler() for _ in range(remaining - traps - plain)]
         self.multiworld.itempool += pool
@@ -394,6 +402,22 @@ class D2RWorld(World):
     def shop_locked(self) -> bool:
         """Whether the shop checks wait for Merchant Access."""
         return bool(self.options.merchant_lock) and self.options.shop_checks.value > 0
+
+    def cube_gates_checks(self) -> bool:
+        """Whether any check waits for Horadric Cube Access: the Cube is found in Act II, and the Horadric
+        Staff there needs it."""
+        return bool(self.options.cube_lock) and self.act_count > 1
+
+    def idle_locks(self) -> set[str]:
+        """The locks that are on but gate no check in this seed: the Cube Lock in a one-act game, and the
+        Merchant Lock with no shop checks and no cow level before the goal. The others never gate checks,
+        but they change every game, so they stay useful."""
+        idle = set()
+        if self.options.cube_lock and not self.cube_gates_checks():
+            idle.add(CUBE_ACCESS)
+        if self.options.merchant_lock and not self.merchants_gate_checks():
+            idle.add(MERCHANT_ACCESS)
+        return idle
 
     def merchants_gate_checks(self) -> bool:
         """Whether any check waits for Merchant Access: the shops, or the cow level (its portal takes a
