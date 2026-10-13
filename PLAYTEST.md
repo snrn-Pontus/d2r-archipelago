@@ -354,6 +354,22 @@ Any seed. Send each with `/send`, standing outside town for the traps.
       `/release <slot>` from the server console. Neither game crashes; rewards trickle in (three loot items
       a second, traps 3 seconds apart), chat shows a few lines at a time and says when the rest went to the
       log, and every reward arrives in the end.
+- [ ] Rewards only go to the seed's character (#70). With a fixed-class seed (say Sorceress), load a
+      Barbarian mule while connected and `/send` a `Gold`: nothing arrives, no Codex or Ledger appears, and
+      after the Barbarian's first kill the chat says it isn't this seed's Sorceress and mentions `ap-claim`.
+      From then on the seed's locks (stash, cube, merchants, waypoints, potions, act keys) don't hold it.
+      Leave, load the Sorceress: if she carries a Codex, the gold arrives right away; otherwise after her
+      first kill (the chat asks for one). `ap-claim` on the Barbarian (after a kill) moves the seed to it.
+- [ ] With `character_class: any`, the first character that kills something (or carries a Codex) claims the
+      seed; the log says "this seed's character is a ...". A character of another class then gets nothing.
+- [ ] Reward commands survive a restart (#70): `/send` a few `Gold` and `Experience` items and close D2R from
+      Task Manager within a second. After relaunching and loading the character, the ones that hadn't run yet
+      arrive. The seed's save file (`d2rloader\archipelago\<seed>_<slot>.txt` in the game folder) lists waiting ones as `command` lines,
+      and they're gone once they ran.
+- [ ] Crash recovery (#70): get a few rewards, then kill D2R from Task Manager without leaving the game. On
+      the next connect the chat says D2R closed during the last game and offers `ap-redeliver`. If the
+      character lost the rewards, `ap-redeliver` hands the loot, gold and experience out again (no traps or
+      prophecies), and the chat says when they're all back. After a normal Save and Exit, no such message.
 
 ## 5b. Personalized rewards
 

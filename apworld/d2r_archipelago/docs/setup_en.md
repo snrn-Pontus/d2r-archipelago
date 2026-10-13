@@ -92,6 +92,12 @@ Items you receive, checks you send and other server messages show in the game ch
 Use a fresh character for each seed. The Codex charms (one for your class's skills, one for other
 classes') must stay in your inventory; if you lose one, `ap-codex` rebuilds it.
 
+Rewards only go to a character of the seed's class (with `character_class: any`, the first one that plays
+the seed claims it), so a mule of another class gets nothing. The game doesn't tell the plugin your class
+until you kill a monster or carry your Codex, so rewards may wait for your first kill. To move the seed to
+another class, kill something with that character and type `ap-claim`. If the game crashes before it saved
+your character, the next connect offers `ap-redeliver` to hand out that game's rewards again.
+
 Your character also gets an **Archipelago Ledger**. Hover over it to see how many checks you've done in
 each act, and outside any act, out of the total. `ap-missing` lists the checks left in the act you're in,
 and `ap-missing all` counts them for every act. If you lose the Ledger, `ap-ledger` makes another.

@@ -5,6 +5,7 @@
 // and ap::Client owns a network thread. Everything shared lives under gMutex.
 
 #include "ap_client.h"
+#include "character.h"
 #include "codex.h"
 #include "command_panel.h"
 #include "config.h"
@@ -105,6 +106,11 @@ std::mutex            gMutex;
 ap::Config            gConfig;
 ap::SaveState         gSave;
 std::filesystem::path gSavePath;
+// The saves checked for a game that was never left (once each per start).
+std::set<std::filesystem::path> gExitChecked;
+// The saves that handed out rewards in this game (a rebind can switch seeds mid-game);
+// leaving the game checkpoints each of them.
+std::set<std::filesystem::path> gGameSaves;
 uint64_t              gBoundSession = 0;
 // True while GameWork delivers from a snapshot: OnFrame doesn't rebind until it's done, so a pass
 // never spans two sessions (its rewards and its save writes stay with the session it started in).
@@ -158,8 +164,16 @@ struct QueuedTrap {
 	// When an area ambush first waited for its area's monsters.
 	Clock::time_point waiting {};
 };
+// Commands that aren't rewards (goto, ap-core, relearning). Reward commands wait in
+// gSave.commands instead, so they outlive a crash and only go once D2RCore takes them.
 std::vector<std::string> gCommandQueue;
 std::vector<QueuedTrap> gTrapQueue;
+
+// Queues a reward's console command; item is the received item it's for, or -1.
+// Call with gMutex held, and save afterwards.
+void QueueReward(int64_t item, std::string text) {
+	gSave.commands.push_back({ item, std::move(text) });
+}
 // A release can hand over a hundred items at once, and doing it all in one frame
 // crashed the game (#51), so rewards are paced: a few commands per run, a few
 // loot items per pass, and traps some seconds apart.
@@ -169,6 +183,9 @@ constexpr size_t      LootPerPass    = 3;
 constexpr auto        LootPassGap    = std::chrono::seconds(1);
 constexpr auto        TrapGap        = std::chrono::seconds(3);
 Clock::time_point     gNextCommandsAt;
+Clock::time_point     gNextRewardCommandsAt;
+// Whether a refused reward command has been reported (until one goes through).
+bool                  gRewardRefused = false;
 Clock::time_point     gNextTrapAt;
 // The level (area) the player is in, from the area events.
 int                   gCurrentLevel = -1;
@@ -222,12 +239,20 @@ std::vector<int>      gPendingAreas;
 int                   gAct          = 0;
 // The player's class id seen in this game (from the killer of a monster), or -1.
 int                   gPlayerClass  = -1;
+// The class this game's Codex charm was made for, or -1: until a kill says, it
+// stands in for gPlayerClass (a Codex only goes to a character of its class).
+int                   gCodexClass   = -1;
+// Why this game has said rewards wait, so each reason is said once: 1 the class isn't
+// known yet, 2 another class.
+int                   gCharacterWarned = 0;
 
 // The next game may be another character, or another seed's, so what the old
 // one said about the player and its area doesn't carry over. Call with gMutex held.
 void ForgetPlayer() {
 	gPlayerLevel  = 0;
 	gPlayerClass  = -1;
+	gCodexClass   = -1;
+	gCharacterWarned = 0;
 	gCurrentLevel = -1;
 }
 
@@ -241,6 +266,25 @@ auto ClassIndex(const std::string& name) -> int {
 		}
 	}
 	return -1;
+}
+
+// Rewards only go to the seed's character. D2RLoader doesn't say the character's
+// name, so it's told by class: the seed's (or, for "any", the first class that
+// claimed it, or ap-claim's) against this game's. Call with gMutex held.
+auto SeedClass(const ap::SlotData& slots) -> int {
+	return gSave.playerClass >= 0 ? gSave.playerClass : ClassIndex(slots.characterClass);
+}
+
+auto GameClass() -> int {
+	return gPlayerClass >= 0 ? gPlayerClass : gCodexClass;
+}
+
+auto CharacterVerdict(const ap::SlotData& slots) -> ap::character::Verdict {
+	return ap::character::Check(SeedClass(slots), GameClass());
+}
+
+auto ClassName(int playerClass) -> std::string {
+	return playerClass >= 0 && playerClass < static_cast<int>(std::size(ClassNames)) ? ClassNames[playerClass] : "character";
 }
 
 Clock::time_point     gLastRoomWarning;
@@ -721,6 +765,8 @@ void BindSession(uint64_t session) {
 	const ap::SlotData slots = gClient->Slots();
 	const int me = gClient->MySlot();
 	size_t unsent = 0;
+	size_t lost = 0;
+	bool unclean = false, resumed = false;
 	int level = 0;
 	bool unboundGoal = false;
 	std::vector<ap::HintEntry> ownHints;
@@ -744,11 +790,16 @@ void BindSession(uint64_t session) {
 		gSave.checks.insert(gUnbound.begin(), gUnbound.end());
 		gUnbound.clear();
 		gSave.checks.insert(serverChecked.begin(), serverChecked.end());
-		// Only this game's character counts: the save keeps its own level and
-		// class, and level checks come from what this game has seen.
+		// Only this game's character counts: the save keeps its own level, and
+		// level checks come from what this game has seen. The save's class is the
+		// seed's character's, set by the first delivery or ap-claim, not by any game.
 		gSave.level = std::max(gSave.level, gPlayerLevel);
-		if (gPlayerClass >= 0) {
-			gSave.playerClass = gPlayerClass;
+		// Once per save and start: a game with rewards that was never left (a crash)
+		// may have lost them, if D2R hadn't saved the character yet.
+		if (gExitChecked.insert(gSavePath).second && gSave.DetectUncleanExit()) {
+			unclean = true;
+			lost = gSave.lostTo - gSave.lostFrom + gSave.lostCommands.size();
+			resumed = gSave.redeliver;
 		}
 		gSave.Save(gSavePath);
 		for (const int64_t check : gSave.checks) {
@@ -804,6 +855,13 @@ void BindSession(uint64_t session) {
 	}
 	Log("Archipelago: bound to seed " + seed + " slot " + slot + ", " + std::to_string(unsent) + " checks not on the server yet, "
 	    + std::to_string(ownHints.size() + otherHints.size()) + " hints sent again.");
+	if (unclean) {
+		Log("Archipelago: the last game was never left; " + std::to_string(lost) + " received items and commands may be lost.");
+		Feed(resumed ? "Archipelago: D2R closed during your last game without leaving it, so the rewards from the crashed game are handed out "
+		               "again from where your character was last saved."
+		             : "Archipelago: D2R closed during your last game without leaving it. If it crashed, your character may have lost the "
+		               "rewards it got there; if they're missing, type ap-redeliver to get them again.");
+	}
 	CheckInstalledMod(seed);
 	CheckVersion();
 }
@@ -1644,7 +1702,8 @@ void ScanParcels(D2RL::PlayerHandle player) {
 			gConsoleQueue.push_back("Archipelago: parcel delivered (" + std::string(ActNames[act]) + " shop, " + std::to_string(number + 1) + " of "
 			                        + std::to_string(checks) + ").");
 		} else {
-			gCommandQueue.push_back("gold " + std::to_string(ap::randomizer::ParcelCosts[act]));
+			QueueReward(-1, "gold " + std::to_string(ap::randomizer::ParcelCosts[act]));
+			gSave.Save(gSavePath);
 			gConsoleQueue.push_back("Archipelago: no more parcels to deliver in " + std::string(ActNames[act]) + "; your gold is refunded.");
 		}
 	}
@@ -1659,7 +1718,8 @@ void ScanParcels(D2RL::PlayerHandle player) {
 		std::lock_guard lock(gMutex);
 		const int next = std::min(gSave.prophecies, LastTier);
 		if (!prophecyShop || static_cast<int>(tier) < next) {
-			gCommandQueue.push_back("gold " + std::to_string(ap::randomizer::ProphecyCosts[tier]));
+			QueueReward(-1, "gold " + std::to_string(ap::randomizer::ProphecyCosts[tier]));
+			gSave.Save(gSavePath);
 			gConsoleQueue.push_back(!prophecyShop ? "Archipelago: Scrolls of Prophecy aren't part of this seed; your gold is refunded."
 			                                      : "Archipelago: you already know that prophecy; the next is the " + std::to_string(ap::randomizer::ProphecyCosts[next])
 			                                            + "-gold scroll. Your gold is refunded.");
@@ -1897,12 +1957,12 @@ void DeliverTreeSkills(const std::vector<ap::NetworkItem>& items) {
 			return;
 		}
 		for (const uint32_t skill : plan.unlock) {
-			gCommandQueue.push_back("skadd " + SkillName(skill) + ",1");
+			QueueReward(-1, "skadd " + SkillName(skill) + ",1");
 			gSave.unlockedSkills.insert(skill);
 			news.push_back("Archipelago: " + SkillName(skill) + " is unlocked in your skill tree.");
 		}
 		if (plan.points > 0) {
-			gCommandQueue.push_back("skillpoints " + std::to_string(plan.points));
+			QueueReward(-1, "skillpoints " + std::to_string(plan.points));
 			gSave.skillPointsGiven += plan.points;
 			news.push_back("Archipelago: +" + std::to_string(plan.points) + (plan.points == 1 ? " skill point." : " skill points."));
 		}
@@ -1999,6 +2059,67 @@ void RelearnAfterToken(D2RL::PlayerHandle player) {
 	Feed("Archipelago: your respec took your Archipelago skills, so they're unlocked again: " + SkillNames(*refused) + ".");
 }
 
+// Whether this game's character may get the seed's rewards (see SeedClass). Until a
+// kill says its class, a Codex charm in the inventory does. The first character of a
+// seed with no class claims it. pending: rewards are waiting, worth a word if they must wait.
+bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const ap::Config& config, bool pending) {
+	bool known = false;
+	{
+		std::lock_guard lock(gMutex);
+		known = GameClass() >= 0;
+	}
+	if (!known) {
+		CodexScan scan { ap::loot::CodeFromText(config.codexItem.c_str()), {} };
+		const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize,
+			.containerMask = D2RL::Items::ContainerBit(D2RL::Items::ItemContainer::Inventory) };
+		if (gInventory->forEachInventoryItem(gContext, player, &filter, CollectCodex, &scan) == D2RL::Inventory::Result::Success) {
+			for (const auto& item : scan.found) {
+				const uint32_t seed = CodexSeedOf(item);
+				const int codexClass = (seed & CodexMarkerMask) == CodexMarker ? static_cast<int>((seed >> 20) & 0xF) - 1 : -1;
+				if (codexClass >= 0 && codexClass < static_cast<int>(std::size(ClassNames))) {
+					std::lock_guard lock(gMutex);
+					gCodexClass = codexClass;
+					break;
+				}
+			}
+		}
+	}
+	std::string message;
+	bool ready = false;
+	{
+		std::lock_guard lock(gMutex);
+		const int seedClass = SeedClass(slots);
+		const int gameClass = GameClass();
+		switch (ap::character::Check(seedClass, gameClass)) {
+			case ap::character::Verdict::Match:
+				ready = true;
+				if (gSave.playerClass != gameClass) {
+					gSave.playerClass = gameClass;
+					gSave.Save(gSavePath);
+					Log("Archipelago: this seed's character is a " + ClassName(gameClass) + ".");
+				}
+				break;
+			case ap::character::Verdict::Unknown:
+				if (pending && (gCharacterWarned & 1) == 0) {
+					gCharacterWarned |= 1;
+					message = "Archipelago: rewards are waiting; kill a monster so the plugin can tell this is your " + ClassName(seedClass) + ".";
+				}
+				break;
+			case ap::character::Verdict::Mismatch:
+				if ((gCharacterWarned & 2) == 0) {
+					gCharacterWarned |= 2;
+					message = "Archipelago: this " + ClassName(gameClass) + " isn't this seed's " + ClassName(seedClass)
+					        + ", so rewards wait for that character. If this is your character now, type ap-claim.";
+				}
+				break;
+		}
+	}
+	if (!message.empty()) {
+		Feed(message);
+	}
+	return ready;
+}
+
 void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	gWorkQueued = false;
 	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
@@ -2032,6 +2153,19 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		config = gConfig;
 		delivered = gSave.fillersDelivered;
 	}
+	// The slot settings from the same snapshot as the items, never re-read during the pass.
+	const ap::SlotData& slots = snapshot.slots;
+	// Nothing touches a character that isn't the seed's: no rewards, Codex, Ledger or locks.
+	bool pending = false;
+	{
+		std::lock_guard lock(gMutex);
+		pending = !gSave.commands.empty() || (gSave.redeliver && gSave.lostFrom < gSave.lostTo) || (snapshot.synced && items.size() > delivered);
+	}
+	if (!CharacterReady(player, slots, config, pending)) {
+		std::lock_guard lock(gMutex);
+		gRetryAt = Clock::now() + std::chrono::seconds(2);
+		return;
+	}
 
 	ScanItems(player);
 	RelearnAfterToken(player);
@@ -2051,8 +2185,6 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			return;
 		}
 	}
-	// The slot settings from the same snapshot as the items, never re-read during the pass.
-	const ap::SlotData& slots = snapshot.slots;
 	auto skills = ap::codex::Entries(items, EffectiveLevel(), slots.skillScaling, slots.skillScalingCap);
 	{
 		// Lord of Destruction characters have no Warlock skills (D2R asserts on them).
@@ -2075,13 +2207,11 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			Feed("Archipelago: " + name + " (Warlock) needs a Reign of the Warlock character; it's left off your Codex.");
 		}
 	}
+	// CharacterReady made sure the class is known and the seed's.
 	int playerClass = -1;
 	{
 		std::lock_guard lock(gMutex);
-		playerClass = gPlayerClass >= 0 || gBoundSession == 0 ? gPlayerClass : gSave.playerClass;
-	}
-	if (playerClass < 0) {
-		playerClass = ClassIndex(slots.characterClass);
+		playerClass = GameClass();
 	}
 	// Tree mode unlocks skills in the tree instead of building a Codex.
 	const bool treeMode = slots.randomizer.treeMode;
@@ -2100,56 +2230,58 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	// Nothing is delivered until the server has sent this session's full item list: right after
 	// Connected the list is empty, and running from it would reset the delivered count.
 	const bool synced = snapshot.synced;
-	size_t next = synced ? std::min(delivered, items.size()) : delivered;
-	bool   roomFull = false;
-	bool   more     = false;
-	size_t given    = 0;
-	for (; synced && next < items.size(); ++next) {
-		if (!ap::ids::IsLootItem(items[next].item)) {
-			continue;
-		}
-		if (given >= LootPerPass) {
-			more = true;
-			break;
-		}
-		const auto loot = static_cast<ap::loot::Loot>(items[next].item - ap::ids::LootBase);
-		// A Junk Backpack spawns a pile of items, so it fills a whole pass.
-		given += loot == ap::loot::Loot::JunkBackpack ? LootPerPass : 1;
+	// The pass's reward commands join the save's queue with the delivered count, in one save.
+	std::vector<ap::PendingCommand> queued;
+	// Hands out received item index's reward; false if it didn't fit anywhere. again: handing
+	// out a reward a crash may have taken (ap-redeliver), which leaves out traps (the Junk
+	// Backpack too) and prophecies.
+	auto handOut = [&](size_t index, bool again) -> bool {
+		const auto loot = static_cast<ap::loot::Loot>(items[index].item - ap::ids::LootBase);
 		if (loot == ap::loot::Loot::JunkBackpack) {
+			// A trap: not handed out again.
+			if (again) {
+				return true;
+			}
 			Feed("Archipelago: a Junk Backpack! " + std::to_string(GiveJunk(player, std::clamp(slots.traps.junkSize, 1, 40), random))
 				 + " pieces of junk in your inventory.");
-			continue;
+			return true;
 		}
 		if (loot == ap::loot::Loot::Prophecy) {
-			std::lock_guard lock(gMutex);
-			gHintQueue.push_back("A prophecy arrives from the multiworld:");
-			continue;
+			if (!again) {
+				std::lock_guard lock(gMutex);
+				gHintQueue.push_back("A prophecy arrives from the multiworld:");
+			}
+			return true;
 		}
 		if (auto commands = ap::loot::CommandsFor(loot, characterLevel, act, random); !commands.commands.empty()) {
-			std::lock_guard lock(gMutex);
 			if (commands.trap) {
-				gTrapQueue.push_back({ loot, characterLevel });
+				if (!again) {
+					std::lock_guard lock(gMutex);
+					gTrapQueue.push_back({ loot, characterLevel });
+				}
 			} else {
-				gCommandQueue.insert(gCommandQueue.end(), commands.commands.begin(), commands.commands.end());
+				for (auto& command : commands.commands) {
+					queued.push_back({ static_cast<int64_t>(index), std::move(command) });
+				}
+				std::lock_guard lock(gMutex);
 				gConsoleQueue.push_back("Archipelago: " + commands.message);
 			}
-			continue;
+			return true;
 		}
 		if (loot == ap::loot::Loot::Gold || loot == ap::loot::Loot::Experience) {
 			const bool gold = loot == ap::loot::Loot::Gold;
 			const int64_t amount = gold ? ap::loot::GoldAmount(characterLevel) : ap::loot::ExperienceAmount(characterLevel);
 			if (amount > 0) {
-				std::lock_guard lock(gMutex);
-				gCommandQueue.push_back((gold ? "gold " : "experience ") + std::to_string(amount));
+				queued.push_back({ static_cast<int64_t>(index), (gold ? "gold " : "experience ") + std::to_string(amount) });
 			}
 			Feed("Archipelago: you got " + std::to_string(amount) + (gold ? " gold." : " experience."));
-			continue;
+			return true;
 		}
 		// An item D2R refuses everywhere may not exist for this character, so roll
 		// others. If none fit, a mid rune stands in; if even that won't fit, the
 		// containers are full and we wait for the player to make room.
 		// Uniques and sets from another player carry that player's name.
-		const int         sender = items[next].player;
+		const int         sender = items[index].player;
 		const std::string owner = sender > 0 && sender != gClient->MySlot() ? ap::personal::Name(gClient->PlayerName(sender)) : std::string {};
 		ap::loot::Pick pick {};
 		bool placed = false;
@@ -2164,20 +2296,58 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			}
 		}
 		if (pick.code == 0) {
-			continue;
+			return true;
 		}
 		if (!placed) {
 			pick = ap::loot::Roll(ap::loot::Loot::MidRune, characterLevel, random);
 			placed = pick.code != 0 && GiveLoot(player, pick);
 			if (!placed) {
-				roomFull = true;
-				break;
+				return false;
 			}
 			Log("Archipelago: gave " + pick.name + " in place of a reward that wouldn't fit.");
 		}
 		if (pick.quality == D2RL::Items::Quality::Unique || pick.quality == D2RL::Items::Quality::Set || loot == ap::loot::Loot::HighRune) {
 			Feed("Archipelago: you got " + pick.name + (owner.empty() ? std::string {} : " from " + owner) + "!");
 		}
+		return true;
+	};
+	bool   roomFull = false;
+	bool   more     = false;
+	size_t given    = 0;
+	// Hands out the loot rewards from index on, up to end, within this pass's share.
+	auto handOutFrom = [&](size_t& index, size_t end, bool again) {
+		for (; !more && !roomFull && index < end; ++index) {
+			if (!ap::ids::IsLootItem(items[index].item)) {
+				continue;
+			}
+			if (given >= LootPerPass) {
+				more = true;
+				break;
+			}
+			// A Junk Backpack spawns a pile of items, so it fills a whole pass.
+			given += static_cast<ap::loot::Loot>(items[index].item - ap::ids::LootBase) == ap::loot::Loot::JunkBackpack ? LootPerPass : 1;
+			if (!handOut(index, again)) {
+				roomFull = true;
+				break;
+			}
+		}
+	};
+	// First the rewards ap-redeliver asked for again, then the new ones.
+	bool   redeliver = false;
+	size_t again = 0, againEnd = 0;
+	{
+		std::lock_guard lock(gMutex);
+		redeliver = synced && gSave.redeliver;
+		again = gSave.lostFrom;
+		againEnd = std::min(gSave.lostTo, items.size());
+	}
+	const size_t againStart = again;
+	if (redeliver) {
+		handOutFrom(again, againEnd, true);
+	}
+	size_t next = synced ? std::min(delivered, items.size()) : delivered;
+	if (synced) {
+		handOutFrom(next, items.size(), false);
 	}
 
 	std::lock_guard lock(gMutex);
@@ -2187,13 +2357,32 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	if (gBoundSession != 0 && gBoundSession != snapshot.session) {
 		return;
 	}
+	bool changed = !queued.empty();
+	gSave.commands.insert(gSave.commands.end(), std::make_move_iterator(queued.begin()), std::make_move_iterator(queued.end()));
 	// The count only ever grows: a shorter list (a server restored from an older save) must not
 	// hand the same rewards out again once it catches up.
 	if (next > delivered) {
 		gSave.fillersDelivered = next;
+		changed = true;
+	}
+	if (redeliver && gSave.redeliver) {
+		if (again > gSave.lostFrom) {
+			gSave.lostFrom = again;
+			changed = true;
+		}
+		// Done only at the end of the whole lost range: a shorter list (a restored server)
+		// leaves the rest for when it catches up. The range is cleared when the game is left
+		// (Checkpoint), so a crash before that hands it out once more.
+		if (again >= gSave.lostTo && againStart < gSave.lostTo) {
+			gConsoleQueue.push_back("Archipelago: the rewards from the crashed game are all handed out again.");
+		}
+	}
+	const bool redelivering = gSave.redeliver && gSave.lostFrom < gSave.lostTo;
+	if (changed) {
+		gGameSaves.insert(gSavePath);
 		gSave.Save(gSavePath);
 	}
-	if (codexOk && next == items.size()) {
+	if (codexOk && next == items.size() && !redelivering) {
 		gCodexItems = generation;
 		gCodexDirty = false;
 	} else if (codexOk && more) {
@@ -2250,6 +2439,8 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	gCommandsQueued = false;
 	const ap::SlotData::Traps settings = gClient->Slots().traps;
 	std::vector<std::string> commands;
+	std::vector<ap::PendingCommand> rewards;
+	std::filesystem::path rewardSave;
 	std::vector<QueuedTrap> traps;
 	int area = -1, act = 0, difficulty = 0;
 	{
@@ -2263,7 +2454,18 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 			gCommandQueue.erase(gCommandQueue.begin(), gCommandQueue.begin() + take);
 			gNextCommandsAt = Clock::now() + CommandGap;
 		}
-		if (!gTrapQueue.empty() && Clock::now() >= gNextTrapAt && !TrapsHeld(settings.waitForTown)) {
+		// Reward commands stay queued in the save until D2RCore takes them, and only
+		// run on the seed's character.
+		if (Clock::now() >= gNextRewardCommandsAt && !gSave.commands.empty() && gBoundSession != 0
+			&& CharacterVerdict(gSlots) == ap::character::Verdict::Match) {
+			const size_t take = std::min(gSave.commands.size(), CommandsPerRun);
+			rewards.assign(gSave.commands.begin(), gSave.commands.begin() + static_cast<std::ptrdiff_t>(take));
+			rewardSave = gSavePath;
+			gNextRewardCommandsAt = Clock::now() + CommandGap;
+		}
+		// Traps, like rewards, only go off on the seed's character.
+		if (!gTrapQueue.empty() && Clock::now() >= gNextTrapAt && !TrapsHeld(settings.waitForTown)
+			&& CharacterVerdict(gSlots) == ap::character::Verdict::Match) {
 			traps.push_back(gTrapQueue.front());
 			gTrapQueue.erase(gTrapQueue.begin());
 		}
@@ -2273,7 +2475,34 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	}
 	for (const auto& command : commands) {
 		if (!ExecuteCommand(command)) {
-			Feed("Archipelago: couldn't add a reward (D2RCore refused \"" + command + "\").");
+			Feed("Archipelago: D2RCore refused \"" + command + "\".");
+		}
+	}
+	// In order: a refused one, and the ones after it, wait and try again.
+	std::vector<ap::PendingCommand> ran;
+	for (const auto& reward : rewards) {
+		if (!ExecuteCommand(reward.text)) {
+			std::lock_guard lock(gMutex);
+			gNextRewardCommandsAt = Clock::now() + std::chrono::seconds(10);
+			if (!gRewardRefused) {
+				gRewardRefused = true;
+				gConsoleQueue.push_back("Archipelago: couldn't add a reward (D2RCore refused \"" + reward.text + "\"); trying again in a moment.");
+			}
+			break;
+		}
+		ran.push_back(reward);
+	}
+	if (!ran.empty()) {
+		std::lock_guard lock(gMutex);
+		gRewardRefused = false;
+		gGameSaves.insert(rewardSave);
+		if (gSavePath == rewardSave) {
+			gSave.FinishCommands(ran);
+			gSave.Save(gSavePath);
+		} else if (ap::SaveState old; old.Load(rewardSave)) {
+			// Another seed's save was loaded meanwhile; this one still lists them.
+			old.FinishCommands(ran);
+			old.Save(rewardSave);
 		}
 	}
 	if (traps.empty()) {
@@ -2364,7 +2593,13 @@ void PlayerDied(const std::string& how) {
 // Recomputes what's locked when the received items or the seed change.
 void UpdateLocks() {
 	static uint64_t seen = UINT64_MAX;
-	const uint64_t generation = gClient->ItemsGeneration() ^ (gClient->SessionGeneration() << 40);
+	// Another class than the seed's (a mule) isn't the seed's character, so no lock holds it.
+	bool otherCharacter = false;
+	{
+		std::lock_guard lock(gMutex);
+		otherCharacter = gBoundSession != 0 && CharacterVerdict(gSlots) == ap::character::Verdict::Mismatch;
+	}
+	const uint64_t generation = (gClient->ItemsGeneration() ^ (gClient->SessionGeneration() << 40)) * 2 + (otherCharacter ? 1 : 0);
 	if (generation == seen) {
 		return;
 	}
@@ -2376,7 +2611,7 @@ void UpdateLocks() {
 			have.insert(item.item);
 		}
 	}
-	auto locked = [&](bool on, uint32_t lock) { return on && !have.contains(ap::ids::LockBase + lock); };
+	auto locked = [&](bool on, uint32_t lock) { return on && !otherCharacter && !have.contains(ap::ids::LockBase + lock); };
 	using Lock = ap::ids::Lock;
 	LockState locks {
 		.cube       = locked(slots.locks.cube, static_cast<uint32_t>(Lock::Cube)),
@@ -2576,6 +2811,13 @@ void EnforceActKeys(int difficulty, int level) {
 	const ap::SlotData slots = gClient->Slots();
 	if (!slots.actKeys || !slots.enforceActKeys || level < 0 || level >= static_cast<int>(std::size(ap::data::LevelActs))) {
 		return;
+	}
+	{
+		// Not on another class than the seed's (a mule).
+		std::lock_guard lock(gMutex);
+		if (gBoundSession != 0 && CharacterVerdict(gSlots) == ap::character::Verdict::Mismatch) {
+			return;
+		}
 	}
 	const int act = ap::data::LevelActs[level];
 	const std::set<int> unlocked = UnlockedActs();
@@ -2927,7 +3169,10 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		cows.swap(gCowQueue);
 		collections.swap(gCollectionQueue);
 		commands = (!gCommandQueue.empty() && Clock::now() >= gNextCommandsAt)
-		        || (!gTrapQueue.empty() && gInGame && Clock::now() >= gNextTrapAt && !TrapsHeld(gSlots.traps.waitForTown));
+		        || (!gSave.commands.empty() && gBoundSession != 0 && gInGame && Clock::now() >= gNextRewardCommandsAt
+		            && CharacterVerdict(gSlots) == ap::character::Verdict::Match)
+		        || (!gTrapQueue.empty() && gInGame && Clock::now() >= gNextTrapAt && !TrapsHeld(gSlots.traps.waitForTown)
+		            && CharacterVerdict(gSlots) == ap::character::Verdict::Match);
 	}
 	if (gClient->Slots().cowLevelChecks) {
 		for (const int cow : cows) {
@@ -3066,14 +3311,25 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			std::lock_guard lock(gMutex);
 			gInGame = false;
 			ForgetPlayer();
-			// Kill and cow counters only reach the file every so often; leaving the game
-			// (or closing D2R) writes the rest, so the next game carries on from them.
-			if (gBoundSession != 0) {
-				gSave.Save(gSavePath);
-			}
 			gRepairOffer.Cancel();
 			gRepairOfferQueued = false;
 			gRespecToken = D2RL::InvalidItemHandle;
+			// Kill and cow counters only reach the file every so often; leaving the game
+			// (or closing D2R) writes the rest, so the next game carries on from them.
+			// Leaving also saves the character, rewards and all: a crash later can't take them.
+			// gSave is still the last seed's after a disconnect, which this game's rewards came from;
+			// a seed bound earlier in this game is checkpointed in its own file.
+			if (!gSavePath.empty()) {
+				gSave.Checkpoint();
+				gSave.Save(gSavePath);
+			}
+			for (const auto& path : gGameSaves) {
+				if (ap::SaveState other; path != gSavePath && other.Load(path)) {
+					other.Checkpoint();
+					other.Save(path);
+				}
+			}
+			gGameSaves.clear();
 			break;
 		}
 		case Kind::QuestCompleted: {
@@ -3398,16 +3654,14 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 			break;
 		}
 	}
-	// A player's kill tells us the player's class (single player: it's you).
+	// A player's kill tells us the player's class (single player: it's you). The
+	// next delivery pass checks it against the seed's (CharacterReady).
 	const int killerClass = static_cast<int>(event->killer.classId);
 	if (event->killer.type == D2RL::Lifecycle::UnitType::Player && killerClass >= 0 && killerClass < static_cast<int>(std::size(ClassNames))
 		&& killerClass != gPlayerClass) {
 		gPlayerClass = killerClass;
 		gCodexDirty = true;
-		if (gBoundSession != 0) {
-			gSave.playerClass = killerClass;
-			gSave.Save(gSavePath);
-		}
+		gRetryAt = {};
 	}
 }
 
@@ -3746,6 +4000,55 @@ auto CommandLedger(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
+// ap-claim: this game's character becomes the seed's, the one rewards go to (by class:
+// D2RLoader doesn't say the character's name).
+auto CommandClaim(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
+	std::string reply;
+	{
+		std::lock_guard lock(gMutex);
+		const int gameClass = GameClass();
+		if (gBoundSession == 0) {
+			reply = "Connect to your seed first.";
+		} else if (!gInGame) {
+			reply = "Join a game with your character first.";
+		} else if (gameClass < 0) {
+			reply = "Kill a monster first, so the plugin can tell this character's class.";
+		} else {
+			gSave.playerClass = gameClass;
+			gSave.Save(gSavePath);
+			gCharacterWarned = 0;
+			gCodexDirty = true;
+			gRetryAt = {};
+			reply = "This seed's rewards go to your " + ClassName(gameClass) + " now.";
+		}
+	}
+	Reply(reply);
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
+// ap-redeliver: hands out again the rewards of a game D2R closed without leaving (a
+// crash), which the character may have lost if D2R hadn't saved it yet.
+auto CommandRedeliver(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
+	std::string reply;
+	{
+		std::lock_guard lock(gMutex);
+		if (gBoundSession == 0) {
+			reply = "Connect to your seed first.";
+		} else if (gSave.redeliver) {
+			reply = "The rewards from the crashed game are already on their way.";
+		} else if (!gSave.StartRedelivery()) {
+			reply = "Nothing to hand out again: ap-redeliver is for a game D2R closed without leaving it.";
+		} else {
+			gSave.Save(gSavePath);
+			gCodexDirty = true;
+			gRetryAt = {};
+			reply = "The rewards from the crashed game are on their way again.";
+		}
+	}
+	Reply(reply);
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
 auto CommandCodex(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
 	{
 		std::lock_guard lock(gMutex);
@@ -3984,6 +4287,8 @@ void RunPanelCommand(std::string_view action) {
 		{ "ap-missing", CommandMissing },
 		{ "ap-hints", CommandHints },
 		{ "ap-ledger", CommandLedger },
+		{ "ap-claim", CommandClaim },
+		{ "ap-redeliver", CommandRedeliver },
 		{ "ap-codex", CommandCodex },
 		{ "ap-reconnect", CommandReconnect },
 		{ "ap-disconnect", CommandDisconnect },
@@ -4240,6 +4545,8 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-codex", CommandCodex, "Rebuild the Archipelago Codex charm.")
 	                   && context->RegisterConsoleCommand("ap-hints", CommandHints, "List the hints you've found in game.")
 	                   && context->RegisterConsoleCommand("ap-ledger", CommandLedger, "Get a new Archipelago Ledger if you lost yours.")
+	                   && context->RegisterConsoleCommand("ap-claim", CommandClaim, "Make this character the one the seed's rewards go to (they go to its class).")
+	                   && context->RegisterConsoleCommand("ap-redeliver", CommandRedeliver, "Get the rewards of a game D2R crashed in again, if your character lost them.")
 	                   && context->RegisterConsoleCommand("ap-missing", CommandMissing, "List the checks left in this act: ap-missing [all].")
 	                   && context->RegisterConsoleCommand("ap-panel", CommandPanel, "Open or close the Archipelago command panel (F9).")
 	                   && context->RegisterConsoleCommand("ap-repairs", CommandRepairs, "Experimental repairs with Merchant Lock: ap-repairs on|off; use the NPC repair panel.")
