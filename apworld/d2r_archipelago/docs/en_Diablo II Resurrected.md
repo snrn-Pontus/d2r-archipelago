@@ -150,7 +150,10 @@ Everything else arrives in your inventory, rolled when you receive it and scaled
 - **Traps** (`trap_percentage`, 10% of filler by default), which wait until you leave town: **Junk Backpack**
   (worthless gear fills your free inventory space), **Ambush** (a pack of the act's monsters), **Poison
   Cloud**, **Firestorm**, **Mana Drain**, **Tax Collector** (lose up to 1,000 gold per level) and, only if you
-  give it a weight, **Mercenary Down**. Each has its own weight option.
+  give it a weight, **Mercenary Down**. Each has its own weight option. The traps section can also make traps
+  go off in town (`traps_wait_for_town`), change the ambush size (`ambush_size`) and bring the area's own
+  monsters instead of the act's (`ambush_monsters: area`), and set the tax per level (`tax_collector_gold`)
+  and the most junk a backpack holds (`junk_backpack_size`).
 
 The skill pool and Codex Empowerments are set for a four-act game; with `scale_with_length` (on by default)
 longer games get proportionally more, so a full Hell run has about 60 skills and 8 Empowerments.

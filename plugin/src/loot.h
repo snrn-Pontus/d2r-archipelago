@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <random>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -82,7 +83,15 @@ struct Commands {
 	std::string              message;
 	bool                     trap = false;
 };
-auto CommandsFor(Loot loot, int level, int act, std::mt19937& random) -> Commands;
+// The seed's trap options.
+struct TrapSettings {
+	int ambushSize = 6;
+	int taxPerLevel = 1000;
+};
+// An Ambush picks from areaMonsters (MonStats ids) when there are any, and
+// from the act's common monsters otherwise.
+auto CommandsFor(Loot loot, int level, int act, std::mt19937& random, const TrapSettings& traps = {},
+                 std::span<const std::string> areaMonsters = {}) -> Commands;
 
 // A level estimate from where the character is, for when no level-up has
 // been seen yet: the start of the difficulty plus a few levels per act.

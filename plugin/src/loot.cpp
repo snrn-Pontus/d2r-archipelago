@@ -169,17 +169,20 @@ auto AmbushMonster(int act, std::mt19937& random) -> const char* {
 	return Monsters[std::clamp(act, 0, 4)][random() % 4];
 }
 
-auto CommandsFor(Loot loot, int level, int act, std::mt19937& random) -> Commands {
+auto CommandsFor(Loot loot, int level, int act, std::mt19937& random, const TrapSettings& traps, std::span<const std::string> areaMonsters)
+	-> Commands {
 	switch (loot) {
 		// Spawns go to D2RCore's spawn location; "loc player" puts it on the player.
 		case Loot::RandomShrine:     return { { "loc player", "shrine " + std::to_string(ShrineId(random)) }, "a shrine appears at your feet." };
-		case Loot::AmbushTrap:
-			return { { "loc player", std::string("mspawn ") + AmbushMonster(act, random) + ",6" }, "it's a trap! An ambush!", true };
+		case Loot::AmbushTrap: {
+			const std::string monster = areaMonsters.empty() ? AmbushMonster(act, random) : areaMonsters[random() % areaMonsters.size()];
+			return { { "loc player", "mspawn " + monster + "," + std::to_string(std::max(traps.ambushSize, 1)) }, "it's a trap! An ambush!", true };
+		}
 		case Loot::PoisonCloudTrap:  return { { "pcloud" }, "it's a trap! Poison gas!", true };
 		case Loot::FirestormTrap:    return { { "fstorm" }, "it's a trap! Firestorm!", true };
 		case Loot::ManaDrainTrap:    return { { "depletemana 0" }, "it's a trap! Your mana drains away.", true };
 		case Loot::TaxCollectorTrap: {
-			const int amount = GoldAmount(level);
+			const int amount = std::clamp(level, 1, 99) * std::max(traps.taxPerLevel, 0);
 			return { { "gold -" + std::to_string(amount) }, "it's a trap! The tax collector takes up to " + std::to_string(amount) + " gold.", true };
 		}
 		case Loot::MercenaryDownTrap: return { { "killhirable" }, "it's a trap! Your mercenary falls.", true };

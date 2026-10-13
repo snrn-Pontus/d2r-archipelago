@@ -80,6 +80,15 @@ struct SlotData {
 	struct Locks {
 		bool cube = false, townPortal = false, potions = false, stash = false, merchants = false, waypoints = false;
 	} locks;
+	// Trap tuning; the defaults are the traps from before these were options.
+	struct Traps {
+		bool waitForTown = true;
+		int  ambushSize = 6;
+		// Ambushes bring the area's own monsters instead of the act's.
+		bool areaAmbush = false;
+		int  taxPerLevel = 1000;
+		int  junkSize = 40;
+	} traps;
 	// Deaths are shared with the other DeathLink players.
 	bool deathLink   = false;
 	randomizer::Settings randomizer;

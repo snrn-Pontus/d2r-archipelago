@@ -589,6 +589,13 @@ class D2RWorld(World):
                 "merchants": bool(self.options.merchant_lock),
                 "waypoints": bool(self.options.waypoint_lock),
             },
+            "traps": {
+                "wait_for_town": bool(self.options.traps_wait_for_town),
+                "ambush_size": self.options.ambush_size.value,
+                "ambush_monsters": self.options.ambush_monsters.current_key,
+                "tax_per_level": self.options.tax_collector_gold.value,
+                "junk_size": self.options.junk_backpack_size.value,
+            },
             "death_link": bool(self.options.death_link),
             # d2r-ap-setup reads this and writes the matching game tables.
             "randomizer": {

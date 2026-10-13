@@ -135,9 +135,14 @@ int                   gCowKills[3] = {};
 // Collection checks found by the item scan (game thread).
 std::vector<int64_t>  gCollectionQueue;
 // D2RCore console commands to run on the UI thread (gold, experience, shrines),
-// and traps, which wait until the player is out of town.
+// and traps, which wait until the player is out of town (unless the seed says
+// otherwise). A trap's commands are made when it goes off, for the area it hits.
+struct QueuedTrap {
+	ap::loot::Loot loot;
+	int            level = 1;
+};
 std::vector<std::string> gCommandQueue;
-std::vector<ap::loot::Commands> gTrapQueue;
+std::vector<QueuedTrap> gTrapQueue;
 // The level (area) the player is in, from the area events.
 int                   gCurrentLevel = -1;
 
@@ -765,6 +770,100 @@ auto SetRecords(const std::string& name) -> std::vector<uint32_t> {
 	return RecordsNamed(D2RL::DataTables::TableId::SetItems, ap::data::SetItems[0].name, name);
 }
 
+// Where the compiled Levels rows keep their monster line-ups (MonStats rows,
+// 16 bits each): Normal at monsters, Nightmare and Hell at nightmare.
+struct LineupLayout {
+	uint64_t revision = UINT64_MAX;
+	size_t   monsters = SIZE_MAX;
+	size_t   nightmare = SIZE_MAX;
+	uint16_t empty = 0;
+	std::vector<std::string> names;
+};
+std::map<uint32_t, LineupLayout> gLineups;
+
+// The layout isn't in the SDK, so it's found from the Pandemonium areas, which
+// no shuffle touches: Pandemonium 1's line-up appears once for Normal, then
+// again for Nightmare/Hell; Pandemonium 2's ends with an empty slot.
+auto FindLineups(D2RL::DataTables::Bank bank, const D2RL::DataTables::TableView& levels) -> const LineupLayout& {
+	auto& layout = gLineups[static_cast<uint32_t>(bank)];
+	if (layout.revision == levels.revision) {
+		return layout;
+	}
+	layout = { .revision = levels.revision };
+	const NamedRows* monstats = IndexRows(bank, D2RL::DataTables::TableId::MonStats, "skeleton1");
+	if (monstats == nullptr || levels.rowCount <= 134) {
+		return layout;
+	}
+	const auto row = [&](const std::vector<const char*>& names) {
+		std::vector<uint16_t> ids;
+		for (const char* name : names) {
+			const auto found = monstats->byName.find(name);
+			ids.push_back(found == monstats->byName.end() ? UINT16_MAX : static_cast<uint16_t>(found->second));
+		}
+		return ids;
+	};
+	const auto pandemonium1 = row({ "succubus8", "succubuswitch9", "corruptrogue6", "cr_archer8", "cr_lancer8" });
+	const auto pandemonium2 = row({ "swarm5", "sandmaggot7", "arach7", "scarab8" });
+	const auto* rows = static_cast<const uint8_t*>(levels.rows);
+	const auto matches = [&](uint32_t level, size_t at, const std::vector<uint16_t>& ids) {
+		if (at + (ids.size() + 1) * 2 > levels.rowSize) {
+			return false;
+		}
+		const uint8_t* cell = rows + static_cast<size_t>(level) * levels.rowSize + at;
+		return std::memcmp(cell, ids.data(), ids.size() * 2) == 0;
+	};
+	std::vector<size_t> found;
+	for (size_t at = 0; at + 2 <= levels.rowSize; at += 2) {
+		if (matches(133, at, pandemonium1) && matches(134, at, pandemonium2)) {
+			found.push_back(at);
+		}
+	}
+	if (found.size() < 2) {
+		Log("Archipelago: couldn't find the monster line-ups in Levels (bank " + std::to_string(static_cast<uint32_t>(bank)) + "); ambushes use the act's monsters.");
+		return layout;
+	}
+	layout.monsters = found[0];
+	layout.nightmare = found[1];
+	std::memcpy(&layout.empty, rows + 134 * static_cast<size_t>(levels.rowSize) + layout.monsters + pandemonium2.size() * 2, 2);
+	for (const auto& [name, index] : monstats->byName) {
+		layout.names.resize(std::max<size_t>(layout.names.size(), index + 1));
+		layout.names[index] = name;
+	}
+	Log("Archipelago: Levels line-ups at +" + std::to_string(layout.monsters) + " and +" + std::to_string(layout.nightmare) + ", empty slots "
+		+ std::to_string(layout.empty) + ".");
+	return layout;
+}
+
+// The MonStats ids of the monsters that live in an area on this difficulty
+// (after any monster shuffle), or none if that can't be read. UI thread.
+auto AreaMonsters(int level, int difficulty, bool lod) -> std::vector<std::string> {
+	if (gTables == nullptr || level <= 0) {
+		return {};
+	}
+	const auto bank = lod ? D2RL::DataTables::Bank::Lod : D2RL::DataTables::Bank::Rotw;
+	D2RL::DataTables::TableView view { .structSize = D2RL::DataTables::TableViewSize };
+	if (gTables->getTable(gContext, bank, D2RL::DataTables::TableId::Levels, &view) != D2RL::DataTables::Result::Success || view.rows == nullptr
+		|| static_cast<uint32_t>(level) >= view.rowCount) {
+		return {};
+	}
+	const LineupLayout& layout = FindLineups(bank, view);
+	const size_t at = difficulty > 0 ? layout.nightmare : layout.monsters;
+	if (at == SIZE_MAX || at + 25 * 2 > view.rowSize) {
+		return {};
+	}
+	std::vector<std::string> monsters;
+	const auto* cells = static_cast<const uint8_t*>(view.rows) + static_cast<size_t>(level) * view.rowSize + at;
+	for (size_t slot = 0; slot < 25; ++slot) {
+		uint16_t id = 0;
+		std::memcpy(&id, cells + slot * 2, 2);
+		if (id == layout.empty || id >= layout.names.size() || layout.names[id].empty()) {
+			continue;
+		}
+		monsters.push_back(layout.names[id]);
+	}
+	return monsters;
+}
+
 // Items the plugin hands out carry this marker in their seed's top byte, so
 // they don't count for collection checks.
 constexpr uint32_t RewardMarker = 0xB7000000U;
@@ -956,10 +1055,10 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 	return false;
 }
 
-// The Junk Backpack trap: fill every free inventory cell with white junk.
-auto GiveJunk(D2RL::PlayerHandle player, std::mt19937& random) -> int {
+// The Junk Backpack trap: fill free inventory cells with white junk, up to most pieces.
+auto GiveJunk(D2RL::PlayerHandle player, int most, std::mt19937& random) -> int {
 	int placed = 0;
-	for (; placed < 40; ++placed) {
+	for (; placed < most; ++placed) {
 		const auto junk = ap::loot::Roll(ap::loot::Loot::JunkBackpack, 1, random);
 		if (CreateIn(player, junk, D2RL::Items::RandomQualityRecord, D2RL::Items::ItemContainer::Inventory) != D2RL::Items::Result::Success) {
 			break;
@@ -1823,7 +1922,8 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		}
 		const auto loot = static_cast<ap::loot::Loot>(items[next].item - ap::ids::LootBase);
 		if (loot == ap::loot::Loot::JunkBackpack) {
-			Feed("Archipelago: a Junk Backpack! " + std::to_string(GiveJunk(player, random)) + " pieces of junk in your inventory.");
+			Feed("Archipelago: a Junk Backpack! " + std::to_string(GiveJunk(player, std::clamp(slots.traps.junkSize, 1, 40), random))
+				 + " pieces of junk in your inventory.");
 			continue;
 		}
 		if (loot == ap::loot::Loot::Prophecy) {
@@ -1834,7 +1934,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		if (auto commands = ap::loot::CommandsFor(loot, characterLevel, act, random); !commands.commands.empty()) {
 			std::lock_guard lock(gMutex);
 			if (commands.trap) {
-				gTrapQueue.push_back(std::move(commands));
+				gTrapQueue.push_back({ loot, characterLevel });
 			} else {
 				gCommandQueue.insert(gCommandQueue.end(), commands.commands.begin(), commands.commands.end());
 				gConsoleQueue.push_back("Archipelago: " + commands.message);
@@ -1944,26 +2044,40 @@ auto ExecuteCommand(const std::string& command) -> bool {
 // the player's stats.
 void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	gCommandsQueued = false;
+	const ap::SlotData::Traps settings = gClient->Slots().traps;
 	std::vector<std::string> commands;
-	std::vector<ap::loot::Commands> traps;
+	std::vector<QueuedTrap> traps;
+	int  area = -1, act = 0, difficulty = 0;
+	bool lod = false;
 	{
 		std::lock_guard lock(gMutex);
 		if (!gInGame) {
 			return;
 		}
 		commands.swap(gCommandQueue);
-		if (!IsTown(gCurrentLevel)) {
+		if (!settings.waitForTown || !IsTown(gCurrentLevel)) {
 			traps.swap(gTrapQueue);
 		}
+		area = gCurrentLevel;
+		act = gAct;
+		difficulty = gDifficulty;
+		lod = gLodCharacter;
 	}
 	for (const auto& command : commands) {
 		if (!ExecuteCommand(command)) {
 			Feed("Archipelago: couldn't add a reward (D2RCore refused \"" + command + "\").");
 		}
 	}
+	if (traps.empty()) {
+		return;
+	}
+	std::mt19937 random(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
+	const auto monsters = settings.areaAmbush ? AreaMonsters(area, difficulty, lod) : std::vector<std::string> {};
+	const ap::loot::TrapSettings tuning { .ambushSize = settings.ambushSize, .taxPerLevel = settings.taxPerLevel };
 	for (const auto& trap : traps) {
-		Feed("Archipelago: " + trap.message);
-		for (const auto& command : trap.commands) {
+		const auto fired = ap::loot::CommandsFor(trap.loot, trap.level, act, random, tuning, monsters);
+		Feed("Archipelago: " + fired.message);
+		for (const auto& command : fired.commands) {
 			ExecuteCommand(command);
 		}
 	}
@@ -2511,7 +2625,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		std::lock_guard lock(gMutex);
 		cows.swap(gCowQueue);
 		collections.swap(gCollectionQueue);
-		commands = !gCommandQueue.empty() || (!gTrapQueue.empty() && gInGame && !IsTown(gCurrentLevel));
+		commands = !gCommandQueue.empty() || (!gTrapQueue.empty() && gInGame && (!gSlots.traps.waitForTown || !IsTown(gCurrentLevel)));
 	}
 	if (gClient->Slots().cowLevelChecks) {
 		for (const int cow : cows) {
