@@ -199,7 +199,7 @@ auto ClassIndex(const std::string& name) -> int {
 Clock::time_point     gLastRoomWarning;
 // After a failed item update, wait before trying again instead of every frame.
 Clock::time_point     gRetryAt;
-// Tree mode: a Token of Absolution just used, waiting for its respec to finish
+// Tree mode: a Token or Writ of Absolution just used, waiting for its respec to finish
 // so the received skills can be unlocked again.
 D2RL::ItemHandle      gRespecToken = D2RL::InvalidItemHandle;
 Clock::time_point     gRespecTokenAt;
@@ -562,7 +562,7 @@ void CompleteQuest(uint32_t difficulty, uint32_t flag, QuestSource source) {
 			// Den of Evil's reward is Akara's respec, which takes the received tree skills away.
 			if (flag == DenOfEvilFlag && IsNewCheck(location) && gClient->Slots().randomizer.treeMode) {
 				Feed("Archipelago: Akara's respec takes your Archipelago skills away. After it, use Relearn Skills (F9) and type ap-relearn confirm. "
-				     "A Token of Absolution unlocks them again by itself.");
+				     "A Writ of Absolution from any potion seller respecs and unlocks them again by itself.");
 			}
 			AddChecks({ location });
 			const ap::SlotData slots = gClient->Slots();
@@ -1674,7 +1674,7 @@ auto SkillNames(const std::vector<uint32_t>& skills) -> std::string {
 	return names;
 }
 
-// Tree mode: after a Token of Absolution, unlocks the received skills again.
+// Tree mode: after a Token or Writ of Absolution, unlocks the received skills again.
 // The token counts once it's gone (used, not just clicked); then a respec has
 // taken every received skill's level, so each one refuses a point. If any
 // still takes one, the token didn't respec and nothing changes.
@@ -1693,7 +1693,7 @@ void RelearnAfterToken(D2RL::PlayerHandle player) {
 	const auto result = gItems->getItemInfo(gContext, token, &info);
 	if (result != D2RL::Items::Result::NotFound && result != D2RL::Items::Result::StaleHandle) {
 		if (Clock::now() - usedAt > std::chrono::seconds(30)) {
-			Log("Archipelago: the Token of Absolution is still there, so it didn't respec.");
+			Log("Archipelago: the token is still there, so it didn't respec.");
 			std::lock_guard lock(gMutex);
 			gRespecToken = D2RL::InvalidItemHandle;
 		}
@@ -1710,14 +1710,14 @@ void RelearnAfterToken(D2RL::PlayerHandle player) {
 		unlocked = gSave.unlockedSkills.size();
 	}
 	if (!refused) {
-		Feed("Archipelago: couldn't check your skills after the Token of Absolution; use Relearn Skills (F9) to unlock them again.");
+		Feed("Archipelago: couldn't check your skills after the respec; use Relearn Skills (F9) to unlock them again.");
 		return;
 	}
 	if (refused->empty()) {
 		return;
 	}
 	if (refused->size() != unlocked) {
-		Log("Archipelago: some Archipelago skills still take a point after the Token of Absolution, so they weren't unlocked again.");
+		Log("Archipelago: some Archipelago skills still take a point after the token, so they weren't unlocked again.");
 		return;
 	}
 	{
@@ -2140,7 +2140,8 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 		}
 	}
 	// A token only works from the inventory; anywhere else the click doesn't use it.
-	if (respecs && info.code == ap::loot::CodeFromText("toa") && event->container == D2RL::Items::ItemContainer::Inventory) {
+	const bool token = info.code == ap::loot::CodeFromText("toa") || info.code == ap::loot::CodeFromText(ap::randomizer::RespecCode);
+	if (respecs && token && event->container == D2RL::Items::ItemContainer::Inventory) {
 		std::lock_guard lock(gMutex);
 		gRespecToken = event->item;
 		gRespecTokenAt = Clock::now();
@@ -3045,7 +3046,7 @@ auto CommandCore(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command,
 // below its level requirement or at its cap, while skadd adds a level each
 // time. So ap-relearn only lists the skills that won't take a point, and
 // ap-relearn confirm (you just respecced) gives each of them a level back. A
-// failed check changes nothing. A Token of Absolution does this on its own
+// failed check changes nothing. A Token or Writ of Absolution does this on its own
 // (RelearnAfterToken); Akara's respec can't be seen, so it needs ap-relearn.
 bool gRelearnConfirmed = false;
 

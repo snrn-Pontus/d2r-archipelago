@@ -155,6 +155,14 @@ auto AddProphecyScrolls(Table& misc) -> int;
 // Appends the Ledger the same way, sold nowhere. Returns 1 if it added it.
 auto AddLedger(Table& misc) -> int;
 
+// A cheap respec, always in stock at every potion seller: a copy of the Token
+// of Absolution (same use, picture and size) under its own code, so finding a
+// real Token of Absolution stays a check. Returns 1 if it added it.
+inline constexpr char RespecCode[] = "apr";
+inline constexpr char RespecName[] = "Writ of Absolution";
+inline constexpr int  RespecCost   = 1000;
+auto AddRespecWrit(Table& misc) -> int;
+
 // Multiplies monster experience on every difficulty.
 void ScaleExperience(Table& monlvl, int percent);
 

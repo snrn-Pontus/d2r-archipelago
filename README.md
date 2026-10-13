@@ -17,7 +17,8 @@ organs, essences, the Torch and Annihilus) only hold filler, and so do uber, kil
 Quest item pickups and Archipelago Parcels bought from each act's potion seller are checks too. Optional
 locks keep the Horadric Cube, Town Portal, potions, the stash, merchants and the waypoints of Acts I to III closed until
 their item arrives, and locked acts warp you back to town. Hints turn up in game too: from Deckard Cain after
-act bosses, torn pages from superuniques, and Scrolls of Prophecy sold at rising prices. DeathLink is optional. The goal is killing Baal on the chosen difficulty.
+act bosses, torn pages from superuniques, and Scrolls of Prophecy sold at rising prices. Every potion seller also
+sells a Writ of Absolution, a 1,000-gold respec. DeathLink is optional. The goal is killing Baal on the chosen difficulty.
 
 Each act after the first needs an Act Key from the multiworld; checks in a locked act are held until it
 arrives. The defaults aim at a 4-6 hour game (Normal to Diablo). Games can be as short as Normal Act 1 or as
