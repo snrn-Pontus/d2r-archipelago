@@ -53,6 +53,10 @@ Built, pushed and installed, still to check in game:
       Slayer and Eyeback but no Axe Dweller, Anodized Elite, Vinvear Molech, Magma Torquer or Blaze Ripper.
 - [ ] With `superunique_checks` and a mod from the old setup tool, the plugin says the mod doesn't match;
       after rerunning setup, killing Bishibosh and Corpsefire sends their own checks (not a neighbour's).
+- [ ] Options editor (#13, needs the apworld in the release Archipelago): the Launcher shows **Diablo II
+      Resurrected Options**; it opens a window (no error in the Launcher log). **Open...** a copy of
+      `Players\Snrn.yaml`, change Goal Difficulty and Shop Checks, **Save**: only those two lines change and
+      the comments stay. A preset, then **Save as...** a new name, generates a seed.
 
 Ideas, not started:
 

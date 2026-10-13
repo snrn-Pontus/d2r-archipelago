@@ -76,3 +76,17 @@ components.append(Component(
     description="Set up Diablo II: Resurrected for your seed and start it.\n"
                 "Installs D2RLoader and the Archipelago plugin when needed.",
 ))
+
+
+def launch_options_editor(*args: str) -> None:
+    from .options_editor import launch_editor
+    launch_editor(*args)
+
+
+components.append(Component(
+    f"{GAME} Options",
+    func=launch_options_editor,
+    component_type=Type.TOOL,
+    description="Make or edit your Diablo II: Resurrected options YAML,\n"
+                "with checkboxes, dropdowns and sliders.",
+))
