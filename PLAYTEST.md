@@ -45,9 +45,11 @@ Built, pushed and installed, still to check in game:
       opened while the game runs. It starts with the plugin version and config, has "seed options:" after
       connecting, "found ... checks", "sending ... checks", "received #..." and "shown: ..." lines as you play,
       and "entered <area>" on each area change. **Mark the Log** twice adds "mark 1" and "mark 2"; **Log
-      State** adds the "state:" lines. Quit normally and relaunch: the new file doesn't say the last session
-      didn't end normally. End D2R in Task Manager and relaunch: it does.
-- [ ] With the server down, the session log says "Could not connect" once, not every 5 seconds.
+      State** adds the "state:" lines. Quit with the menu's Exit and relaunch: the new file doesn't say the
+      last session "has no normal exit". End D2R in Task Manager and relaunch: it does. (Does Alt+F4 count as
+      a normal exit? Note which.)
+- [ ] With the server down, the session log says "Could not connect" once, not every 5 seconds. While it
+      retries, `ap-connect` to another server: the log shows "Connecting to" the new one right away.
 
 - [ ] The **Archipelago Parcel** is in Akara's Misc tab now (shop item type fix) and buying it sends a check
       (section 2).

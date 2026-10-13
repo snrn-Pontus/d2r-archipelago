@@ -3329,14 +3329,16 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		DrawOverlayTest(frame);
 	}
 	// Connection changes, with a server that stays down logged once rather than every retry.
-	static std::string lastStatus, lastRetry;
+	// A retry's "Connecting to" the same server is left out; one to another server (ap-connect) isn't.
+	static std::string lastStatus, lastRetry, lastConnecting;
 	if (const std::string status = gClient->StatusText(); status != lastStatus) {
 		const bool retry = status.ends_with("Retrying in 5 seconds.");
 		const bool connecting = status.starts_with("Connecting to ");
-		if (!(retry && status == lastRetry) && !(connecting && !lastRetry.empty())) {
+		if (!(retry && status == lastRetry) && !(connecting && !lastRetry.empty() && status == lastConnecting)) {
 			Log("Archipelago: connection: " + status);
 		}
-		lastRetry = retry ? status : connecting ? lastRetry : std::string();
+		lastRetry = retry ? status : connecting && status == lastConnecting ? lastRetry : std::string();
+		lastConnecting = connecting ? status : lastConnecting;
 		lastStatus = status;
 	}
 	AnnounceItems();
@@ -4880,7 +4882,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	if (session.path.empty()) {
 		LogWarning("Archipelago: couldn't start a session log in d2rloader\\archipelago\\logs; only D2RLoader's log has this session.");
 	} else if (session.previousUnclean) {
-		Log("Archipelago: the last session (" + session.previous.filename().string() + ") didn't end normally: D2R crashed, hung or was killed.");
+		Log("Archipelago: the last session (" + session.previous.filename().string() + ") has no normal exit: D2R crashed, hung, was ended in Task Manager or was closed without the menu's Exit.");
 	}
 	if (!Query(gLifecycle, D2RL::HasLifecycleServiceField, D2RL::LifecycleServiceRequiredSize)
 		|| !Query(gInventory, D2RL::HasInventoryServiceField, D2RL::InventoryServiceRequiredSize)
