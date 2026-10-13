@@ -81,7 +81,10 @@ Built, pushed and installed, still to check in game:
       bought one doesn't stay in the inventory.
 - [ ] Class-usable skills (PR #18, new seed needed): a Sorceress pool and tree hold no claw skills, no
       Assassin traps (Fire Blast froze a Sorceress), no Frenzy or Double Swing, and no wolf or bear attacks.
-      A Druid only gets Feral Rage, Maul and the like alongside Werewolf or Werebear.
+      A Druid only gets Feral Rage, Maul and the like alongside Werewolf or Werebear. (2026-10-13, two
+      Sorceress seeds' spoilers: none of those in the pool; the other classes' skills were Cobra Strike, Blade
+      Shield, Shadow Warrior, Fade, Cyclone Armor, Molten Boulder, Spirit of Barbs and Barbarian masteries and
+      warcries. Still to check in game: the tree and casting them.)
 - [ ] A Barbarian with an Assassin trap in the pool (allowed: they have the S2 animation) can cast it
       without freezing.
 - [ ] Werewolf or Werebear on another class: does the form work? If not, keep forms Druid-only too.
@@ -112,7 +115,8 @@ Built, pushed and installed, still to check in game:
       other monsters, the Cow King is still there, and the cows turn up in some other area, where killing 100
       still sends the cow check. `runeword_rune_spread: 0` with `runeword_shuffle` leaves `runewords.txt`
       showing the usual recipes. (2026-10-13, defaults: `superuniques.txt` gives Rakanishu 5 minions and
-      Bishibosh 2.)
+      Bishibosh 2. Sorceress seed with `superunique_minions: 50` and `runeword_rune_spread: 0`: Rakanishu 4,
+      Bishibosh 1, Corpsefire 3, and `runewords.txt` lists the usual recipes, e.g. Black: Thul Io Nef.)
 - [ ] Main-path superunique level and strength (#93, new seed needed): with defaults and
       `superunique_shuffle: nearby`, a reshaped Griswold or Rakanishu shows his usual level on Normal (hover
       him: the tooltip has no level, so compare how fast he dies at a known character level, or check
