@@ -2,6 +2,13 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.7.0 - 2026-10-13
+
+- Monster shuffling keeps the Ancients on Arreat Summit and leaves areas without random spawns alone;
+  rerun setup to update an existing mod (#74)
+- Impossible short-game settings now stop generation with a clear message when there are more required
+  keys and locks than locations (#67)
+
 ## 0.6.0 - 2026-10-13
 
 The first published release. Everything below is new since the 0.5.0 builds that were only tested locally.
