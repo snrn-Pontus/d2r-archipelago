@@ -242,7 +242,7 @@ std::vector<int>      gPendingAreas;
 int                   gAct          = 0;
 // The player's class id seen in this game (from the killer of a monster), or -1.
 int                   gPlayerClass  = -1;
-// The class this game's Codex charm was made for, or -1: until a kill says, it
+// The class this game's Codex charm or Ledger was made for, or -1: until a kill says, it
 // stands in for gPlayerClass (a Codex only goes to a character of its class).
 int                   gCodexClass   = -1;
 // Why this game has said rewards wait, so each reason is said once: 1 the class isn't
@@ -1541,6 +1541,25 @@ auto CodexSeedOf(const D2RL::Items::ItemInfo& item) -> uint32_t {
 	return IsCodexSeed(item.itemSeed) ? item.itemSeed : IsCodexSeed(item.generationSeed) ? item.generationSeed : 0;
 }
 
+// The Archipelago Ledger's seed: its marker, the class of the character it was made
+// for (+1, so 0 is none), and random bits.
+constexpr uint32_t LedgerMarker = 0xB8000000U;
+
+auto LedgerSeed(int playerClass, uint32_t random) -> uint32_t {
+	return LedgerMarker | ((static_cast<uint32_t>(playerClass + 1) & 0xF) << 20) | (random & 0xFFFFF);
+}
+
+// The class a Ledger was made for, or -1 (made before Ledgers carried it).
+auto LedgerClass(const D2RL::Items::ItemInfo& item) -> int {
+	for (const uint32_t seed : { item.itemSeed, item.generationSeed }) {
+		if ((seed & CodexMarkerMask) == LedgerMarker) {
+			const int playerClass = static_cast<int>((seed >> 20) & 0xF) - 1;
+			return playerClass < static_cast<int>(std::size(ClassNames)) ? playerClass : -1;
+		}
+	}
+	return -1;
+}
+
 auto DescribeItem(const D2RL::Items::ItemInfo& item) -> std::string {
 	char text[200] {};
 	std::snprintf(text, sizeof(text), "container=%u quality=%u itemSeed=%08X generationSeed=%08X prefix=%u suffix=%u", static_cast<uint32_t>(item.container),
@@ -2135,38 +2154,74 @@ void FindSuperUniqueMonsters() {
 // another). If it can't be made (no room, or a mod without it), retries later.
 Clock::time_point gLedgerRetryAt;
 
+// The Ledgers on the character: whether one carries this class, and the ones that don't.
+struct LedgerScan {
+	int                           playerClass = -1;
+	bool                          marked      = false;
+	std::vector<D2RL::ItemHandle> unmarked;
+};
+
 auto __cdecl FindLedger(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
-	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->code == ap::loot::CodeFromText(ap::randomizer::LedgerCode)) {
-		*static_cast<bool*>(userData) = true;
-		return D2RL::Inventory::IterationAction::Stop;
+	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->code == ap::loot::CodeFromText(ap::randomizer::LedgerCode)
+		&& item->container != D2RL::Items::ItemContainer::SharedStash && item->container != D2RL::Items::ItemContainer::Ground) {
+		auto* scan = static_cast<LedgerScan*>(userData);
+		if (LedgerClass(*item) == scan->playerClass) {
+			scan->marked = true;
+		} else {
+			scan->unmarked.push_back(item->handle);
+		}
 	}
 	return D2RL::Inventory::IterationAction::Continue;
 }
 
 void GiveLedger(D2RL::PlayerHandle player) {
+	LedgerScan scan;
+	bool given = false;
 	{
 		std::lock_guard lock(gMutex);
-		if (gSave.ledgerGiven || Clock::now() < gLedgerRetryAt) {
+		if (Clock::now() < gLedgerRetryAt) {
 			return;
 		}
+		given = gSave.ledgerGiven;
+		scan.playerClass = GameClass();
 	}
-	bool found = false;
 	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
-	if (gInventory->forEachInventoryItem(gContext, player, &filter, FindLedger, &found) != D2RL::Inventory::Result::Success) {
+	if (gInventory->forEachInventoryItem(gContext, player, &filter, FindLedger, &scan) != D2RL::Inventory::Result::Success) {
 		return;
 	}
-	if (!found) {
-		auto spec = MakeSpec(ap::loot::CodeFromText(ap::randomizer::LedgerCode), D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
-		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
-		const auto result = gItems->createItem(gContext, player, &spec, &item);
-		if (result != D2RL::Items::Result::Success) {
-			Log("Archipelago: couldn't make the Archipelago Ledger (result " + std::to_string(static_cast<uint32_t>(result))
-				+ "); make room in your inventory, or rerun d2r-ap-setup if the mod predates it.");
-			std::lock_guard lock(gMutex);
-			gLedgerRetryAt = Clock::now() + std::chrono::seconds(60);
-			return;
-		}
+	// Given before and thrown away: ap-ledger asks for another. Given and kept, but from before
+	// Ledgers carried the class (or another class's): it's swapped for one that does.
+	if (scan.marked && !given) {
+		std::lock_guard lock(gMutex);
+		gSave.ledgerGiven = true;
+		SaveNow();
+	}
+	if (scan.marked || (given && scan.unmarked.empty())) {
+		return;
+	}
+	// The Ledger's seed carries the class, so later games know this character without a kill.
+	auto spec = MakeSpec(ap::loot::CodeFromText(ap::randomizer::LedgerCode), D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
+	static std::mt19937 seeds(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
+	spec.seedMode = D2RL::Items::SeedMode::Deterministic;
+	spec.generationSeed = LedgerSeed(scan.playerClass, seeds());
+	spec.itemSeed = spec.generationSeed;
+	D2RL::ItemHandle item = D2RL::InvalidItemHandle;
+	const auto result = gItems->createItem(gContext, player, &spec, &item);
+	if (result != D2RL::Items::Result::Success) {
+		Log("Archipelago: couldn't make the Archipelago Ledger (result " + std::to_string(static_cast<uint32_t>(result))
+			+ "); make room in your inventory, or rerun d2r-ap-setup if the mod predates it.");
+		std::lock_guard lock(gMutex);
+		gLedgerRetryAt = Clock::now() + std::chrono::seconds(60);
+		return;
+	}
+	// The old ones go once the new one is in.
+	for (const auto old : scan.unmarked) {
+		gItems->destroyItem(gContext, player, old, D2RL::Items::SocketedItemPolicy::DestroyContents);
+	}
+	if (scan.unmarked.empty()) {
 		Feed("Archipelago: your Archipelago Ledger counts the checks done in each act; hover over it.");
+	} else {
+		Log("Archipelago: swapped " + std::to_string(scan.unmarked.size()) + " Ledger(s) for one that knows this " + ClassName(scan.playerClass) + ".");
 	}
 	std::lock_guard lock(gMutex);
 	gSave.ledgerGiven = true;
@@ -2312,7 +2367,32 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 			}
 		}
 	}
+	// Tree mode has no Codex: the Ledger says the class, from anywhere on the character but
+	// the shared stash (another character could have put it there).
+	{
+		std::lock_guard lock(gMutex);
+		known = GameClass() >= 0;
+	}
+	if (!known) {
+		int ledgerClass = -1;
+		const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
+		gInventory->forEachInventoryItem(gContext, player, &filter,
+			[](const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept {
+				if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->code == ap::loot::CodeFromText(ap::randomizer::LedgerCode)
+					&& item->container != D2RL::Items::ItemContainer::SharedStash && item->container != D2RL::Items::ItemContainer::Ground && LedgerClass(*item) >= 0) {
+					*static_cast<int*>(userData) = LedgerClass(*item);
+					return D2RL::Inventory::IterationAction::Stop;
+				}
+				return D2RL::Inventory::IterationAction::Continue;
+			},
+			&ledgerClass);
+		if (ledgerClass >= 0) {
+			std::lock_guard lock(gMutex);
+			gCodexClass = ledgerClass;
+		}
+	}
 	std::string message;
+	bool banner = false;
 	bool ready = false;
 	{
 		std::lock_guard lock(gMutex);
@@ -2328,9 +2408,13 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 				}
 				break;
 			case ap::character::Verdict::Unknown:
-				if (pending && (gCharacterWarned & 1) == 0) {
+				// Locks aren't enforced either until then, so it's said when the seed has any.
+				if ((pending || slots.locks.cube || slots.locks.townPortal || slots.locks.potions || slots.locks.stash || slots.locks.merchants)
+					&& (gCharacterWarned & 1) == 0) {
 					gCharacterWarned |= 1;
-					message = "Archipelago: rewards are waiting; kill a monster so the plugin can tell this is your " + ClassName(seedClass) + ".";
+					message = "Archipelago: rewards and locks wait until the plugin knows this is your " + ClassName(seedClass)
+					        + ": kill a monster, or type ap-claim (F9: Claim Character) if it is.";
+					banner = true;
 				}
 				break;
 			case ap::character::Verdict::Mismatch:
@@ -2344,6 +2428,9 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 	}
 	if (!message.empty()) {
 		Feed(message);
+	}
+	if (banner) {
+		Banner("Kill a monster or type ap-claim: rewards are waiting", ap::notify::Style::Important);
 	}
 	return ready;
 }
@@ -3834,8 +3921,10 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::U
 			std::lock_guard lock(gMutex);
 			locked = gLocks.merchants;
 		}
+		// ResetToIdle also comes from using an Identify scroll or tome outside a shop.
 		if (locked && !(gNativeRepairDispatch && std::string_view(event->command) == "RepairAll")
-			&& std::string_view(event->command) != "Close") {
+			&& std::string_view(event->command) != "Close" && std::string_view(event->command) != "ResetToIdle") {
+			Log("Archipelago: blocked UI message " + key + (event->text != nullptr && *event->text != '\0' ? " \"" + std::string(event->text).substr(0, 80) + "\"" : "") + ".");
 			LockMessage("shopping is locked until you find Merchant Access.");
 			return D2RL::SharedEvents::UiMessageAction::Consume;
 		}
@@ -4299,6 +4388,13 @@ auto CommandClaim(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 	std::string reply;
 	{
 		std::lock_guard lock(gMutex);
+		// Not known yet (no kill this game, no Ledger that says): your word that it's the seed's
+		// class. A kill by another class still overrides it (OnMonsterDeath).
+		const bool vouched = gBoundSession != 0 && gInGame && GameClass() < 0 && SeedClass(gSlots) >= 0;
+		if (vouched) {
+			gPlayerClass = SeedClass(gSlots);
+			Log("Archipelago: ap-claim: taking this character as the seed's " + ClassName(gPlayerClass) + " without a kill.");
+		}
 		const int gameClass = GameClass();
 		if (gBoundSession == 0) {
 			reply = "Connect to your seed first.";
@@ -4308,6 +4404,10 @@ auto CommandClaim(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 			reply = "Kill a monster first, so the plugin can tell this character's class.";
 		} else {
 			gSave.playerClass = gameClass;
+			// This character gets a Ledger that carries its class, if it has none, so later
+			// games know it without a kill.
+			gSave.ledgerGiven = false;
+			gLedgerRetryAt = {};
 			SaveNow();
 			gCharacterWarned = 0;
 			gCodexDirty = true;
@@ -4508,7 +4608,7 @@ void GiveDebugItems(D2RL::PlayerHandle player, std::span<const DebugItem> items)
 			QueueLine("ap-debug: gave " + list(given) + " (as rewards: no checks).");
 		}
 		if (!failed.empty()) {
-			QueueLine("ap-debug: no room for " + list(failed) + "; the log has why.");
+			QueueLine("ap-debug: couldn't make " + list(failed) + ": check the item code (lsd starts with a lowercase L, not a 1), or make room.");
 		}
 		given.clear();
 		failed.clear();
