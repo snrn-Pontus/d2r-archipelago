@@ -392,6 +392,8 @@ void TestClientParsesServerPackets() {
 		"missing_locations":[2420001],"checked_locations":[],"slot_data":{},"slot_info":{"2":{"name":"Other","game":"Diablo II Resurrected","type":1,"group_members":[],"class":"NetworkSlot"}},
 		"hint_points":0}])json");
 	EXPECT(client.Items().empty() && !client.ItemsSynced() && client.ItemsGeneration() != generation);
+	const ap::ItemSnapshot snapshot = client.Snapshot();
+	EXPECT(snapshot.items.empty() && !snapshot.synced && snapshot.session == client.SessionGeneration() && snapshot.generation == client.ItemsGeneration());
 	EXPECT(client.PlayerName(1) == "player 1" && client.PlayerName(2) == "Other");
 	client.Handle(R"json([{"cmd":"ReceivedItems","index":0,"items":[]}])json");
 	EXPECT(client.Items().empty() && client.ItemsSynced());

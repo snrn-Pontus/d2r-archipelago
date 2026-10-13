@@ -1912,13 +1912,17 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 	FindSuperUniqueMonsters();
 	ReadAmbushArea();
-	const uint64_t generation = gClient->ItemsGeneration();
-	const std::vector<ap::NetworkItem> items = gClient->Items();
+	// One snapshot: the items, their generation, the session and whether the list is the server's
+	// full list, so a slot switch during this pass can't pair the old items with the new flags.
+	const ap::ItemSnapshot snapshot = gClient->Snapshot();
+	const uint64_t generation = snapshot.generation;
+	const std::vector<ap::NetworkItem>& items = snapshot.items;
 	ap::Config config;
 	size_t delivered = 0;
 	{
 		std::lock_guard lock(gMutex);
-		if (gBoundSession == 0) {
+		// Not bound, or bound to another session than the snapshot's: the next frame rebinds.
+		if (gBoundSession == 0 || gBoundSession != snapshot.session) {
 			return;
 		}
 		config = gConfig;
@@ -1990,7 +1994,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 	// Nothing is delivered until the server has sent this session's full item list: right after
 	// Connected the list is empty, and running from it would reset the delivered count.
-	const bool synced = gClient->ItemsSynced();
+	const bool synced = snapshot.synced;
 	size_t next = synced ? std::min(delivered, items.size()) : delivered;
 	bool   roomFull = false;
 	bool   more     = false;

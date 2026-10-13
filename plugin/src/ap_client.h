@@ -27,6 +27,16 @@ struct NetworkItem {
 
 enum class ConnectionState { Idle, Connecting, Connected, Refused };
 
+// The received-item list with the state it belongs to, taken under one lock so a delivery pass
+// can't mix one session's items with another's flags.
+struct ItemSnapshot {
+	std::vector<NetworkItem> items;
+	uint64_t generation = 0;
+	uint64_t session    = 0;
+	// Whether the list is the server's full list for this session (see Client::ItemsSynced).
+	bool synced = false;
+};
+
 // One of this player's important items, for hints found in game.
 struct HintEntry {
 	int64_t location = 0;
@@ -135,6 +145,8 @@ public:
 	// Whether the item list is the server's full list for this session (a ReceivedItems with index 0
 	// has arrived since Connected). Until then it's empty and nothing should be delivered.
 	auto ItemsSynced() const -> bool;
+	// The list, its generation, the session and the synced flag, all from one moment.
+	auto Snapshot() const -> ItemSnapshot;
 	// Bumped whenever the received-item list changes.
 	auto ItemsGeneration() const -> uint64_t;
 	auto Items() const -> std::vector<NetworkItem>;
