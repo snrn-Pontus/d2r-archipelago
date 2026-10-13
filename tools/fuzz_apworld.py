@@ -8,6 +8,8 @@ import random
 import sys
 import traceback
 
+LOCKS = ("cube_lock", "town_portal_lock", "potion_lock", "stash_lock", "merchant_lock", "waypoint_lock")
+
 
 def random_options(world_type, rng: random.Random) -> dict:
     from Options import Choice, OptionSet, Range, Toggle
@@ -26,12 +28,27 @@ def random_options(world_type, rng: random.Random) -> dict:
         elif issubclass(option, OptionSet):
             keys = sorted(option.valid_keys)
             options[key] = rng.sample(keys, rng.randint(0, len(keys)))
-    if rng.random() < 0.15:
+    roll = rng.random()
+    if roll < 0.15:
         # A tiny game now and then: one act with few or no optional checks, where keys, locks and
         # skills compete for a handful of locations.
         options.update(goal="normal", goal_act=1, area_checks=rng.random() < 0.3, side_area_checks=rng.choice([0, 0, 1]),
                        level_checks=False, superunique_checks=rng.random() < 0.3, quest_item_checks=rng.random() < 0.5,
                        shop_checks=rng.choice([0, 0, 1, 2]))
+    elif roll < 0.25:
+        # The smallest game there is: Act I only, every optional check off and (mostly) every lock on, so
+        # keys and locks outnumber the six quests and the world has to place them or refuse with a message.
+        options.update(goal="normal", goal_act=1, area_checks=False, side_area_checks=0, level_checks=False,
+                       superunique_checks=False, quest_item_checks=False, shop_checks=0, uber_checks=False,
+                       kill_count_checks=False, find_count_checks=False, cow_level_checks=False, rune_checks=0,
+                       gem_checks=False, set_checks=False, special_item_checks=False,
+                       starting_skills=rng.choice([0, 0, 2]))
+        for lock in LOCKS:
+            options[lock] = rng.random() < 0.85
+    elif roll < 0.35:
+        # The longest game there is: Hell Act V with six skills per act and a single copy of each skill,
+        # so the skill pool is as wide as it gets.
+        options.update(goal="hell", goal_act=5, skills_per_act=6, skill_copies=1)
     return options
 
 

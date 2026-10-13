@@ -62,6 +62,13 @@ The apworld's tests run inside an Archipelago source checkout with `worlds/d2r_a
 python -m pytest worlds/d2r_archipelago/test
 ```
 
+`python tools/fuzz_apworld.py <archipelago-checkout> [rounds]` generates many seeds with random options (tiny
+Act I games and Hell Act V games included) and checks each one fills and is beatable.
+
+GitHub Actions runs both on pushes to master and on pull requests: `.github/workflows/apworld.yml` runs the apworld
+tests and 100 fuzz rounds against the `minimum_ap_version` Archipelago, and `.github/workflows/plugin.yml` builds the
+plugin and runs `ap_tests`. Each only runs when its part of the repo changed.
+
 ## Playing in a multiworld
 
 `python -I tools/package_release.py <archipelago-checkout>` builds and tests the plugin, builds the
