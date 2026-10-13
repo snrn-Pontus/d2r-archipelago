@@ -128,6 +128,9 @@ public:
 	void CreateHint(int64_t location, int player);
 	// Announces our own location's item as a hint to whoever it belongs to.
 	void HintOwnLocation(int64_t location);
+	// Registers every hint found in game again (see HintPackets); a hint whose
+	// first send hit a closed socket reaches the server this way.
+	void ResendHints(const std::vector<HintEntry>& own, const std::vector<int64_t>& others);
 	// Tells the other DeathLink players that we died.
 	void SendDeath(const std::string& cause);
 
@@ -207,5 +210,12 @@ private:
 	std::unordered_map<std::string, std::unordered_map<int64_t, std::string>> itemNames_;
 	std::unordered_map<std::string, std::unordered_map<int64_t, std::string>> locationNames_;
 };
+
+// One message registering hints found in game: a CreateHints per own hint (one
+// command each, since the server drops the whole command on one bad location)
+// and a LocationScouts with create_as_hint 2 for our locations holding other
+// players' items. The server keeps hints it already has, so sending them again
+// changes nothing. Empty when there's nothing to send.
+auto HintPackets(const std::vector<HintEntry>& own, const std::vector<int64_t>& others) -> std::string;
 
 } // namespace ap

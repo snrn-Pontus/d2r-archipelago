@@ -491,6 +491,11 @@ auto UnlockedActs() -> std::set<int> {
 	return acts;
 }
 
+// The check of the quest that wins the seed (CompleteQuest reaches the goal with it).
+auto GoalLocation(const ap::SlotData& slots) -> int64_t {
+	return ap::ids::QuestLocation(static_cast<uint32_t>(slots.goal), static_cast<uint32_t>(slots.goalQuest));
+}
+
 // Sends every recorded check (and the goal) that isn't held behind a key.
 void SendReady() {
 	if (!gClient || gClient->State() != ap::ConnectionState::Connected) {
@@ -584,10 +589,13 @@ void AddChecks(const std::vector<int64_t>& locations) {
 void ReachGoal() {
 	{
 		std::lock_guard lock(gMutex);
-		gSave.goalReached = true;
-		if (gBoundSession != 0) {
-			gSave.Save(gSavePath);
+		// Unbound, the goal quest's check waits in gUnbound and BindSession tells
+		// from it whether the seed it binds to was won (the goal isn't known yet).
+		if (gBoundSession == 0) {
+			return;
 		}
+		gSave.goalReached = true;
+		gSave.Save(gSavePath);
 	}
 	SendReady();
 	bool sent = false;
@@ -702,13 +710,22 @@ void BindSession(uint64_t session) {
 	const std::string seed = gClient->Seed();
 	const std::string slot = gClient->Slot();
 	const std::set<int64_t> serverChecked = gClient->Checked();
+	const ap::SlotData slots = gClient->Slots();
+	const int me = gClient->MySlot();
 	size_t unsent = 0;
 	int level = 0;
+	bool unboundGoal = false;
+	std::vector<ap::HintEntry> ownHints;
+	std::vector<int64_t> otherHints;
 	{
 		std::lock_guard lock(gMutex);
 		gSave = {};
 		gSavePath = SaveDirectory() / (SanitizeFileName(seed) + "_" + SanitizeFileName(slot) + ".txt");
 		gSave.Load(gSavePath);
+		// A goal quest finished before this seed was bound left only its check behind (ReachGoal
+		// can't know the seed's goal yet), so it's recognised here, against this seed's goal.
+		unboundGoal = !gSave.goalReached && gUnbound.contains(GoalLocation(slots));
+		gSave.goalReached = gSave.goalReached || unboundGoal;
 		gSave.checks.insert(gUnbound.begin(), gUnbound.end());
 		gUnbound.clear();
 		gSave.checks.insert(serverChecked.begin(), serverChecked.end());
@@ -722,6 +739,22 @@ void BindSession(uint64_t session) {
 		for (const int64_t check : gSave.checks) {
 			unsent += serverChecked.contains(check) ? 0 : 1;
 		}
+		// Hints found in game, sent again: one found while the socket was down only reached the
+		// save. Ones the server already has are kept as they are; ones for locations it has seen
+		// checked in our world are moot.
+		for (const int index : gSave.ownHints) {
+			if (index >= 0 && index < static_cast<int>(slots.hints.size())) {
+				const ap::HintEntry& hint = slots.hints[static_cast<size_t>(index)];
+				if (hint.player != me || !serverChecked.contains(hint.location)) {
+					ownHints.push_back(hint);
+				}
+			}
+		}
+		for (const int64_t location : gSave.otherHints) {
+			if (!serverChecked.contains(location)) {
+				otherHints.push_back(location);
+			}
+		}
 		gSent.clear();
 		gGoalSent = false;
 		gWarnedActs.clear();
@@ -732,11 +765,23 @@ void BindSession(uint64_t session) {
 		gBindPending = false;
 		gCodexDirty = true;
 	}
+	gClient->ResendHints(ownHints, otherHints);
 	SendReady();
+	if (unboundGoal) {
+		bool sent = false;
+		{
+			std::lock_guard lock(gMutex);
+			sent = gGoalSent;
+		}
+		if (!sent) {
+			Feed("Archipelago: goal reached before connecting! It counts once you hold the key for its act.");
+		}
+	}
 	if (level > 0) {
 		CheckLevelMilestones(level);
 	}
-	Log("Archipelago: bound to seed " + seed + " slot " + slot + ", " + std::to_string(unsent) + " checks not on the server yet.");
+	Log("Archipelago: bound to seed " + seed + " slot " + slot + ", " + std::to_string(unsent) + " checks not on the server yet, "
+	    + std::to_string(ownHints.size() + otherHints.size()) + " hints sent again.");
 	CheckInstalledMod(seed);
 	CheckVersion();
 }

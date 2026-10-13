@@ -96,6 +96,14 @@ Built, pushed and installed, still to check in game:
 - [ ] `ap-disconnect` (#69): `ap-status` and the status line say "Disconnected" right away, not "Connected as".
       Find a check while disconnected, then `ap-connect`: the check is sent on reconnect. Also `ap-connect`
       to a server that hangs (e.g. a wrong host) and `ap-disconnect` straight after: no session starts later.
+- [ ] Hints found while disconnected (#71, section 6 options): `ap-disconnect`, then get a hint (Scroll of
+      Prophecy, or a torn page). `ap-hints` lists it, but `!hint` in the text client doesn't. `ap-connect`:
+      the hint now shows in `!hint` (and the other player sees theirs), the plugin log says how many hints were
+      sent again, and reconnecting a second time doesn't repeat the hint messages in the text client.
+- [ ] Goal before connecting (#71): start the game with the server down (so the plugin never connects this
+      launch), finish the goal quest, then start the server and connect. The goal is sent ("goal complete!") and the room shows
+      the slot as finished; with `act_keys` and the goal act still locked, the chat says it counts once you
+      hold the key, and it's sent when the key arrives. A goal-quest kill of the wrong difficulty sends nothing.
 
 Ideas, not started:
 
