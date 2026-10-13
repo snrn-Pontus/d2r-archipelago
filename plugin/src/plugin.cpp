@@ -105,6 +105,9 @@ ap::Config            gConfig;
 ap::SaveState         gSave;
 std::filesystem::path gSavePath;
 uint64_t              gBoundSession = 0;
+// True while GameWork delivers from a snapshot: OnFrame doesn't rebind until it's done, so a pass
+// never spans two sessions (its rewards and its save writes stay with the session it started in).
+bool                  gDelivering = false;
 // Checks found before the first connection, waiting for a seed to bind to.
 std::set<int64_t>     gUnbound;
 bool                  gInGame       = false;
@@ -1919,12 +1922,20 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	const std::vector<ap::NetworkItem>& items = snapshot.items;
 	ap::Config config;
 	size_t delivered = 0;
+	// Holds off a rebind (OnFrame) for the rest of this pass, whichever way it returns.
+	struct DeliveryGuard {
+		~DeliveryGuard() {
+			std::lock_guard lock(gMutex);
+			gDelivering = false;
+		}
+	} guard;
 	{
 		std::lock_guard lock(gMutex);
 		// Not bound, or bound to another session than the snapshot's: the next frame rebinds.
 		if (gBoundSession == 0 || gBoundSession != snapshot.session) {
 			return;
 		}
+		gDelivering = true;
 		config = gConfig;
 		delivered = gSave.fillersDelivered;
 	}
@@ -2076,6 +2087,11 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 
 	std::lock_guard lock(gMutex);
+	// The session can't have changed (gDelivering), but a save for another one would be worse than
+	// a lost pass, so check anyway.
+	if (gBoundSession != snapshot.session) {
+		return;
+	}
 	// The count only ever grows: a shorter list (a server restored from an older save) must not
 	// hand the same rewards out again once it catches up.
 	if (next > delivered) {
@@ -2729,7 +2745,8 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	bool bind = false;
 	{
 		std::lock_guard lock(gMutex);
-		bind = session != 0 && session != gBoundSession;
+		// A delivery pass on the game thread finishes with its session first; the bind waits a frame.
+		bind = session != 0 && session != gBoundSession && !gDelivering;
 	}
 	if (bind) {
 		BindSession(session);
