@@ -560,6 +560,22 @@ class MonsterShuffle(Choice):
     default = 1
 
 
+class MonsterShuffleTolerance(Range):
+    """With Monster Shuffle on anywhere, how many levels above an area the weakest version of its new
+    monsters may be on Normal. Lower keeps early areas easier; higher allows wilder line-ups."""
+    display_name = "Monster Shuffle Tolerance"
+    range_start = 0
+    range_end = 20
+    default = 3
+
+
+class ShuffleCowLevel(Toggle):
+    """The Secret Cow Level joins Monster Shuffle: its cows go to another area (Act I with nearby, anywhere
+    with anywhere) and it gets that area's monsters. The Cow King stays. With nearby, Normal's cows can land in
+    an early Act I area at their full level. Cows count for the 100-cow check wherever they are."""
+    display_name = "Shuffle Cow Level"
+
+
 class SuperUniqueShuffle(Choice):
     """Gives field superuniques (Bishibosh, Rakanishu, Pindleskin...) another superunique's monster type.
     Quest bosses, act bosses, the Chaos Sanctuary seal bosses and Baal's waves are left alone.
@@ -581,12 +597,60 @@ class MainPathSuperUniqueCap(Range):
     default = 2
 
 
+class MainPathSuperUniqueMinions(NamedRange):
+    """With Superunique Shuffle on, the most minions a main-path superunique brings once it's a different
+    monster (Rakanishu brings 8). Superuniques that kept their monster, and the optional ones, aren't capped.
+    Applies after Superunique Minions."""
+    display_name = "Main-Path Superunique Minions"
+    range_start = 0
+    range_end = 18
+    default = 5
+    special_range_names = {"off": -1}
+
+
+class SuperUniqueShuffleSpread(Range):
+    """With Superunique Shuffle on nearby, superuniques are sorted by their monster's level and only swap
+    within groups of this many. Smaller groups keep each one closer to its usual strength."""
+    display_name = "Superunique Shuffle Spread"
+    range_start = 2
+    range_end = 31
+    default = 6
+
+
+class SuperUniqueMinions(Range):
+    """How many minions each field superunique brings, in percent (rounded, at most 18). Quest and act
+    bosses keep theirs."""
+    display_name = "Superunique Minions"
+    range_start = 0
+    range_end = 200
+    default = 100
+
+
 class MonsterDensity(Range):
-    """How many monsters each area spawns, in percent."""
+    """How many monsters each area spawns, in percent. Sets Normal, and Nightmare and Hell unless they
+    have their own value."""
     display_name = "Monster Density"
     range_start = 50
     range_end = 400
     default = 100
+
+
+class MonsterDensityNightmare(NamedRange):
+    """Monster Density on Nightmare, in percent. same: use Monster Density."""
+    display_name = "Monster Density (Nightmare)"
+    range_start = 50
+    range_end = 400
+    default = 0
+    special_range_names = {"same": 0}
+
+
+class MonsterDensityHell(NamedRange):
+    """Monster Density on Hell, in percent. same: use Monster Density."""
+    display_name = "Monster Density (Hell)"
+    range_start = 50
+    range_end = 400
+    default = 0
+    special_range_names = {"same": 0}
 
 
 class ChampionPacks(Range):
@@ -598,11 +662,19 @@ class ChampionPacks(Range):
 
 
 class BetterDrops(Range):
-    """How often monsters drop uniques, set items and rares, in percent."""
+    """How often monsters drop uniques, set items and rares, in percent. Below 100 makes them rarer."""
     display_name = "Better Drops"
-    range_start = 100
+    range_start = 50
     range_end = 500
     default = 150
+
+
+class BetterMagic(Range):
+    """How often monsters drop magic items instead of plain ones, in percent."""
+    display_name = "Better Magic Drops"
+    range_start = 50
+    range_end = 500
+    default = 100
 
 
 class SkillTreeShuffle(Toggle):
@@ -618,12 +690,40 @@ class RunewordShuffle(Toggle):
     display_name = "Runeword Shuffle"
 
 
+class RunewordRuneSpread(Range):
+    """With Runeword Shuffle on, how many tiers each rune in a recipe can move (Tal is 7, Ral 8, Ort 9...).
+    0 keeps every recipe."""
+    display_name = "Runeword Rune Spread"
+    range_start = 0
+    range_end = 10
+    default = 2
+
+
 class ExperienceMultiplier(Range):
-    """Monster experience, in percent. Raise it for shorter games."""
+    """Monster experience, in percent. Raise it for shorter games. Sets Normal, and Nightmare and Hell
+    unless they have their own value."""
     display_name = "Experience Multiplier"
     range_start = 50
     range_end = 500
     default = 150
+
+
+class ExperienceMultiplierNightmare(NamedRange):
+    """Experience Multiplier on Nightmare, in percent. same: use Experience Multiplier."""
+    display_name = "Experience Multiplier (Nightmare)"
+    range_start = 50
+    range_end = 500
+    default = 0
+    special_range_names = {"same": 0}
+
+
+class ExperienceMultiplierHell(NamedRange):
+    """Experience Multiplier on Hell, in percent. same: use Experience Multiplier."""
+    display_name = "Experience Multiplier (Hell)"
+    range_start = 50
+    range_end = 500
+    default = 0
+    special_range_names = {"same": 0}
 
 
 class ItemLevelRequirements(DefaultOnToggle):
@@ -786,14 +886,25 @@ class D2ROptions(PerGameCommonOptions):
     tax_collector_gold: TaxCollectorGold
     junk_backpack_size: JunkBackpackSize
     monster_shuffle: MonsterShuffle
+    monster_shuffle_tolerance: MonsterShuffleTolerance
+    shuffle_cow_level: ShuffleCowLevel
     superunique_shuffle: SuperUniqueShuffle
     main_path_superunique_cap: MainPathSuperUniqueCap
+    main_path_superunique_minions: MainPathSuperUniqueMinions
+    superunique_shuffle_spread: SuperUniqueShuffleSpread
+    superunique_minions: SuperUniqueMinions
     runeword_shuffle: RunewordShuffle
+    runeword_rune_spread: RunewordRuneSpread
     skill_tree_shuffle: SkillTreeShuffle
     monster_density: MonsterDensity
+    monster_density_nightmare: MonsterDensityNightmare
+    monster_density_hell: MonsterDensityHell
     champion_packs: ChampionPacks
     better_drops: BetterDrops
+    better_magic: BetterMagic
     experience_multiplier: ExperienceMultiplier
+    experience_multiplier_nightmare: ExperienceMultiplierNightmare
+    experience_multiplier_hell: ExperienceMultiplierHell
     item_level_requirements: ItemLevelRequirements
     item_stat_requirements: ItemStatRequirements
     show_ground_sockets: ShowGroundSockets
@@ -822,8 +933,11 @@ OPTION_GROUPS = [
     OptionGroup("Traps", [TrapPercentage, JunkBackpackWeight, AmbushWeight, PoisonCloudWeight, FirestormWeight, ManaDrainWeight,
                           TaxCollectorWeight, MercenaryDownWeight, TrapsWaitForTown, AmbushSize, AmbushMonsters, TaxCollectorGold,
                           JunkBackpackSize], start_collapsed=True),
-    OptionGroup("Game Changes", [MonsterShuffle, SuperUniqueShuffle, MainPathSuperUniqueCap, RunewordShuffle, MonsterDensity, ChampionPacks, BetterDrops,
-                                 ExperienceMultiplier, ItemLevelRequirements, ItemStatRequirements]),
+    OptionGroup("Game Changes", [MonsterShuffle, MonsterShuffleTolerance, ShuffleCowLevel, SuperUniqueShuffle, MainPathSuperUniqueCap,
+                                 MainPathSuperUniqueMinions, SuperUniqueShuffleSpread, SuperUniqueMinions, RunewordShuffle,
+                                 RunewordRuneSpread, MonsterDensity, MonsterDensityNightmare, MonsterDensityHell, ChampionPacks,
+                                 BetterDrops, BetterMagic, ExperienceMultiplier, ExperienceMultiplierNightmare,
+                                 ExperienceMultiplierHell, ItemLevelRequirements, ItemStatRequirements]),
     OptionGroup("D2RLoader Settings", [ShowGroundSockets, DisplayItemLevels, ItemStatRanges, MaximumSockets, FloorItemLimit,
                                        SharedStashTabs, MaterialsLimit], start_collapsed=True),
     OptionGroup("Multiworld", [DeathLink]),

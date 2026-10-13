@@ -651,6 +651,16 @@ void TestMonsterShuffle() {
 	ap::randomizer::ShuffleMonsters(a, noFamilies, ap::randomizer::Shuffle::Anywhere, ra);
 	ap::randomizer::ShuffleMonsters(b, noFamilies, ap::randomizer::Shuffle::Anywhere, rb);
 	EXPECT(a.Format() == b.Format());
+
+	// With the cow shuffle on, the Cow Level trades its cows too.
+	bool cowsMoved = false;
+	for (uint32_t seed = 0; seed < 20 && !cowsMoved; ++seed) {
+		auto cows = MakeLevels();
+		std::mt19937 r(seed);
+		ap::randomizer::ShuffleMonsters(cows, noFamilies, ap::randomizer::Shuffle::Anywhere, r, 3, true);
+		cowsMoved = lineup(cows, 7) != lineup(original, 7);
+	}
+	EXPECT(cowsMoved);
 }
 
 void TestMonsterShuffleProtectedAreas() {
@@ -710,12 +720,34 @@ void TestBalancedAnywhere() {
 
 void TestDensityAndDrops() {
 	auto levels = ap::Table::Parse("Name\tMonDen\tMonDen(N)\tMonUMin\tMonUMax\r\nTown\t0\t\t\t\r\nMoor\t800\t1500\t1\t3\r\n");
-	ap::randomizer::ScaleDensity(levels, 200, 300);
-	EXPECT(levels.Cell(0, 1) == "0" && levels.Cell(1, 1) == "1600" && levels.Cell(1, 2) == "3000");
+	ap::randomizer::ScaleDensity(levels, { 200, 50, 100 }, 300);
+	EXPECT(levels.Cell(0, 1) == "0" && levels.Cell(1, 1) == "1600" && levels.Cell(1, 2) == "750");
 	EXPECT(levels.Cell(1, 3) == "3" && levels.Cell(1, 4) == "9");
-	auto ratio = ap::Table::Parse("Function\tUnique\tUniqueDivisor\tUniqueMin\tRare\tSet\r\nNormal\t400\t2\t6400\t160\t125\r\n");
+	auto ratio = ap::Table::Parse("Function\tUnique\tUniqueDivisor\tUniqueMin\tRare\tSet\tMagic\tMagicMin\r\nNormal\t400\t2\t6400\t160\t125\t30\t192\r\n");
 	ap::randomizer::BoostDrops(ratio, 200);
 	EXPECT(ratio.Cell(0, 1) == "200" && ratio.Cell(0, 2) == "2" && ratio.Cell(0, 3) == "3200" && ratio.Cell(0, 4) == "80");
+	EXPECT(ratio.Cell(0, 6) == "30" && ratio.Cell(0, 7) == "192");
+	// Below 100 makes them rarer; magic items have their own percent.
+	ap::randomizer::BoostDrops(ratio, 50, 300);
+	EXPECT(ratio.Cell(0, 1) == "400" && ratio.Cell(0, 6) == "10" && ratio.Cell(0, 7) == "64");
+}
+
+void TestSuperUniqueMinions() {
+	const auto before = ap::Table::Parse("Superunique\tClass\tMinGrp\tMaxGrp\r\nRakanishu\tfallen2\t8\t8\r\nBonebreak\tskeleton1\t5\t5\r\n"
+	                                     "Bishibosh\tfallenshaman1\t2\t2\r\nRadament\tradament\t3\t3\r\n");
+	auto table = before;
+	// Rakanishu (main path) and Bonebreak (optional) got new monsters; Bishibosh kept his.
+	table.Set(0, 1, "cr_archer1");
+	table.Set(1, 1, "fallen2");
+	EXPECT(ap::randomizer::ScaleSuperUniqueMinions(table, before, 100, 4) == 1);
+	EXPECT(table.Cell(0, 2) == "4" && table.Cell(0, 3) == "4" && table.Cell(1, 2) == "5" && table.Cell(2, 2) == "2");
+	auto scaled = before;
+	EXPECT(ap::randomizer::ScaleSuperUniqueMinions(scaled, before, 150, -1) == 3);
+	// Quest bosses keep theirs.
+	EXPECT(scaled.Cell(0, 2) == "12" && scaled.Cell(1, 3) == "8" && scaled.Cell(2, 2) == "3" && scaled.Cell(3, 2) == "3");
+	auto none = before;
+	ap::randomizer::ScaleSuperUniqueMinions(none, before, 0, -1);
+	EXPECT(none.Cell(0, 2) == "0" && none.Cell(0, 3) == "0");
 }
 
 void TestSuperUniqueShuffle() {
@@ -749,6 +781,16 @@ void TestSuperUniqueShuffle() {
 	EXPECT(settings.Stamp().find("superunique_cap") == std::string::npos);
 	settings.mainPathSuperUniqueCap = 2;
 	EXPECT(settings.Stamp().find("superunique_cap=2") != std::string::npos);
+	settings.mainPathSuperUniqueMinions = 4;
+	settings.superUniqueMinions = 50;
+	settings.xpPercent = { 100, 200, 300 };
+	EXPECT(settings.Stamp().find("superunique_minion_cap=4") != std::string::npos && settings.Stamp().find("superunique_minions=50") != std::string::npos);
+	EXPECT(settings.Stamp().find("xp=100/200/300") != std::string::npos);
+	// Tuning for a shuffle that's off leaves the stamp alone.
+	ap::randomizer::Settings quiet;
+	quiet.shuffleTolerance = 9;
+	quiet.runeSpread = 5;
+	EXPECT(quiet.Stamp() == ap::randomizer::Settings {}.Stamp() && !quiet.Any());
 }
 
 void TestRunewordShuffle() {
@@ -764,6 +806,11 @@ void TestRunewordShuffle() {
 	}
 	EXPECT(runes.Cell(1, 3) == "r01");
 	EXPECT(std::stoi(runes.Cell(2, 3).substr(1)) >= 31);
+	// A spread of 0 keeps every recipe.
+	std::mt19937 still(9);
+	const auto before = runes.Format();
+	ap::randomizer::ShuffleRunewords(runes, still, 0);
+	EXPECT(runes.Format() == before);
 }
 
 void TestSuperUniqueMonsters() {
@@ -927,8 +974,10 @@ void TestTableEdits() {
 	EXPECT(skills.Cell(2, 2) == "0" && skills.Cell(2, 3) == "Abyss" && skills.Cell(2, 4).empty());
 
 	auto monlvl = ap::Table::Parse("Level\tXP\tXP(N)\tXP(H)\r\n1\t1\t100\t1000\r\n");
-	ap::randomizer::ScaleExperience(monlvl, 250);
+	ap::randomizer::ScaleExperience(monlvl, { 250, 250, 250 });
 	EXPECT(monlvl.Cell(0, 1) == "2" && monlvl.Cell(0, 2) == "250" && monlvl.Cell(0, 3) == "2500");
+	ap::randomizer::ScaleExperience(monlvl, { 100, 200, 50 });
+	EXPECT(monlvl.Cell(0, 1) == "2" && monlvl.Cell(0, 2) == "500" && monlvl.Cell(0, 3) == "1250");
 
 	auto armor = ap::Table::Parse("name\treqstr\treqdex\tlevelreq\r\nCap\t0\t\t1\r\nMonarch\t156\t\t54\r\n");
 	ap::randomizer::ClearRequirements(armor, true, false);
@@ -1057,6 +1106,7 @@ int main() {
 	TestMonsterShuffleProtectedAreas();
 	TestBalancedAnywhere();
 	TestDensityAndDrops();
+	TestSuperUniqueMinions();
 	TestSuperUniqueShuffle();
 	TestSuperUniqueMonsters();
 	TestShopParcels();

@@ -19,8 +19,10 @@ namespace {
 
 const std::set<std::string> ClassCodes = { "ama", "sor", "nec", "pal", "bar", "dru", "ass", "war" };
 
-// The Cow Level, Arreat Summit and the Pandemonium (uber) levels keep their monsters.
-const std::set<int> FixedLevels = { 39, 120, 133, 134, 135, 136 };
+// Arreat Summit and the Pandemonium (uber) levels keep their monsters, and so
+// does the Cow Level unless its shuffle is on.
+const std::set<int> FixedLevels = { 120, 133, 134, 135, 136 };
+constexpr int CowLevel = 39;
 
 // Superuniques that roam the field (gen_data.py's list). Quest bosses, the
 // Chaos Sanctuary seal bosses and Baal's minion waves are scripted, so they
@@ -33,14 +35,9 @@ auto IsFieldSuperUnique(const std::string& name) -> bool {
 // route needs. The others stand on an act's route or at a quest objective, so
 // the main-path cap keeps them close to their own strength.
 const std::set<std::string> OptionalSuperUniques = { "Bonebreak", "Coldcrow", "Leatherarm", "Ancient Kaa the Soulless", "Snapchip Shatter" };
-
-// Anywhere: an area takes a line-up only if every monster in it has a
-// variant at most this many levels above the area's level.
-constexpr int AnywhereTolerance = 3;
-// Superuniques are swapped within groups of this many, sorted by level.
-constexpr size_t NearbyGroup = 6;
-// Runeword runes are replaced by one at most this many tiers away.
-constexpr int RuneSpread = 2;
+// Scaling never takes a superunique past this many minions (the most in the
+// game is 9, Battlemaid Sarina's).
+constexpr int MaxSuperUniqueMinions = 18;
 
 auto ParseInt(const std::string& text, int fallback = 0) -> int {
 	try {
@@ -58,8 +55,9 @@ void Permute(std::vector<T>& values, std::mt19937& random) {
 } // namespace
 
 auto Settings::Any() const -> bool {
-	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != 100 || !itemLevelRequirements || !itemStatRequirements
-	    || monsterDensity != 100 || championPacks != 100 || betterDrops != 100 || superUniqueChecks || !skillTree.empty() || treeMode;
+	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != PerDifficulty { 100, 100, 100 } || !itemLevelRequirements
+	    || !itemStatRequirements || monsterDensity != PerDifficulty { 100, 100, 100 } || championPacks != 100 || superUniqueMinions != 100
+	    || betterDrops != 100 || betterMagic != 100 || superUniqueChecks || !skillTree.empty() || treeMode;
 }
 
 // A short fingerprint of a skill tree deal, for the mod's stamp.
@@ -75,14 +73,30 @@ auto TreeStamp(const SkillTree& tree) -> std::string {
 }
 
 auto Settings::Stamp() const -> std::string {
-	return "seed=" + std::to_string(seed) + " monsters=" + std::to_string(static_cast<int>(monsters)) + " superuniques="
-	     + std::to_string(static_cast<int>(superUniques))
-	     + (superUniques != Shuffle::Off && mainPathSuperUniqueCap >= 0 ? " superunique_cap=" + std::to_string(mainPathSuperUniqueCap) : "") + " runewords=" + (runewords ? "1" : "0") + " xp=" + std::to_string(xpPercent)
-	     + " levelreqs=" + (itemLevelRequirements ? "1" : "0") + " statreqs=" + (itemStatRequirements ? "1" : "0") + " density="
-	     + std::to_string(monsterDensity) + " packs=" + std::to_string(championPacks) + " drops=" + std::to_string(betterDrops)
-	     // The count, so a mod written for an older superunique list doesn't
-	     // match: the plugin finds each copy by its distance from the end.
-	     + (superUniqueChecks ? " superunique_checks=" + std::to_string(std::size(data::SuperUniques)) : "")
+	const auto perDifficulty = [](const PerDifficulty& values) {
+		return std::to_string(values[0]) + "/" + std::to_string(values[1]) + "/" + std::to_string(values[2]);
+	};
+	std::string stamp = "seed=" + std::to_string(seed) + " monsters=" + std::to_string(static_cast<int>(monsters)) + " superuniques="
+	                  + std::to_string(static_cast<int>(superUniques)) + " runewords=" + (runewords ? "1" : "0") + " xp=" + perDifficulty(xpPercent)
+	                  + " levelreqs=" + (itemLevelRequirements ? "1" : "0") + " statreqs=" + (itemStatRequirements ? "1" : "0")
+	                  + " density=" + perDifficulty(monsterDensity) + " packs=" + std::to_string(championPacks) + " drops=" + std::to_string(betterDrops);
+	// Tuning only shows when it changes something, so the stamp stays short.
+	const auto add = [&](bool used, const char* key, int value) {
+		if (used) {
+			stamp += std::string(" ") + key + "=" + std::to_string(value);
+		}
+	};
+	add(betterMagic != 100, "magic", betterMagic);
+	add(monsters == Shuffle::Anywhere && shuffleTolerance != 3, "tolerance", shuffleTolerance);
+	add(monsters != Shuffle::Off && shuffleCowLevel, "cows", 1);
+	add(superUniques == Shuffle::Nearby && superUniqueSpread != 6, "superunique_spread", superUniqueSpread);
+	add(superUniques != Shuffle::Off && mainPathSuperUniqueCap >= 0, "superunique_cap", mainPathSuperUniqueCap);
+	add(superUniques != Shuffle::Off && mainPathSuperUniqueMinions >= 0, "superunique_minion_cap", mainPathSuperUniqueMinions);
+	add(superUniqueMinions != 100, "superunique_minions", superUniqueMinions);
+	add(runewords && runeSpread != 2, "rune_spread", runeSpread);
+	// The count, so a mod written for an older superunique list doesn't
+	// match: the plugin finds each copy by its distance from the end.
+	return stamp + (superUniqueChecks ? " superunique_checks=" + std::to_string(std::size(data::SuperUniques)) : "")
 	     + (skillTree.empty() ? "" : " skill_tree=" + TreeStamp(skillTree)) + (treeMode ? " tree_mode=1" : "");
 }
 
@@ -333,9 +347,9 @@ private:
 
 // Gives each area a random line-up whose monsters can all be scaled near its
 // level: the lowest areas pick first, from line-ups whose floor (the highest
-// of its monsters' lowest family levels) is within AnywhereTolerance.
+// of its monsters' lowest family levels) is at most `tolerance` above the area.
 auto AssignByLevel(const Table& levels, const std::vector<size_t>& rows, const std::vector<std::vector<std::string>>& lineups, int areaLevel,
-	size_t normalCount, const FamilyLevels& families, std::mt19937& random) -> std::vector<std::vector<std::string>> {
+	size_t normalCount, const FamilyLevels& families, int tolerance, std::mt19937& random) -> std::vector<std::vector<std::string>> {
 	std::vector<int> floors;
 	for (const auto& lineup : lineups) {
 		int floor = 0;
@@ -363,7 +377,7 @@ auto AssignByLevel(const Table& levels, const std::vector<size_t>& rows, const s
 			if (used[i]) {
 				continue;
 			}
-			if (floors[i] <= level + AnywhereTolerance) {
+			if (floors[i] <= level + tolerance) {
 				fits.push_back(i);
 			}
 			if (lowest == SIZE_MAX || floors[i] < floors[lowest]) {
@@ -377,7 +391,7 @@ auto AssignByLevel(const Table& levels, const std::vector<size_t>& rows, const s
 	return assigned;
 }
 
-auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt19937& random) -> int {
+auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt19937& random, int tolerance, bool shuffleCows) -> int {
 	if (mode == Shuffle::Off) {
 		return 0;
 	}
@@ -409,7 +423,8 @@ auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt
 	std::map<int, std::vector<size_t>> groups;
 	for (size_t row = 0; row < levels.Rows().size(); ++row) {
 		const std::string levelId = levels.Cell(row, id);
-		if (levelId.empty() || levels.Cell(row, first).empty() || FixedLevels.contains(ParseInt(levelId))) {
+		if (levelId.empty() || levels.Cell(row, first).empty() || FixedLevels.contains(ParseInt(levelId))
+		    || (!shuffleCows && ParseInt(levelId) == CowLevel)) {
 			continue;
 		}
 		// Scripted areas with no random spawns must neither donate nor receive a line-up.
@@ -444,7 +459,7 @@ auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt
 		auto shuffled = lineups;
 		Permute(shuffled, random);
 		if (mode == Shuffle::Anywhere && areaLevel >= 0) {
-			shuffled = AssignByLevel(levels, rows, lineups, areaLevel, normalCount, families, random);
+			shuffled = AssignByLevel(levels, rows, lineups, areaLevel, normalCount, families, tolerance, random);
 		}
 		for (size_t i = 0; i < rows.size(); ++i) {
 			changed += shuffled[i] != lineups[i] ? 1 : 0;
@@ -465,7 +480,7 @@ auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt
 	return changed;
 }
 
-auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mode, std::mt19937& random, int mainPathCap) -> int {
+auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mode, std::mt19937& random, int mainPathCap, int group) -> int {
 	if (mode == Shuffle::Off) {
 		return 0;
 	}
@@ -488,7 +503,7 @@ auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mod
 	}
 	// Sort by the monster's level so Nearby groups hold similar threats.
 	std::ranges::stable_sort(rows, {}, [&](size_t row) { return monsterLevel[superUniques.Cell(row, cls)]; });
-	const size_t groupSize = mode == Shuffle::Nearby ? NearbyGroup : rows.size();
+	const size_t groupSize = mode == Shuffle::Nearby ? static_cast<size_t>(std::max(2, group)) : rows.size();
 	int changed = 0;
 	for (size_t start = 0; start < rows.size(); start += groupSize) {
 		const size_t end = std::min(rows.size(), start + groupSize);
@@ -524,7 +539,39 @@ auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mod
 	return changed;
 }
 
-auto ShuffleRunewords(Table& runes, std::mt19937& random) -> std::vector<std::string> {
+auto ScaleSuperUniqueMinions(Table& superUniques, const Table& before, int percent, int mainPathMax) -> int {
+	const int key = superUniques.Column("Superunique");
+	const int cls = superUniques.Column("Class");
+	const int minGroup = superUniques.Column("MinGrp");
+	const int maxGroup = superUniques.Column("MaxGrp");
+	const int beforeCls = before.Column("Class");
+	if (key < 0 || cls < 0 || minGroup < 0 || maxGroup < 0) {
+		return 0;
+	}
+	int changed = 0;
+	for (size_t row = 0; row < superUniques.Rows().size(); ++row) {
+		const std::string name = superUniques.Cell(row, key);
+		if (!IsFieldSuperUnique(name)) {
+			continue;
+		}
+		const bool reshaped = beforeCls >= 0 && row < before.Rows().size() && before.Cell(row, beforeCls) != superUniques.Cell(row, cls);
+		const int cap = reshaped && !OptionalSuperUniques.contains(name) && mainPathMax >= 0 ? mainPathMax : INT_MAX;
+		bool edited = false;
+		for (const int column : { minGroup, maxGroup }) {
+			const int original = ParseInt(superUniques.Cell(row, column));
+			// Rounded to nearest, so 8 minions at 150% become 12 and 1 at 50% stays 1.
+			const int scaled = std::min({ (original * percent + 50) / 100, cap, std::max(original, MaxSuperUniqueMinions) });
+			if (scaled != original) {
+				superUniques.Set(row, column, std::to_string(scaled));
+				edited = true;
+			}
+		}
+		changed += edited ? 1 : 0;
+	}
+	return changed;
+}
+
+auto ShuffleRunewords(Table& runes, std::mt19937& random, int spread) -> std::vector<std::string> {
 	static constexpr const char* RuneNames[] = { "El", "Eld", "Tir", "Nef", "Eth", "Ith", "Tal", "Ral", "Ort", "Thul", "Amn", "Sol", "Shael", "Dol", "Hel",
 		"Io", "Lum", "Ko", "Fal", "Lem", "Pul", "Um", "Mal", "Ist", "Gul", "Vex", "Ohm", "Lo", "Sur", "Ber", "Jah", "Cham", "Zod" };
 	const int name = runes.Column("*Rune Name");
@@ -548,7 +595,7 @@ auto ShuffleRunewords(Table& runes, std::mt19937& random) -> std::vector<std::st
 				continue;
 			}
 			const int tier = ParseInt(rune.substr(1));
-			std::uniform_int_distribution<int> pick(std::max(1, tier - RuneSpread), std::min(33, tier + RuneSpread));
+			std::uniform_int_distribution<int> pick(std::max(1, tier - spread), std::min(33, tier + spread));
 			const int replacement = pick(random);
 			char code[4] {};
 			code[0] = 'r';
@@ -859,7 +906,7 @@ auto AddRespecWrit(Table& misc) -> int {
 	return 1;
 }
 
-void ScaleDensity(Table& levels, int densityPercent, int packsPercent) {
+void ScaleDensity(Table& levels, const PerDifficulty& densityPercent, int packsPercent) {
 	auto scale = [&](const char* name, int percent, int low, int high) {
 		const int column = levels.Column(name);
 		for (size_t row = 0; column >= 0 && percent != 100 && row < levels.Rows().size(); ++row) {
@@ -869,39 +916,41 @@ void ScaleDensity(Table& levels, int densityPercent, int packsPercent) {
 			}
 		}
 	};
-	for (const char* name : { "MonDen", "MonDen(N)", "MonDen(H)" }) {
-		scale(name, densityPercent, 1, 9900);
+	const char* density[] = { "MonDen", "MonDen(N)", "MonDen(H)" };
+	for (size_t difficulty = 0; difficulty < std::size(density); ++difficulty) {
+		scale(density[difficulty], densityPercent[difficulty], 1, 9900);
 	}
 	for (const char* name : { "MonUMin", "MonUMax", "MonUMin(N)", "MonUMax(N)", "MonUMin(H)", "MonUMax(H)" }) {
 		scale(name, packsPercent, 1, 255);
 	}
 }
 
-void BoostDrops(Table& itemratio, int percent) {
-	if (percent <= 100) {
-		return;
-	}
-	for (const char* name : { "Unique", "UniqueMin", "Rare", "RareMin", "Set", "SetMin" }) {
-		const int column = itemratio.Column(name);
-		for (size_t row = 0; column >= 0 && row < itemratio.Rows().size(); ++row) {
-			const std::string value = itemratio.Cell(row, column);
-			if (!value.empty() && ParseInt(value) > 0) {
-				itemratio.Set(row, column, std::to_string(std::max(1, ParseInt(value) * 100 / percent)));
+void BoostDrops(Table& itemratio, int percent, int magicPercent) {
+	const auto scale = [&](std::initializer_list<const char*> names, int by) {
+		for (const char* name : names) {
+			const int column = itemratio.Column(name);
+			for (size_t row = 0; column >= 0 && by > 0 && by != 100 && row < itemratio.Rows().size(); ++row) {
+				const std::string value = itemratio.Cell(row, column);
+				if (!value.empty() && ParseInt(value) > 0) {
+					itemratio.Set(row, column, std::to_string(std::max(1, ParseInt(value) * 100 / by)));
+				}
 			}
 		}
-	}
+	};
+	scale({ "Unique", "UniqueMin", "Rare", "RareMin", "Set", "SetMin" }, percent);
+	scale({ "Magic", "MagicMin" }, magicPercent);
 }
 
-void ScaleExperience(Table& monlvl, int percent) {
-	if (percent == 100) {
-		return;
-	}
-	for (const char* name : { "XP", "XP(N)", "XP(H)", "L-XP", "L-XP(N)", "L-XP(H)" }) {
-		const int column = monlvl.Column(name);
-		for (size_t row = 0; column >= 0 && row < monlvl.Rows().size(); ++row) {
-			const std::string value = monlvl.Cell(row, column);
-			if (!value.empty()) {
-				monlvl.Set(row, column, std::to_string(static_cast<long long>(ParseInt(value)) * percent / 100));
+void ScaleExperience(Table& monlvl, const PerDifficulty& percent) {
+	const char* columns[][2] = { { "XP", "L-XP" }, { "XP(N)", "L-XP(N)" }, { "XP(H)", "L-XP(H)" } };
+	for (size_t difficulty = 0; difficulty < std::size(columns); ++difficulty) {
+		for (const char* name : columns[difficulty]) {
+			const int column = monlvl.Column(name);
+			for (size_t row = 0; column >= 0 && percent[difficulty] != 100 && row < monlvl.Rows().size(); ++row) {
+				const std::string value = monlvl.Cell(row, column);
+				if (!value.empty()) {
+					monlvl.Set(row, column, std::to_string(static_cast<long long>(ParseInt(value)) * percent[difficulty] / 100));
+				}
 			}
 		}
 	}

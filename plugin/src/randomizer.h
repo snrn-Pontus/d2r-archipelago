@@ -5,6 +5,7 @@
 
 #include "table.h"
 
+#include <array>
 #include <cstdint>
 #include <random>
 #include <string>
@@ -16,6 +17,9 @@ namespace ap::randomizer {
 // Must match the apworld's MonsterShuffle and SuperUniqueShuffle choices.
 enum class Shuffle : int { Off = 0, Nearby = 1, Anywhere = 2 };
 
+// One value for each difficulty: Normal, Nightmare, Hell.
+using PerDifficulty = std::array<int, 3>;
+
 // The skill tree shuffle: (skill id, id of the skill whose tree slot it takes).
 using SkillTree = std::vector<std::pair<uint32_t, uint32_t>>;
 
@@ -25,14 +29,27 @@ struct Settings {
 	Shuffle  superUniques = Shuffle::Off;
 	// Levels a main-path superunique's new monster may be above its own; negative is no cap.
 	int      mainPathSuperUniqueCap = -1;
+	// Most minions a main-path superunique with a new monster brings; negative is no cap.
+	int      mainPathSuperUniqueMinions = -1;
+	// Superuniques are swapped within groups of this many (Nearby), sorted by level.
+	int      superUniqueSpread = 6;
+	// Anywhere: an area takes a line-up only if every monster in it has a
+	// variant at most this many levels above the area's level.
+	int      shuffleTolerance = 3;
+	// The Secret Cow Level trades line-ups too.
+	bool     shuffleCowLevel = false;
 	bool     runewords = false;
-	int      xpPercent = 100;
+	// Runeword runes are replaced by one at most this many tiers away.
+	int      runeSpread = 2;
 	bool     itemLevelRequirements = true;
 	bool     itemStatRequirements = true;
 	// Percentages; 100 leaves the game as it is.
-	int      monsterDensity = 100;
+	PerDifficulty xpPercent = { 100, 100, 100 };
+	PerDifficulty monsterDensity = { 100, 100, 100 };
 	int      championPacks = 100;
+	int      superUniqueMinions = 100;
 	int      betterDrops = 100;
+	int      betterMagic = 100;
 	// Field superuniques get monster rows of their own, so their kills are checks.
 	bool     superUniqueChecks = false;
 	// The skill tree shuffle: (skill id, id of the skill whose tree slot it takes).
@@ -83,22 +100,30 @@ auto ApplySkillTrees(Table& skills, Table& skilldesc, const SkillTree& tree) -> 
 // Worldstone Keep line-up in the Blood Moor is beatable (idea from
 // mapron/d2modgen). Nightmare and Hell already scale monsters to the area.
 // Returns how many areas got a new line-up.
-auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt19937& random) -> int;
+// `tolerance` is how many levels above an area Anywhere lets its line-up's
+// lowest variants be. The Secret Cow Level keeps its cows unless shuffleCows.
+auto ShuffleMonsters(Table& levels, const Table& monstats, Shuffle mode, std::mt19937& random, int tolerance = 3, bool shuffleCows = false) -> int;
 
-// Scales monster density and champion/unique pack counts, in percent.
-void ScaleDensity(Table& levels, int densityPercent, int packsPercent);
+// Scales monster density (per difficulty) and champion/unique pack counts, in percent.
+void ScaleDensity(Table& levels, const PerDifficulty& densityPercent, int packsPercent);
 
-// Makes uniques, set items and rares drop more often: divides their ratios
-// in ItemRatio by percent / 100.
-void BoostDrops(Table& itemratio, int percent);
+// Changes how often monsters drop uniques, set items and rares (percent) and
+// magic items (magicPercent): divides their ratios in ItemRatio by percent / 100.
+void BoostDrops(Table& itemratio, int percent, int magicPercent = 100);
 
 // Gives field superuniques (Bishibosh, Pindleskin...) another superunique's
 // monster type. Quest and scripted bosses keep theirs. Nearby only swaps
 // between monsters of similar level. With mainPathCap of 0 or more, a
 // superunique on the main path (an act's route or a quest objective) only gets
 // a monster at most that many levels above its own; negative means no cap.
-// Returns how many changed.
-auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mode, std::mt19937& random, int mainPathCap = -1) -> int;
+// Nearby swaps within groups of `group`. Returns how many changed.
+auto ShuffleSuperUniques(Table& superUniques, const Table& monstats, Shuffle mode, std::mt19937& random, int mainPathCap = -1, int group = 6) -> int;
+
+// Scales the field superuniques' minion counts (MinGrp/MaxGrp) by percent.
+// A main-path superunique whose monster differs from `before` (the table as it
+// was before the shuffle) then brings at most mainPathMax, unless that's negative.
+// Returns how many superuniques changed.
+auto ScaleSuperUniqueMinions(Table& superUniques, const Table& before, int percent, int mainPathMax) -> int;
 
 // Gives each field superunique (data::SuperUniques, in order) a monster row of
 // its own, a copy of its current monster appended to MonStats, so a kill tells
@@ -111,7 +136,8 @@ auto AddSuperUniqueMonsters(Table& monstats, Table& superUniques, std::vector<st
 
 // Rewrites each runeword's recipe with runes of a similar tier. Returns the new
 // recipes, one "Name: Rune Rune ..." line each.
-auto ShuffleRunewords(Table& runes, std::mt19937& random) -> std::vector<std::string>;
+// Each rune moves at most `spread` tiers.
+auto ShuffleRunewords(Table& runes, std::mt19937& random, int spread = 2) -> std::vector<std::string>;
 
 // Appends the "Archipelago Codex" unique small charm (level 1, never drops) as
 // record `record`, unless the table already has it. The plugin adds the
@@ -168,8 +194,8 @@ inline constexpr char RespecName[] = "Writ of Absolution";
 inline constexpr int  RespecCost   = 1000;
 auto AddRespecWrit(Table& misc) -> int;
 
-// Multiplies monster experience on every difficulty.
-void ScaleExperience(Table& monlvl, int percent);
+// Multiplies monster experience, in percent for each difficulty.
+void ScaleExperience(Table& monlvl, const PerDifficulty& percent);
 
 // Clears level and/or strength and dexterity requirements in an item table
 // (weapons, armor, misc, uniqueitems, setitems).

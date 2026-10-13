@@ -57,6 +57,15 @@ Built, pushed and installed, still to check in game:
       in Tristram and Rakanishu in Stony Field are no tougher than their usual selves (no level-15 mummy for
       Griswold); the stronger swaps show up in the Crypt, the Cave or the Stony Tomb. With the cap at 50,
       Griswold can be strong again.
+- [ ] Shuffle tuning (#38, new seed needed): with defaults, a reshaped Rakanishu brings 5 minions, not 8;
+      Bishibosh, if he kept his Fallen Shaman, still brings his 2. `superunique_minions: 50` halves every field
+      superunique's pack and setup says how many got a new count. `monster_density_hell: 300` makes Hell
+      crowded while Normal stays as set, and `experience_multiplier_nightmare` changes only Nightmare's
+      experience (compare a kill's XP in the Blood Moor on Normal and Nightmare). `better_magic: 300` gives
+      noticeably more blue items. `shuffle_cow_level: true` with `monster_shuffle: anywhere`: the Cow Level has
+      other monsters, the Cow King is still there, and the cows turn up in some other area, where killing 100
+      still sends the cow check. `runeword_rune_spread: 0` with `runeword_shuffle` leaves `runewords.txt`
+      showing the usual recipes.
 - [ ] Unspawnable superuniques dropped (issue #28, new seed needed): `ap-missing` and the Ledger list 31
       superunique checks per difficulty, none without an area. Frigid Highlands has Eldritch, Sharptooth
       Slayer and Eyeback but no Axe Dweller, Anodized Elite, Vinvear Molech, Magma Torquer or Blaze Ripper.

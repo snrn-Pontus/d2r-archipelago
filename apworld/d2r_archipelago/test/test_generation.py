@@ -254,6 +254,12 @@ class TestShortGame(D2RTestBase):
         self.assertEqual(data["level_cap"], 10)
         self.assertEqual(data["randomizer"]["monster_shuffle"], 1)
         self.assertEqual(data["randomizer"]["main_path_superunique_cap"], 2)
+        self.assertEqual(data["randomizer"]["main_path_superunique_minions"], 5)
+        self.assertEqual(data["randomizer"]["superunique_shuffle_spread"], 6)
+        self.assertEqual(data["randomizer"]["runeword_rune_spread"], 2)
+        # Nightmare and Hell follow Normal by default.
+        self.assertEqual(data["randomizer"]["xp_multiplier_hell"], data["randomizer"]["xp_multiplier"])
+        self.assertEqual(data["randomizer"]["monster_density_nightmare"], data["randomizer"]["monster_density"])
         self.assertTrue(data["superunique_checks"])
         self.assertFalse(data["death_link"])
         self.assertEqual(data["hint_sources"], {"cain": True, "page_chance": 25, "prophecy_shop": True})
@@ -554,6 +560,20 @@ class TestDruidFullStart(D2RTestBase):
             for skill in starting:
                 if skill in SKILL_FORMS:
                     self.assertTrue(starting & set(SKILL_FORMS[skill]), f"seed {seed}: starting {skill} without a starting form")
+
+
+class TestShuffleTuning(D2RTestBase):
+    options = {"experience_multiplier": 200, "experience_multiplier_hell": 400, "monster_density_nightmare": 300,
+               "main_path_superunique_minions": "off", "better_drops": 50, "shuffle_cow_level": True}
+
+    def test_slot_data(self) -> None:
+        randomizer = self.world.fill_slot_data()["randomizer"]
+        self.assertEqual((randomizer["xp_multiplier"], randomizer["xp_multiplier_nightmare"], randomizer["xp_multiplier_hell"]),
+                         (200, 200, 400))
+        self.assertEqual((randomizer["monster_density_nightmare"], randomizer["monster_density_hell"]), (300, 100))
+        self.assertEqual(randomizer["main_path_superunique_minions"], -1)
+        self.assertEqual(randomizer["better_drops"], 50)
+        self.assertTrue(randomizer["shuffle_cow_level"])
 
 
 class TestClassWeightedBackfill(D2RTestBase):

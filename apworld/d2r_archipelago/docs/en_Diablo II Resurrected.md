@@ -125,15 +125,22 @@ The setup tool rewrites the game's tables for your seed:
 
 - `monster_shuffle`: areas trade monster line-ups, within their act (`nearby`) or from any act (`anywhere`).
   With `anywhere`, Normal-difficulty monsters are levelled to fit: each area only gets line-ups whose
-  monsters have a version near its level, and each monster becomes that version.
+  monsters have a version near its level, and each monster becomes that version
+  (`monster_shuffle_tolerance` levels above the area at most, default 3). `shuffle_cow_level` lets the Secret
+  Cow Level join in.
 - `superunique_shuffle`: field superuniques like Bishibosh and Pindleskin become other monsters. Quest and
   act bosses stay as they are. `main_path_superunique_cap` (default 2) keeps the ones you can't avoid, like
   Rakanishu and Griswold, within that many levels of their own monster; the tougher swaps land in optional
-  dungeons (the Crypt, the Cave, the Stony Tomb, Tal Rasha's tombs and the Icy Cellar).
-- `runeword_shuffle`: every runeword gets a new recipe of similar-tier runes, listed in `runewords.txt` in the
-  mod folder.
-- `monster_density`, `champion_packs` and `better_drops` (uniques, sets and rares) in percent.
+  dungeons (the Crypt, the Cave, the Stony Tomb, Tal Rasha's tombs and the Icy Cellar). Once one of those
+  main-path superuniques is a new monster, it brings at most `main_path_superunique_minions` minions
+  (default 5). `superunique_shuffle_spread` sets how many swap together with `nearby` (default 6), and
+  `superunique_minions` scales every field superunique's minions in percent.
+- `runeword_shuffle`: every runeword gets a new recipe of similar-tier runes (`runeword_rune_spread` tiers
+  away at most, default 2), listed in `runewords.txt` in the mod folder.
+- `monster_density`, `champion_packs`, `better_drops` (uniques, sets and rares) and `better_magic` in percent.
 - `experience_multiplier`, `item_level_requirements` and `item_stat_requirements`.
+- `monster_density_nightmare`, `monster_density_hell`, `experience_multiplier_nightmare` and
+  `experience_multiplier_hell` override Nightmare and Hell; `same` (the default) follows the Normal value.
 
 ## What do other items look like?
 

@@ -613,16 +613,28 @@ class D2RWorld(World):
                 "monster_shuffle": self.options.monster_shuffle.value,
                 "superunique_shuffle": self.options.superunique_shuffle.value,
                 "main_path_superunique_cap": self.options.main_path_superunique_cap.value,
+                "main_path_superunique_minions": self.options.main_path_superunique_minions.value,
+                "superunique_shuffle_spread": self.options.superunique_shuffle_spread.value,
+                "superunique_minions": self.options.superunique_minions.value,
+                "monster_shuffle_tolerance": self.options.monster_shuffle_tolerance.value,
+                "shuffle_cow_level": bool(self.options.shuffle_cow_level),
                 "runeword_shuffle": bool(self.options.runeword_shuffle),
+                "runeword_rune_spread": self.options.runeword_rune_spread.value,
                 # Skill tree shuffle: [skill id, id of the skill whose tree slot it takes], for moved skills.
                 "skill_tree": sorted([skill, slot] for skill, slot in self.skill_tree.items() if skill != slot),
                 # Tree mode keeps the trees' level requirements (the Codex needs them at 0).
                 "tree_mode": self.tree_mode,
+                # Nightmare and Hell resolved here: "same" (0) takes the Normal value.
                 "xp_multiplier": self.options.experience_multiplier.value,
+                "xp_multiplier_nightmare": self.options.experience_multiplier_nightmare.value or self.options.experience_multiplier.value,
+                "xp_multiplier_hell": self.options.experience_multiplier_hell.value or self.options.experience_multiplier.value,
                 "item_level_requirements": bool(self.options.item_level_requirements),
                 "item_stat_requirements": bool(self.options.item_stat_requirements),
                 "monster_density": self.options.monster_density.value,
+                "monster_density_nightmare": self.options.monster_density_nightmare.value or self.options.monster_density.value,
+                "monster_density_hell": self.options.monster_density_hell.value or self.options.monster_density.value,
                 "champion_packs": self.options.champion_packs.value,
                 "better_drops": self.options.better_drops.value,
+                "better_magic": self.options.better_magic.value,
             },
         }
