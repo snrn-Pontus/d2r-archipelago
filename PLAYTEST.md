@@ -258,6 +258,7 @@ Restart D2R after updating the plugin: the game caches panel layouts.
       returns to the main panel. Cancel then opening another action never runs the cancelled action.
 - [ ] Start reconnecting to another AP slot while a confirmation is open: the old confirmation refuses
       to run even before the handshake finishes (also test a refused/unreachable server).
+      Relearn cannot open while connecting/refused or before the current slot is bound to the game.
       Leaving the D2R game also cancels a pending dialog, including when joining another character.
 - [ ] Clicks on the panel don't move the character or hit anything behind it.
 - [ ] Controller: all three columns, Close, Confirm and Cancel can be reached and pressed; entering

@@ -811,14 +811,25 @@ void TestPanelConnectionTarget() {
 		{"cmd":"ReceivedItems","index":0,"items":[{"item":2430054,"location":-2,"player":1}]}])json");
 	// A pending dialog must become stale as soon as another connection is requested,
 	// while the previous accepted session generation still matches.
+	EXPECT(client.HasCurrentSession());
 	const auto accepted = client.SessionGeneration();
 	const auto target = client.TargetGeneration();
 	client.Connect("localhost:1", "OtherSlot", "");
 	EXPECT(client.TargetGeneration() == target + 1);
+	EXPECT(!client.HasCurrentSession());
 	EXPECT(client.SessionGeneration() == accepted);
 	client.Disconnect();
 	EXPECT(client.TargetGeneration() == target + 2);
 	EXPECT(client.SessionGeneration() == accepted);
+	EXPECT(!client.HasCurrentSession());
+	// A late Connected from the old socket must not count as acceptance of the
+	// newly requested target. Feed explicit connection generations deterministically.
+	client.Handle(R"json([{"cmd":"Connected"}])json", target);
+	EXPECT(!client.HasCurrentSession());
+	client.Handle(R"json([{"cmd":"Connected"}])json", client.TargetGeneration());
+	EXPECT(client.HasCurrentSession());
+	client.Handle(R"json([{"cmd":"ConnectionRefused","errors":["InvalidSlot"]}])json", client.TargetGeneration());
+	EXPECT(!client.HasCurrentSession());
 }
 
 void TestClientDeathLink() {

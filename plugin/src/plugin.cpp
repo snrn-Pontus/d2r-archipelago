@@ -5051,6 +5051,17 @@ auto PanelOpen(D2RL::Panels::RegistrationHandle handle) -> bool {
 		&& info.presentationState == D2RL::Panels::PresentationState::Open;
 }
 
+// Relearn reads the character-bound save. A pending/refused connection must not
+// reuse the previous slot's unlocked skills, even if its dialog was opened later.
+auto PanelRelearnReady() -> bool {
+	if (!gClient->HasCurrentSession()) {
+		return false;
+	}
+	const auto session = gClient->SessionGeneration();
+	std::lock_guard lock(gMutex);
+	return gInGame && gBoundSession != 0 && gBoundSession == session;
+}
+
 // Confirmation is a separate panel. Escape/Cancel just close it.
 void RunPanelButton(std::string_view id) {
 	if (ap::panel::Find(ap::panel::Repairs(), id) != nullptr) {
@@ -5087,6 +5098,11 @@ void RunPanelButton(std::string_view id) {
 	if (button == nullptr || !PanelOpen(handle)) {
 		return;
 	}
+	if ((id == "relearn" || id == "confirm-relearn") && !PanelRelearnReady()) {
+		gPanels->closePanel(gContext, handle);
+		Reply("Relearn Skills needs an accepted Archipelago connection bound to this game. Try again after connecting.");
+		return;
+	}
 	if (button->confirm) {
 		const auto* dialog = ap::panel::ConfirmationFor(id);
 		if (dialog == nullptr) {
@@ -5116,7 +5132,7 @@ void RunPanelButton(std::string_view id) {
 			RunPanelCommand(part);
 			continue;
 		}
-		if (gClient->State() != ap::ConnectionState::Connected) {
+		if (!gClient->HasCurrentSession()) {
 			Reply("Not connected to Archipelago: " + gClient->StatusText());
 			return;
 		}
