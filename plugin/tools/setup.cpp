@@ -695,7 +695,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	fs::remove_all(mpq / "data" / "hd" / "global" / "ui" / "controller" / "panel" / "spells", error);
 	// And the superunique models, which only Superunique Checks write.
 	fs::remove(mpq / "data" / "hd" / "character" / "monsters.json", error);
-	if (!AddItemNames(storage, mpq, { "Archipelago Codex", rnd::ParcelName, rnd::ProphecyName, rnd::LedgerName })) {
+	if (!AddItemNames(storage, mpq, { "Archipelago Codex", rnd::ParcelName, rnd::ProphecyName, rnd::LedgerName, rnd::RespecName })) {
 		std::printf("  couldn't add the Codex's name; it will show as \"An Evil Force\"\n");
 	}
 	if (!AddParcelGraphics(storage, mpq)) {
