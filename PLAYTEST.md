@@ -88,6 +88,11 @@ Built, pushed and installed, still to check in game:
       tooltips show item levels, the shared stash has 10 extra tabs (after Stash Access with Stash Lock) and
       runes stack past 99. D2RLoader's Options show the mod's values winning. Then a seed with everything at
       `keep`: your own D2RLoader settings are back. Watch the loader log for a complaint about the mod file.
+- [ ] Character switch (#72, `level_checks` on): play a high-level character (any seed), Save and Exit,
+      then connect a fresh seed and start a level 1 character. No level checks are sent (`ap-missing` still
+      lists them all), the Codex is built for the new class, and loot isn't high-level. With
+      `traps_wait_for_town`, a trap sent right as the game loads in town waits until you leave town.
+      Level 6 from the debug panel then sends only the level-5 check.
 
 Ideas, not started:
 
