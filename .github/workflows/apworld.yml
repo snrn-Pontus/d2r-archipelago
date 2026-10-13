@@ -1,0 +1,65 @@
+# Runs the apworld's tests and a fuzz pass against the oldest Archipelago the apworld supports
+# (minimum_ap_version in archipelago.json).
+name: apworld
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "apworld/**"
+      - "tools/fuzz_apworld.py"
+      - ".github/workflows/apworld.yml"
+  pull_request:
+    paths:
+      - "apworld/**"
+      - "tools/fuzz_apworld.py"
+      - ".github/workflows/apworld.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read minimum Archipelago version
+        id: ap
+        run: echo "version=$(jq -r .minimum_ap_version apworld/d2r_archipelago/archipelago.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: ArchipelagoMW/Archipelago
+          ref: ${{ steps.ap.outputs.version }}
+          path: ap
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ap/requirements.txt
+
+      - name: Install Archipelago's requirements
+        working-directory: ap
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-subtests
+          python ModuleUpdate.py --yes --force
+          python Launcher.py --update_settings
+
+      - name: Link the apworld
+        run: ln -s "$GITHUB_WORKSPACE/apworld/d2r_archipelago" ap/worlds/d2r_archipelago
+
+      - name: Apworld tests
+        working-directory: ap
+        run: python -m pytest -q worlds/d2r_archipelago/test
+
+      - name: Fuzz 100 seeds
+        run: python tools/fuzz_apworld.py ap 100

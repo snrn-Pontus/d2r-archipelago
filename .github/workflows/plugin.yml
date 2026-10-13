@@ -1,0 +1,37 @@
+# Builds the plugin, setup tool and unit tests with Visual Studio 2022 and runs ap_tests.
+# Windows minutes count double on a private repo, so this only runs when the plugin changes.
+name: plugin
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "plugin/**"
+      - ".github/workflows/plugin.yml"
+  pull_request:
+    paths:
+      - "plugin/**"
+      - ".github/workflows/plugin.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build
+        shell: cmd
+        run: plugin\build.cmd
+
+      - name: ap_tests
+        shell: cmd
+        run: plugin\build\ap_tests.exe
