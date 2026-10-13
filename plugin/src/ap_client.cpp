@@ -797,6 +797,11 @@ auto Client::StatusText() const -> std::string {
 	return status_;
 }
 
+auto Client::TargetGeneration() const -> uint64_t {
+	std::lock_guard lock(mutex_);
+	return targetGeneration_;
+}
+
 auto Client::SessionGeneration() const -> uint64_t {
 	std::lock_guard lock(mutex_);
 	return sessionGeneration_;

@@ -142,6 +142,8 @@ public:
 
 	auto State() const -> ConnectionState;
 	auto StatusText() const -> std::string;
+	// Bumped immediately on every Connect/Disconnect request, before any handshake.
+	auto TargetGeneration() const -> uint64_t;
 	// Bumped on every successful Connected packet.
 	auto SessionGeneration() const -> uint64_t;
 	// The session generation while Connected, else 0: the session there is to bind to. Between an

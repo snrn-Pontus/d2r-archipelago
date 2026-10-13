@@ -805,6 +805,22 @@ void TestClientSurvivesBadPackets() {
 	EXPECT(client.State() == ap::ConnectionState::Idle && client.StatusText().starts_with("Disconnected."));
 }
 
+void TestPanelConnectionTarget() {
+	ap::Client client([](const std::string&) {});
+	client.Handle(R"json([{"cmd":"Connected","checked_locations":[2420001],"missing_locations":[2420002]},
+		{"cmd":"ReceivedItems","index":0,"items":[{"item":2430054,"location":-2,"player":1}]}])json");
+	// A pending dialog must become stale as soon as another connection is requested,
+	// while the previous accepted session generation still matches.
+	const auto accepted = client.SessionGeneration();
+	const auto target = client.TargetGeneration();
+	client.Connect("localhost:1", "OtherSlot", "");
+	EXPECT(client.TargetGeneration() == target + 1);
+	EXPECT(client.SessionGeneration() == accepted);
+	client.Disconnect();
+	EXPECT(client.TargetGeneration() == target + 2);
+	EXPECT(client.SessionGeneration() == accepted);
+}
+
 void TestClientDeathLink() {
 	ap::Client client([](const std::string&) {});
 	client.Connect("localhost", "Snrn", "");
@@ -1669,6 +1685,7 @@ int main() {
 	TestGoldExperienceCharms();
 	TestShrinesAndTraps();
 	TestClientParsesServerPackets();
+	TestPanelConnectionTarget();
 	TestClientSurvivesBadPackets();
 	TestClientDeathLink();
 	TestHintPackets();

@@ -103,6 +103,7 @@ bool gNativeRepairDispatch = false;
 // UI-thread-only: one handle per confirmation, no pending action after Cancel.
 std::array<D2RL::Panels::RegistrationHandle, 3> gConfirmPanels {};
 std::array<uint64_t, 3> gConfirmSessions {};
+std::array<uint64_t, 3> gConfirmTargets {};
 std::array<uint64_t, 3> gConfirmGames {};
 uint64_t gPanelGame = 0;
 
@@ -5073,7 +5074,8 @@ void RunPanelButton(std::string_view id) {
 				if (!PanelOpen(handle)) {
 					return;
 				}
-				if (gConfirmSessions[i] != gClient->SessionGeneration() || gConfirmGames[i] != gPanelGame) {
+				if (gConfirmTargets[i] != gClient->TargetGeneration()
+					|| gConfirmSessions[i] != gClient->SessionGeneration() || gConfirmGames[i] != gPanelGame) {
 					gPanels->closePanel(gContext, handle);
 					Reply("The session changed. Open the command panel again.");
 					return;
@@ -5095,6 +5097,7 @@ void RunPanelButton(std::string_view id) {
 			return;
 		}
 		// Missing registrations or failed opens never fall through to the action.
+		gConfirmTargets[index] = gClient->TargetGeneration();
 		gConfirmSessions[index] = gClient->SessionGeneration();
 		gConfirmGames[index] = gPanelGame;
 		if (gConfirmPanels[index] == D2RL::Panels::InvalidHandle

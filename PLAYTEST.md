@@ -256,7 +256,8 @@ Restart D2R after updating the plugin: the game caches panel layouts.
       Relearn restores missing AP tree skills after a respec without needing to type a command.
 - [ ] Double-clicking Confirm runs the action once. Opening F9 during a dialog closes that dialog and
       returns to the main panel. Cancel then opening another action never runs the cancelled action.
-- [ ] Reconnect to another AP slot while a confirmation is open: the old confirmation refuses to run.
+- [ ] Start reconnecting to another AP slot while a confirmation is open: the old confirmation refuses
+      to run even before the handshake finishes (also test a refused/unreachable server).
       Leaving the D2R game also cancels a pending dialog, including when joining another character.
 - [ ] Clicks on the panel don't move the character or hit anything behind it.
 - [ ] Controller: all three columns, Close, Confirm and Cancel can be reached and pressed; entering
