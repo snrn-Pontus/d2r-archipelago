@@ -174,6 +174,12 @@ int                   gCurrentLevel = -1;
 auto IsTown(int level) -> bool {
 	return level == 1 || level == 40 || level == 75 || level == 103 || level == 109;
 }
+
+// Whether traps that wait for town are held. An unknown area (the start of a
+// game) holds them too, since it may well be town. Call with gMutex held.
+auto TrapsHeld(bool waitForTown) -> bool {
+	return waitForTown && (gCurrentLevel < 0 || IsTown(gCurrentLevel));
+}
 std::atomic<bool>     gCommandsQueued;
 
 // What's locked right now (slot data minus the lock items received), and the
@@ -203,7 +209,7 @@ bool                  gPlayerDead = false;
 Clock::time_point     gPlayerReadyAt;
 Clock::time_point     gNextQuestScan;
 
-// Highest character level seen; 0 until a level-up event or a save says.
+// Highest character level seen in this game; 0 until a level event says.
 int                   gPlayerLevel  = 0;
 // Where the character is, for estimating its level before that.
 int                   gDifficulty   = 0;
@@ -212,8 +218,16 @@ int                   gDifficulty   = 0;
 bool                  gDifficultyKnown = false;
 std::vector<int>      gPendingAreas;
 int                   gAct          = 0;
-// The player's class id seen in game (from the killer of a monster), or -1.
+// The player's class id seen in this game (from the killer of a monster), or -1.
 int                   gPlayerClass  = -1;
+
+// The next game may be another character, or another seed's, so what the old
+// one said about the player and its area doesn't carry over. Call with gMutex held.
+void ForgetPlayer() {
+	gPlayerLevel  = 0;
+	gPlayerClass  = -1;
+	gCurrentLevel = -1;
+}
 
 // D2 class ids, in order.
 constexpr const char* ClassNames[] = { "Amazon", "Sorceress", "Necromancer", "Paladin", "Barbarian", "Druid", "Assassin", "Warlock" };
@@ -698,6 +712,12 @@ void BindSession(uint64_t session) {
 		gSave.checks.insert(gUnbound.begin(), gUnbound.end());
 		gUnbound.clear();
 		gSave.checks.insert(serverChecked.begin(), serverChecked.end());
+		// Only this game's character counts: the save keeps its own level and
+		// class, and level checks come from what this game has seen.
+		gSave.level = std::max(gSave.level, gPlayerLevel);
+		if (gPlayerClass >= 0) {
+			gSave.playerClass = gPlayerClass;
+		}
 		gSave.Save(gSavePath);
 		for (const int64_t check : gSave.checks) {
 			unsent += serverChecked.contains(check) ? 0 : 1;
@@ -706,12 +726,6 @@ void BindSession(uint64_t session) {
 		gGoalSent = false;
 		gWarnedActs.clear();
 		gKeyItems = UINT64_MAX;
-		gPlayerLevel = std::max(gPlayerLevel, gSave.level);
-		gSave.level = gPlayerLevel;
-		if (gPlayerClass < 0) {
-			gPlayerClass = gSave.playerClass;
-		}
-		gSave.playerClass = gPlayerClass;
 		level = gPlayerLevel;
 		gBoundSession = session;
 		gRepairOffer.Cancel();
@@ -1149,7 +1163,13 @@ auto GiveJunk(D2RL::PlayerHandle player, int most, std::mt19937& random) -> int 
 
 auto EffectiveLevel() -> int {
 	std::lock_guard lock(gMutex);
-	return gPlayerLevel > 0 ? gPlayerLevel : ap::loot::EstimateLevel(gDifficulty, gAct);
+	if (gPlayerLevel > 0) {
+		return gPlayerLevel;
+	}
+	if (gBoundSession != 0 && gSave.level > 0) {
+		return gSave.level;
+	}
+	return ap::loot::EstimateLevel(gDifficulty, gAct);
 }
 
 struct CodexScan {
@@ -1991,7 +2011,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	int playerClass = -1;
 	{
 		std::lock_guard lock(gMutex);
-		playerClass = gPlayerClass;
+		playerClass = gPlayerClass >= 0 || gBoundSession == 0 ? gPlayerClass : gSave.playerClass;
 	}
 	if (playerClass < 0) {
 		playerClass = ClassIndex(slots.characterClass);
@@ -2176,7 +2196,7 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 			gCommandQueue.erase(gCommandQueue.begin(), gCommandQueue.begin() + take);
 			gNextCommandsAt = Clock::now() + CommandGap;
 		}
-		if (!gTrapQueue.empty() && Clock::now() >= gNextTrapAt && (!settings.waitForTown || !IsTown(gCurrentLevel))) {
+		if (!gTrapQueue.empty() && Clock::now() >= gNextTrapAt && !TrapsHeld(settings.waitForTown)) {
 			traps.push_back(gTrapQueue.front());
 			gTrapQueue.erase(gTrapQueue.begin());
 		}
@@ -2840,7 +2860,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		cows.swap(gCowQueue);
 		collections.swap(gCollectionQueue);
 		commands = (!gCommandQueue.empty() && Clock::now() >= gNextCommandsAt)
-		        || (!gTrapQueue.empty() && gInGame && Clock::now() >= gNextTrapAt && (!gSlots.traps.waitForTown || !IsTown(gCurrentLevel)));
+		        || (!gTrapQueue.empty() && gInGame && Clock::now() >= gNextTrapAt && !TrapsHeld(gSlots.traps.waitForTown));
 	}
 	if (gClient->Slots().cowLevelChecks) {
 		for (const int cow : cows) {
@@ -2941,6 +2961,10 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 		case Kind::LocalPlayerReady: {
 			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
+			// Only on joining: by LocalPlayerReady this game may already have said the level.
+			if (event->kind == Kind::GameJoined) {
+				ForgetPlayer();
+			}
 			gInGame = true;
 			gRepairOffer.Cancel();
 			gRepairOfferQueued = false;
@@ -2974,6 +2998,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
 			gInGame = false;
+			ForgetPlayer();
 			gRepairOffer.Cancel();
 			gRepairOfferQueued = false;
 			gRespecToken = D2RL::InvalidItemHandle;
