@@ -58,9 +58,8 @@ Built, pushed and installed, still to check in game:
 
 - [x] Debug tools: on a new character, **Starter Kit** puts its 10 items in the inventory (the chat lists them)
       and `ap-missing` shows no new checks; with the Cube lock on, the Cube still arrives (2026-10-13).
-- [ ] Still open: with Horadric Cube Access, cubing the four essences makes a Token, which sends the Token of
-      Absolution check (if `special_item_checks` is on). `ap-debug give lsd 1 3` makes a Long Sword with 3
-      sockets (`ap-debug give lsd 1 2` made a 2-socket one, 2026-10-13).
+- [x] With Horadric Cube Access, cubing the four essences makes a Token (2026-10-13; `special_item_checks` was
+      off, so no check). `ap-debug give lsd 1 2` made a 2-socket Long Sword.
 - [x] Session log: `d2rloader\archipelago\logs\` has a `session-<date>_<time>.log` for this launch that can be
       opened while the game runs. It starts with the plugin version and config, has "seed options:" after
       connecting, "found ... checks", "sending ... checks", "received #..." and "shown: ..." lines as you play,
@@ -72,12 +71,12 @@ Built, pushed and installed, still to check in game:
 - [ ] With the server down, the session log says "Could not connect" once, not every 5 seconds. While it
       retries, `ap-connect` to another server: the log shows "Connecting to" the new one right away.
 
-- [ ] The **Archipelago Parcel** is in Akara's Misc tab now (shop item type fix) and buying it sends a check
-      (section 2).
-- [ ] Buying a Scroll of Prophecy tier you've already used refunds the gold (section 6).
+- [x] The **Archipelago Parcel** is in Akara's Misc tab now (shop item type fix) and buying it sends a check
+      (section 2) (2026-10-13: "parcel delivered (Act I shop, 1 of 5)", then 2 of 5).
+- [x] Buying a Scroll of Prophecy tier you've already used refunds the gold (section 6) (2026-10-13: "you
+      already know that prophecy; the next is the 2500-gold scroll. Your gold is refunded.").
 - [ ] **Potion Access** gives back the potions set aside from the inventory (section 4).
-- [ ] All eight 2x2 Scrolls of Prophecy fit in Akara's Misc tab next to her usual stock. If they crowd it,
-      switch them to a 1x1 picture (size and picture must match).
+- [x] All eight 2x2 Scrolls of Prophecy fit in Akara's Misc tab next to her usual stock (2026-10-13).
 - [ ] Parcels and scrolls are no longer quest items: check whether a vendor buys them back, and that a
       bought one doesn't stay in the inventory.
 - [ ] Class-usable skills (PR #18, new seed needed): a Sorceress pool and tree hold no claw skills, no
@@ -90,11 +89,11 @@ Built, pushed and installed, still to check in game:
       points on them, and a Token respec refunds only those points, with the skills still open (2026-10-13).
 - [ ] The same after Akara's respec (Den of Evil) and a Writ of Absolution; `ap-relearn` says there's
       nothing to relearn, and finishing Den of Evil shows no Relearn hint.
-- [ ] Writ of Absolution (#6, rerun setup): every potion seller's Misc tab has one for 1,000 gold, with the
-      Token of Absolution's picture. Buying it doesn't count as the Token of Absolution check. Can't buy it
-      before Merchant Access.
-- [ ] Shuffled superuniques are visible now (they had no HD model): after rerunning setup, Rakanishu in
-      Stony Field and his minions show their new monster's model (section 8).
+- [x] Writ of Absolution (#6, rerun setup): Akara's Misc tab has one with the Token of Absolution's picture,
+      and it works (2026-10-13). Its name shows as "An Evil Force" (#113). Still to see: the other acts'
+      potion sellers.
+- [x] Shuffled superuniques are visible now (they had no HD model): Rakanishu in Stony Field showed as a Yeti
+      and his kill sent the check (2026-10-13).
 - [ ] Main-path superunique cap (#3, new seed needed, `superunique_shuffle: nearby`, default
       `main_path_superunique_cap: 2`): setup prints the superuniques that changed shape. On Normal, Griswold
       in Tristram and Rakanishu in Stony Field are no tougher than their usual selves (no level-15 mummy for
@@ -102,7 +101,8 @@ Built, pushed and installed, still to check in game:
       Griswold can be strong again. 2026-10-13 seed (cap 2), from the mod's files: Bishibosh is a Dark
       Ranger (level 2), Rakanishu a Brute (level 5), Griswold kept his shape (level 5) and seemed normal in game;
       the strong swaps are off the main path (Pitspawn Fouldog a level-11 Sand Maggot Queen in the Jail, Bone
-      Ash a level-14 Burning Dead Mage in the Cathedral). Still open: Rakanishu in game, and cap 50.
+      Ash a level-14 Burning Dead Mage in the Cathedral). Rakanishu showed as a Yeti in game. Still open: how
+      tough he felt next to his usual self, and cap 50.
 - [ ] Shuffle tuning (#38, new seed needed): with defaults, a reshaped Rakanishu brings 5 minions, not 8;
       Bishibosh, if he kept his Fallen Shaman, still brings his 2. `superunique_minions: 50` halves every field
       superunique's pack and setup says how many got a new count. `monster_density_hell: 300` makes Hell
@@ -167,9 +167,10 @@ Built, pushed and installed, still to check in game:
       the seed's save file read-only (Properties, Read-only), and clear it again.
 - [ ] Data package (#75): `ap-reconnect` a few times: item and location names in chat still resolve, and
       the server log shows a GetDataPackage only on the first connect (or none once names are held).
-- [ ] Runeword shuffle (#75, rerun setup): `runewords.txt` in the mod has no two complete runewords with the
-      same rune sequence (2026-10-13: none among the 99 complete ones in `runes.txt`); a shuffled runeword with
-      a common base still makes the right word.
+- [x] Runeword shuffle (#75, rerun setup): `runewords.txt` in the mod has no two complete runewords with the
+      same rune sequence (2026-10-13: none in either bank's `runes.txt`); a shuffled runeword with a common
+      base still makes the right word (El Eld in a normal 2-socket Long Sword made Steel on a LoD character,
+      from the base bank's recipe; the list itself is #110).
 
 Ideas, not started:
 
@@ -468,6 +469,9 @@ Any seed. Send each with `/send`, standing outside town for the traps.
       the next connect the chat says D2R closed during the last game and offers `ap-redeliver`. If the
       character lost the rewards, `ap-redeliver` hands the loot, gold and experience out again (no traps or
       prophecies), and the chat says when they're all back. After a normal Save and Exit, no such message.
+      (2026-10-13: after the #109 crash the chat offered `ap-redeliver` as described; `ap-redeliver` itself not
+      tried yet. The 8 potions Potion Access gave back right before that crash were lost: held potions aren't
+      part of the redelivery.)
 
 ## 5b. Personalized rewards
 
@@ -555,7 +559,8 @@ on `death_link: true` in both.
       the seed said; the check is still to confirm.)
 - [ ] With `superunique_checks` on too, the shuffled superuniques (Rakanishu in Stony Field) are visible,
       with their new monster's model, and their minions are too.
-- [ ] `mods\Archipelago\runewords.txt` lists new recipes, and one made from low runes works in game.
+- [ ] `mods\Archipelago\runewords.txt` lists new recipes, and one made from low runes works in game. (The
+      shuffled recipe works: Steel from El Eld, 2026-10-13. The list shows the other bank's recipes until #110.)
 - [ ] More monsters, and faster levelling than usual.
 - [ ] After rerunning setup with `monster_shuffle: nearby` and again with `anywhere`, Talic, Madawc
       and Korlic stay on Arreat Summit and spawn only when the altar is activated; their defeat completes
