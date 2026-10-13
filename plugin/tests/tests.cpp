@@ -304,6 +304,11 @@ void TestSaveStateRoundTrip() {
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12);
 	EXPECT(loaded.heldPotions == state.heldPotions);
 	EXPECT(loaded.commands.empty() && loaded.checkpoint == 0 && !loaded.redeliver);
+	// A save that can't be written says so (the plugin pauses rewards on it): here the
+	// folder it would go in is a file.
+	const auto blocked = path.parent_path() / "blocked";
+	std::ofstream(blocked) << "not a folder";
+	EXPECT(!state.Save(blocked / "seed_slot.txt"));
 	std::filesystem::remove_all(path.parent_path());
 }
 
@@ -717,6 +722,38 @@ void TestHintPackets() {
 	EXPECT(own.size() == 1 && own[0]["cmd"] == "CreateHints");
 }
 
+void TestClientReconnect() {
+	ap::Client client([](const std::string&) {});
+	client.Handle(R"json([{"cmd":"RoomInfo","seed_name":"S1","games":["Diablo II Resurrected","Other Game"],
+		"datapackage_checksums":{"Diablo II Resurrected":"a","Other Game":"b"}}])json");
+	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[],"missing_locations":[],"checked_locations":[],"slot_data":{},
+		"slot_info":{"1":{"game":"Diablo II Resurrected"}}}])json");
+	EXPECT(client.Seed() == "S1" && client.ConnectedSession() != 0 && client.ConnectedSession() == client.SessionGeneration());
+	// ap-connect: the old session is over at once, so the plugin can't bind it (or its seed) again
+	// before the new target's Connected.
+	client.Connect("localhost:1", "Other", "");
+	EXPECT(client.State() == ap::ConnectionState::Connecting && client.ConnectedSession() == 0 && client.Seed().empty());
+	// The old socket's RoomInfo and Connected (target 0), read just before the ap-connect, are dropped.
+	client.Handle(R"json([{"cmd":"RoomInfo","seed_name":"S1"},{"cmd":"Connected","team":0,"slot":1,"players":[],"missing_locations":[],
+		"checked_locations":[],"slot_data":{},"slot_info":{}},{"cmd":"ConnectionRefused","errors":["InvalidSlot"]}])json", 0);
+	EXPECT(client.State() == ap::ConnectionState::Connecting && client.ConnectedSession() == 0 && client.Seed().empty());
+	client.Disconnect();
+	EXPECT(client.ConnectedSession() == 0);
+	// Names are only asked for when missing or changed, and only for this multiworld's games.
+	using Games = std::vector<std::string>;
+	const std::map<std::string, std::string> room { { "Diablo II Resurrected", "a" }, { "Other Game", "b" } };
+	EXPECT((ap::DataPackageGames({ "Diablo II Resurrected", "Other Game" }, room, {}) == Games { "Diablo II Resurrected", "Other Game" }));
+	EXPECT((ap::DataPackageGames({ "Diablo II Resurrected", "Other Game" }, room, { { "Diablo II Resurrected", "a" }, { "Other Game", "old" } })
+	        == Games { "Other Game" }));
+	EXPECT(ap::DataPackageGames({ "Diablo II Resurrected" }, room, { { "Diablo II Resurrected", "a" }, { "Unrelated", "c" } }).empty());
+	// No checksum in the room: what's held stays.
+	EXPECT(ap::DataPackageGames({ "Old World" }, room, { { "Old World", "" } }).empty());
+	// A data package replaces that game's names.
+	client.Handle(R"json([{"cmd":"DataPackage","data":{"games":{"Diablo II Resurrected":{"item_name_to_id":{"Teleport (Sorceress)":2430054},
+		"location_name_to_id":{},"checksum":"a"}}}}])json");
+	EXPECT(client.ItemName(2430054, 1) == "Teleport (Sorceress)");
+}
+
 auto FindRecord(std::span<const ap::data::QualityItem> items, uint32_t record) -> const ap::data::QualityItem* {
 	for (const auto& item : items) {
 		if (item.record == record) {
@@ -1092,6 +1129,9 @@ void TestRunewordShuffle() {
 	std::mt19937 random(9);
 	const auto recipes = ap::randomizer::ShuffleRunewords(runes, random);
 	EXPECT(recipes.size() == 2 && recipes[0].rfind("Spirit:", 0) == 0);
+	// Pinned: the roll uses only std::mt19937's raw numbers, which every standard library gives
+	// alike, so a setup tool built anywhere deals a seed the same way.
+	EXPECT(recipes[0] == "Spirit: Eth Amn Shael Ort" && recipes[1] == "Zod: Zod");
 	const int original[] = { 7, 10, 11, 9 };
 	for (int i = 0; i < 4; ++i) {
 		const int tier = std::stoi(runes.Cell(0, 3 + i).substr(1));
@@ -1104,6 +1144,22 @@ void TestRunewordShuffle() {
 	const auto before = runes.Format();
 	ap::randomizer::ShuffleRunewords(runes, still, 0);
 	EXPECT(runes.Format() == before);
+	// Words that start alike never end with one recipe (the game would only make the first): five
+	// one-rune words around Ral, with five runes in reach, get five different runes.
+	std::string text = "Name\t*Rune Name\tcomplete\tRune1\tRune2\tRune3\tRune4\tRune5\tRune6\r\n";
+	for (int i = 0; i < 5; ++i) {
+		text += "Runeword" + std::to_string(i) + "\tWord" + std::to_string(i) + "\t1\tr08\t\t\t\t\t\r\n";
+	}
+	for (uint32_t seed = 0; seed < 20; ++seed) {
+		auto same = ap::Table::Parse(text);
+		std::mt19937 rolls(seed);
+		ap::randomizer::ShuffleRunewords(same, rolls);
+		std::set<std::string> distinct;
+		for (size_t row = 0; row < 5; ++row) {
+			distinct.insert(same.Cell(row, 3));
+		}
+		EXPECT(distinct.size() == 5);
+	}
 }
 
 void TestSuperUniqueMonsters() {
@@ -1467,6 +1523,7 @@ int main() {
 	TestClientSurvivesBadPackets();
 	TestClientDeathLink();
 	TestHintPackets();
+	TestClientReconnect();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
 	TestConfigNumericIds();

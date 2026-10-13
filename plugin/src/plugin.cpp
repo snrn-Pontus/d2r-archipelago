@@ -42,6 +42,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -431,6 +432,142 @@ void Feed(const std::string& text) {
 	gConsoleQueue.push_back(text);
 }
 
+// ---- Save file ----------------------------------------------------------------
+//
+// gSave is written with gMutex held (SaveNow), except for kill counts: the server thread only
+// marks the save due, and the render thread writes a copy outside the lock (FlushSave). Every
+// write is numbered, and one older than the last written to the same file is dropped, so a late
+// copy never overwrites a newer save.
+std::mutex            gSaveFileMutex;
+// The number of the last write to each file (gSaveFileMutex).
+std::map<std::filesystem::path, uint64_t> gWrittenSerials;
+uint64_t              gSaveSerial = 0; // gMutex, from here on
+bool                  gSaveDue = false;
+// A failed save (folder not writable, disk full) pauses rewards: ones handed out but never
+// recorded would come again on the next launch. The render thread retries every few seconds.
+bool                  gSaveFailed = false;
+Clock::time_point     gSaveRetryAt;
+constexpr auto        SaveRetryGap = std::chrono::seconds(5);
+// Saves of seeds no longer bound that couldn't be written, by file, with their write number.
+// Retried with the current one; binding such a seed again takes its save from here, not the disk.
+struct UnsavedState {
+	ap::SaveState state;
+	uint64_t      serial = 0;
+};
+std::map<std::filesystem::path, UnsavedState> gUnsaved;
+
+// Writes one copy of a save. True once it's on disk, or a newer one is.
+auto WriteSave(const ap::SaveState& state, const std::filesystem::path& path, uint64_t serial) -> bool {
+	std::lock_guard lock(gSaveFileMutex);
+	uint64_t& written = gWrittenSerials[path];
+	if (serial < written) {
+		return true;
+	}
+	if (!state.Save(path)) {
+		return false;
+	}
+	written = serial;
+	return true;
+}
+
+// Notes how a save went, saying once when saving starts failing and when it works again.
+// gMutex must be held.
+void NoteSaveResult(bool saved, const std::filesystem::path& path) {
+	if (!saved) {
+		gSaveRetryAt = Clock::now() + SaveRetryGap;
+	}
+	const bool wasFailing = gSaveFailed;
+	gSaveFailed = !saved;
+	if (gSaveFailed == wasFailing) {
+		return;
+	}
+	const std::string text = saved ? "Archipelago: progress saves again; rewards resume."
+	                               // The file name only: it's ASCII (SanitizeFileName), the game folder may not be.
+	                               : "Archipelago: couldn't save progress to d2rloader\\archipelago\\" + path.filename().string()
+	                                     + " (read-only, or the disk is full?). Rewards are paused until it saves, so none come twice.";
+	Log(text);
+	gHistory.push_back(text);
+	while (gHistory.size() > HistoryLines) {
+		gHistory.pop_front();
+	}
+	gConsoleQueue.push_back(text);
+}
+
+// Saves gSave now. gMutex must be held.
+void SaveNow() {
+	gSaveDue = false;
+	NoteSaveResult(WriteSave(gSave, gSavePath, ++gSaveSerial), gSavePath);
+}
+
+// Changes the save of a seed that isn't the current one (gMutex held): its unsaved copy if
+// there is one (the disk is older), else the file. One that can't be written is kept unsaved.
+template <typename Change>
+void UpdateOtherSave(const std::filesystem::path& path, Change change) {
+	if (const auto unsaved = gUnsaved.find(path); unsaved != gUnsaved.end()) {
+		change(unsaved->second.state);
+		unsaved->second.serial = ++gSaveSerial;
+		return;
+	}
+	ap::SaveState other;
+	if (!other.Load(path)) {
+		return;
+	}
+	change(other);
+	if (const uint64_t serial = ++gSaveSerial; !WriteSave(other, path, serial)) {
+		gUnsaved[path] = { std::move(other), serial };
+	}
+}
+
+// Render thread: writes a save the server thread marked due, or retries a failed one, with a
+// copy taken under gMutex and the file written outside it.
+void FlushSave() {
+	// Other seeds' unsaved progress first, every few seconds.
+	static Clock::time_point unsavedRetryAt;
+	std::vector<std::tuple<std::filesystem::path, ap::SaveState, uint64_t, uint64_t>> unsaved; // file, state, stash id, write number
+	{
+		std::lock_guard lock(gMutex);
+		if (!gUnsaved.empty() && Clock::now() >= unsavedRetryAt) {
+			unsavedRetryAt = Clock::now() + SaveRetryGap;
+			for (const auto& [file, entry] : gUnsaved) {
+				unsaved.emplace_back(file, entry.state, entry.serial, ++gSaveSerial);
+			}
+		}
+	}
+	for (const auto& [file, entry, id, serial] : unsaved) {
+		if (WriteSave(entry, file, serial)) {
+			std::lock_guard lock(gMutex);
+			// Unless it was bound (taken out) or stashed again meanwhile.
+			if (const auto found = gUnsaved.find(file); found != gUnsaved.end() && found->second.serial == id) {
+				gUnsaved.erase(found);
+				Log("Archipelago: saved the kept progress for " + file.filename().string() + ".");
+			}
+		}
+	}
+	ap::SaveState         state;
+	std::filesystem::path path;
+	uint64_t              serial = 0;
+	{
+		std::lock_guard lock(gMutex);
+		const bool retry = gSaveFailed && Clock::now() >= gSaveRetryAt;
+		// gSave and gSavePath still belong together after an ap-connect's unbind, so a failed
+		// save is retried then too.
+		if (gSavePath.empty() || (!gSaveDue && !retry)) {
+			return;
+		}
+		gSaveDue = false;
+		state = gSave;
+		path = gSavePath;
+		serial = ++gSaveSerial;
+	}
+	const bool saved = WriteSave(state, path, serial);
+	std::lock_guard lock(gMutex);
+	// Any save since (a rebind's, or a newer SaveNow of this file) noted its own result, which
+	// is about newer progress than this copy; only the latest result counts.
+	if (path == gSavePath && serial == gSaveSerial) {
+		NoteSaveResult(saved, path);
+	}
+}
+
 auto ConfigText() -> std::string {
 	std::string text(64 * 1024, '\0');
 	uint32_t required = 0;
@@ -612,7 +749,7 @@ void AddChecks(const std::vector<int64_t>& locations) {
 			}
 		}
 		if (added && gBoundSession != 0) {
-			gSave.Save(gSavePath);
+			SaveNow();
 		}
 	}
 	for (const int act : locked) {
@@ -647,7 +784,7 @@ void ReachGoal() {
 			return;
 		}
 		gSave.goalReached = true;
-		gSave.Save(gSavePath);
+		SaveNow();
 	}
 	SendReady();
 	bool sent = false;
@@ -774,13 +911,31 @@ void BindSession(uint64_t session) {
 	std::vector<int64_t> counted;
 	{
 		std::lock_guard lock(gMutex);
-		// Counters only reach the file every so often; a reconnect reloads it, so write them first.
-		if (gBoundSession != 0) {
-			gSave.Save(gSavePath);
+		const std::filesystem::path path = SaveDirectory() / (SanitizeFileName(seed) + "_" + SanitizeFileName(slot) + ".txt");
+		// What the old file hasn't got yet (kill counts the render thread hasn't written, or
+		// anything since saving started failing) goes there first. gSavePath stays set through an
+		// ap-connect's unbind, so this covers that too.
+		if ((gSaveDue || gSaveFailed) && !gSavePath.empty()) {
+			SaveNow();
 		}
-		gSave = {};
-		gSavePath = SaveDirectory() / (SanitizeFileName(seed) + "_" + SanitizeFileName(slot) + ".txt");
-		gSave.Load(gSavePath);
+		// Still failing: the disk has older progress than memory, and loading it would hand out
+		// rewards again. The same file (a reconnect to the same seed) keeps what's in memory;
+		// another seed's leaves it with the unsaved ones, retried in the background and used
+		// instead of the disk if that seed is bound again.
+		if (!gSaveFailed || path != gSavePath) {
+			if (gSaveFailed) {
+				gUnsaved[gSavePath] = { gSave, gSaveSerial };
+				Log("Archipelago: progress for " + gSavePath.filename().string() + " isn't saved yet; it's kept and retried.");
+			}
+			gSavePath = path;
+			if (const auto unsaved = gUnsaved.find(path); unsaved != gUnsaved.end()) {
+				gSave = std::move(unsaved->second.state);
+				gUnsaved.erase(unsaved);
+			} else {
+				gSave = {};
+				gSave.Load(gSavePath);
+			}
+		}
 		// Cows killed while unbound count toward this seed (before Missing() below looks at them).
 		gHeldCows.MoveTo(gSave, CowsShuffled(slots));
 		// A goal quest finished before this seed was bound left only its check behind (ReachGoal
@@ -801,7 +956,7 @@ void BindSession(uint64_t session) {
 			lost = gSave.lostTo - gSave.lostFrom + gSave.lostCommands.size();
 			resumed = gSave.redeliver;
 		}
-		gSave.Save(gSavePath);
+		SaveNow();
 		for (const int64_t check : gSave.checks) {
 			unsent += serverChecked.contains(check) ? 0 : 1;
 		}
@@ -1638,7 +1793,7 @@ void ScanItems(D2RL::PlayerHandle player) {
 	gSave.foundUniques.insert(scan.uniqueSeeds.begin(), scan.uniqueSeeds.end());
 	gSave.foundSets.insert(scan.setSeeds.begin(), scan.setSeeds.end());
 	if (gSave.foundUniques.size() + gSave.foundSets.size() != before) {
-		gSave.Save(gSavePath);
+		SaveNow();
 	}
 	for (uint32_t index = 0; slots.findCountChecks && index < std::size(ap::ids::UniqueFinds); ++index) {
 		if (gSave.foundUniques.size() >= ap::ids::UniqueFinds[index]) {
@@ -1703,7 +1858,7 @@ void ScanParcels(D2RL::PlayerHandle player) {
 			                        + std::to_string(checks) + ").");
 		} else {
 			QueueReward(-1, "gold " + std::to_string(ap::randomizer::ParcelCosts[act]));
-			gSave.Save(gSavePath);
+			SaveNow();
 			gConsoleQueue.push_back("Archipelago: no more parcels to deliver in " + std::string(ActNames[act]) + "; your gold is refunded.");
 		}
 	}
@@ -1719,14 +1874,14 @@ void ScanParcels(D2RL::PlayerHandle player) {
 		const int next = std::min(gSave.prophecies, LastTier);
 		if (!prophecyShop || static_cast<int>(tier) < next) {
 			QueueReward(-1, "gold " + std::to_string(ap::randomizer::ProphecyCosts[tier]));
-			gSave.Save(gSavePath);
+			SaveNow();
 			gConsoleQueue.push_back(!prophecyShop ? "Archipelago: Scrolls of Prophecy aren't part of this seed; your gold is refunded."
 			                                      : "Archipelago: you already know that prophecy; the next is the " + std::to_string(ap::randomizer::ProphecyCosts[next])
 			                                            + "-gold scroll. Your gold is refunded.");
 			continue;
 		}
 		gSave.prophecies = static_cast<int>(tier) + 1;
-		gSave.Save(gSavePath);
+		SaveNow();
 		gHintQueue.push_back("The Scroll of Prophecy reads:");
 	}
 }
@@ -1773,7 +1928,7 @@ void EnforceTownPortalLock(D2RL::PlayerHandle player) {
 		{
 			std::lock_guard lock(gMutex);
 			gSave.portalTomeGiven = true;
-			gSave.Save(gSavePath);
+			SaveNow();
 		}
 		Feed("Archipelago: Town Portal Access! Here's a Tome of Town Portal.");
 		return;
@@ -1848,7 +2003,7 @@ void EnforcePotionLock(D2RL::PlayerHandle player) {
 		{
 			std::lock_guard lock(gMutex);
 			gSave.heldPotions = kept;
-			gSave.Save(gSavePath);
+			SaveNow();
 		}
 		if (kept.size() < held.size()) {
 			Feed("Archipelago: Potion Access! Your " + std::to_string(held.size() - kept.size()) + " set-aside potions are back.");
@@ -1876,7 +2031,7 @@ void EnforcePotionLock(D2RL::PlayerHandle player) {
 	{
 		std::lock_guard lock(gMutex);
 		gSave.heldPotions.insert(gSave.heldPotions.end(), removed.begin(), removed.end());
-		gSave.Save(gSavePath);
+		SaveNow();
 	}
 	Log("Archipelago: set aside " + std::to_string(removed.size()) + " potions from the inventory.");
 	Feed("Archipelago: potions are locked until you find Potion Access, so " + std::to_string(removed.size())
@@ -1942,7 +2097,7 @@ void GiveLedger(D2RL::PlayerHandle player) {
 	}
 	std::lock_guard lock(gMutex);
 	gSave.ledgerGiven = true;
-	gSave.Save(gSavePath);
+	SaveNow();
 }
 
 // Tree mode: unlocks each received skill in the tree with D2RCore's skadd (its
@@ -1966,7 +2121,7 @@ void DeliverTreeSkills(const std::vector<ap::NetworkItem>& items) {
 			gSave.skillPointsGiven += plan.points;
 			news.push_back("Archipelago: +" + std::to_string(plan.points) + (plan.points == 1 ? " skill point." : " skill points."));
 		}
-		gSave.Save(gSavePath);
+		SaveNow();
 	}
 	for (const auto& line : news) {
 		Feed(line);
@@ -2095,7 +2250,7 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 				ready = true;
 				if (gSave.playerClass != gameClass) {
 					gSave.playerClass = gameClass;
-					gSave.Save(gSavePath);
+					SaveNow();
 					Log("Archipelago: this seed's character is a " + ClassName(gameClass) + ".");
 				}
 				break;
@@ -2168,6 +2323,16 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 
 	ScanItems(player);
+	{
+		// Checks still count while saving fails, but nothing that's recorded in the save is handed
+		// out or taken (rewards, held potions, parcels): it would happen again after a relaunch.
+		std::lock_guard lock(gMutex);
+		if (gSaveFailed) {
+			// Not every frame meanwhile; the render thread retries the save on its own.
+			gRetryAt = Clock::now() + SaveRetryGap;
+			return;
+		}
+	}
 	RelearnAfterToken(player);
 	ScanParcels(player);
 	EnforceTownPortalLock(player);
@@ -2380,7 +2545,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	const bool redelivering = gSave.redeliver && gSave.lostFrom < gSave.lostTo;
 	if (changed) {
 		gGameSaves.insert(gSavePath);
-		gSave.Save(gSavePath);
+		SaveNow();
 	}
 	if (codexOk && next == items.size() && !redelivering) {
 		gCodexItems = generation;
@@ -2455,8 +2620,9 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 			gNextCommandsAt = Clock::now() + CommandGap;
 		}
 		// Reward commands stay queued in the save until D2RCore takes them, and only
-		// run on the seed's character.
-		if (Clock::now() >= gNextRewardCommandsAt && !gSave.commands.empty() && gBoundSession != 0
+		// run on the seed's character. Not while saving fails: one run but not recorded as done
+		// would run again after a relaunch.
+		if (Clock::now() >= gNextRewardCommandsAt && !gSave.commands.empty() && gBoundSession != 0 && !gSaveFailed
 			&& CharacterVerdict(gSlots) == ap::character::Verdict::Match) {
 			const size_t take = std::min(gSave.commands.size(), CommandsPerRun);
 			rewards.assign(gSave.commands.begin(), gSave.commands.begin() + static_cast<std::ptrdiff_t>(take));
@@ -2498,11 +2664,10 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 		gGameSaves.insert(rewardSave);
 		if (gSavePath == rewardSave) {
 			gSave.FinishCommands(ran);
-			gSave.Save(gSavePath);
-		} else if (ap::SaveState old; old.Load(rewardSave)) {
+			SaveNow();
+		} else {
 			// Another seed's save was loaded meanwhile; this one still lists them.
-			old.FinishCommands(ran);
-			old.Save(rewardSave);
+			UpdateOtherSave(rewardSave, [&](ap::SaveState& old) { old.FinishCommands(ran); });
 		}
 	}
 	if (traps.empty()) {
@@ -2896,7 +3061,7 @@ void RevealHint(const std::string& flavor) {
 		{
 			std::lock_guard lock(gMutex);
 			gSave.otherHints.insert(location);
-			gSave.Save(gSavePath);
+			SaveNow();
 		}
 		gClient->HintOwnLocation(location);
 		text = OtherHintText(location, item);
@@ -2905,7 +3070,7 @@ void RevealHint(const std::string& flavor) {
 		{
 			std::lock_guard lock(gMutex);
 			gSave.ownHints.insert(*own);
-			gSave.Save(gSavePath);
+			SaveNow();
 		}
 		gClient->CreateHint(hint.location, hint.player);
 		text = OwnHintText(hint);
@@ -2977,7 +3142,7 @@ void AnnounceItems() {
 	}
 	std::lock_guard lock(gMutex);
 	gSave.notifiedItems = items.size();
-	gSave.Save(gSavePath);
+	SaveNow();
 }
 
 auto StatusLine() -> std::string;
@@ -3078,7 +3243,10 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	if (ap::notify::Busy() && !gBannerQueued.exchange(true) && gThreads->runOnUiThread(gContext, BannerWork, nullptr) != D2RL::Threads::Result::Success) {
 		gBannerQueued = false;
 	}
-	const uint64_t session = gClient->SessionGeneration();
+	FlushSave();
+	// Only a Connected session: right after ap-connect the old one is still the latest, and binding
+	// it would load the old seed's save again.
+	const uint64_t session = gClient->ConnectedSession();
 	bool bind = false;
 	{
 		std::lock_guard lock(gMutex);
@@ -3321,12 +3489,11 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			// a seed bound earlier in this game is checkpointed in its own file.
 			if (!gSavePath.empty()) {
 				gSave.Checkpoint();
-				gSave.Save(gSavePath);
+				SaveNow();
 			}
 			for (const auto& path : gGameSaves) {
-				if (ap::SaveState other; path != gSavePath && other.Load(path)) {
-					other.Checkpoint();
-					other.Save(path);
+				if (path != gSavePath) {
+					UpdateOtherSave(path, [](ap::SaveState& other) { other.Checkpoint(); });
 				}
 			}
 			gGameSaves.clear();
@@ -3376,7 +3543,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 				gCodexDirty = true;
 				if (gBoundSession != 0 && gPlayerLevel > gSave.level) {
 					gSave.level = gPlayerLevel;
-					gSave.Save(gSavePath);
+					SaveNow();
 				}
 			}
 			CheckLevelMilestones(event->currentValue);
@@ -3627,8 +3794,9 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 					milestone = true;
 				}
 			}
+			// Written on the render thread (FlushSave), not with gMutex held on the server thread.
 			if (milestone || count % 25 == 0) {
-				gSave.Save(gSavePath);
+				gSaveDue = true;
 			}
 		}
 	}
@@ -3644,8 +3812,9 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 		if (milestone) {
 			gCowQueue.insert(difficulty * 10 + 2);
 		}
+		// Written on the render thread (FlushSave), not with gMutex held on the server thread.
 		if (milestone || (kill.counted && gSave.cowKills[difficulty] % 25 == 0)) {
-			gSave.Save(gSavePath);
+			gSaveDue = true;
 		}
 	}
 	for (const int base : gSuperUniqueBase) {
@@ -3698,7 +3867,7 @@ auto CommandConnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 		config = gConfig;
 		// The bound seed's counters only reach the file every so often.
 		if (gBoundSession != 0) {
-			gSave.Save(gSavePath);
+			SaveNow();
 		}
 		gBoundSession = 0;
 	}
@@ -4015,7 +4184,7 @@ auto CommandClaim(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 			reply = "Kill a monster first, so the plugin can tell this character's class.";
 		} else {
 			gSave.playerClass = gameClass;
-			gSave.Save(gSavePath);
+			SaveNow();
 			gCharacterWarned = 0;
 			gCodexDirty = true;
 			gRetryAt = {};
@@ -4039,7 +4208,7 @@ auto CommandRedeliver(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, vo
 		} else if (!gSave.StartRedelivery()) {
 			reply = "Nothing to hand out again: ap-redeliver is for a game D2R closed without leaving it.";
 		} else {
-			gSave.Save(gSavePath);
+			SaveNow();
 			gCodexDirty = true;
 			gRetryAt = {};
 			reply = "The rewards from the crashed game are on their way again.";
@@ -4567,4 +4736,12 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
 	ap::notify::StopSounds();
 	gClient.reset();
+	std::lock_guard lock(gMutex);
+	if ((gSaveDue || gSaveFailed) && !gSavePath.empty()) {
+		SaveNow();
+	}
+	// A last try for other seeds' progress that couldn't be saved.
+	for (const auto& [file, entry] : gUnsaved) {
+		WriteSave(entry.state, file, ++gSaveSerial);
+	}
 }
