@@ -46,7 +46,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 // Must share major.minor with apworld/d2r_archipelago/archipelago.json.
-constexpr const char* PluginVersion = "0.7.1";
+constexpr const char* PluginVersion = "0.7.2";
 
 constexpr D2RL::PluginInfo Info {
 	.infoSize    = D2RL::PluginInfoSize,

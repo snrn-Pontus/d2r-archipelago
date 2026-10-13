@@ -2,6 +2,11 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.7.2 - 2026-10-13
+
+- Socketed Base rewards now include two-socket weapons and armor for early runewords, while keeping
+  larger socket counts available and respecting each base's socket limit (#61)
+
 ## 0.7.1 - 2026-10-13
 
 - New Hell runs ending before Baal no longer include special-item checks that require inaccessible later
