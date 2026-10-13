@@ -119,11 +119,15 @@ class D2RWorld(World):
 
     def key_fits(self, item: Item, act_index: int) -> bool:
         """Act Key Window: whether a D2 act key may sit at a location in act `act_index` of this world, by the
-        window of the player whose key it is."""
+        window of the player whose key it is. An item-linked key goes to every linked player, so the
+        tightest of their windows counts."""
         if item.game != GAME or item.name not in KEY_ACTS:
             return True
-        window = self.multiworld.worlds[item.player].options.act_key_window
-        return window.value == window.range_end or act_index <= KEY_ACTS[item.name] - 1 + window.value
+        group = self.multiworld.groups.get(item.player)
+        owners = group["players"] if group else (item.player,)
+        windows = [self.multiworld.worlds[owner].options.act_key_window for owner in owners]
+        window = min(option.value for option in windows)
+        return window == windows[0].range_end or act_index <= KEY_ACTS[item.name] - 1 + window
 
     def act_region_name(self, index: int) -> str:
         return f"{DIFFICULTIES[index // len(ACTS)]} {ACTS[index % len(ACTS)]}"

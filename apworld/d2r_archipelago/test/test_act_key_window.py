@@ -1,10 +1,11 @@
 import unittest
 
+from BaseClasses import ItemClassification
 from Fill import distribute_items_restrictive
 from test.general import setup_multiworld
 from worlds.AutoWorld import AutoWorldRegister
 
-from .. import GAME, KEY_ACTS
+from .. import GAME, KEY_ACTS, D2RItem
 from . import D2RTestBase
 
 
@@ -51,6 +52,16 @@ class TestActKeyWindow(unittest.TestCase):
         self.assertFalse(late.item_rule(tight))
         self.assertTrue(early.item_rule(tight))
         self.assertTrue(late.item_rule(anywhere))
+
+    def test_linked_key_uses_the_tightest_window(self) -> None:
+        world_type = AutoWorldRegister.world_types[GAME]
+        options = [{"goal": "hell", "goal_act": 5, "act_key_window": window} for window in (4, 0)]
+        multiworld = setup_multiworld([world_type] * 2, seed=1, options=options)
+        # An item link's key belongs to the group, a pseudo-player with default options.
+        multiworld.groups[3] = {"name": "Keys", "game": GAME, "players": {1, 2}}
+        linked = D2RItem("Normal Act II Key", ItemClassification.progression, None, 3)
+        self.assertFalse(multiworld.get_location("Normal: Radament's Lair", 1).item_rule(linked))
+        self.assertTrue(multiworld.get_location("Normal: Den of Evil", 1).item_rule(linked))
 
 
 class TestTightWindowSolo(D2RTestBase):
