@@ -404,3 +404,93 @@ class TestTreeShuffle(D2RTestBase):
         self.assertTrue(all(row[skill] == row[slot] for skill, slot in dealt.items()))
         self.assertFalse(pinned & set(dealt))
         self.assertTrue(all(cls != "war" for skill, _name, cls in SKILLS if skill in dealt))
+
+
+class TestUnusableSkills(D2RTestBase):
+    options = {"character_class": "sorceress", "skill_focus": "any_skills", "skill_pool_size": 240, "skill_copies": 1}
+
+    def test_sorceress_gets_no_claw_trap_or_form_skills(self) -> None:
+        from ..data import SKILL_USERS, SKILLS
+        from ..ids import skill_item_name
+        bound = {skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if "sor" not in SKILL_USERS.get(sid, ("sor",))}
+        self.assertIn("Fire Trauma (Assassin)", bound)
+        self.assertIn("Claw Mastery (Assassin)", bound)
+        names = {item.name for item in self.multiworld.itempool} | {item.name for item in self.multiworld.precollected_items[self.player]}
+        self.assertFalse(names & bound)
+        self.assertGreater(len(self.world.skill_pool), 50)
+
+
+class TestAnyClassSkills(D2RTestBase):
+    options = {"character_class": "any", "skill_focus": "any_skills", "skill_pool_size": 240, "skill_copies": 1}
+
+    def test_any_class_leaves_out_class_bound_skills(self) -> None:
+        from ..data import SKILL_USERS, SKILLS
+        bound = {f"{name} ({cls})" for sid, name, cls in SKILLS if sid in SKILL_USERS}
+        names = {item.name for item in self.multiworld.itempool} | {item.name for item in self.multiworld.precollected_items[self.player]}
+        self.assertFalse({name.split(" (")[0] for name in names} & {name.split(" (")[0] for name in bound})
+
+
+class TestDruidForms(D2RTestBase):
+    options = {"character_class": "druid", "skill_classes": ["Druid"], "skill_pool_size": 12, "skill_copies": 1,
+               "starting_skills": 4}
+
+    def test_form_attacks_come_with_a_form(self) -> None:
+        from ..data import SKILL_FORMS, SKILLS
+        from ..ids import skill_item_name
+        id_of = {skill_item_name(sid, name, cls): sid for sid, name, cls in SKILLS}
+        for seed in range(20):
+            self.world_setup(seed)
+            starting = {id_of[name] for name in self.world.starting}
+            held = starting | {id_of[name] for name in self.world.skill_pool}
+            for skill in held:
+                if skill in SKILL_FORMS:
+                    self.assertTrue(held & set(SKILL_FORMS[skill]), f"seed {seed}: {skill} without its form")
+            for skill in starting:
+                if skill in SKILL_FORMS:
+                    self.assertTrue(starting & set(SKILL_FORMS[skill]), f"seed {seed}: starting {skill} without a starting form")
+
+
+class TestTreeShuffleUsable(D2RTestBase):
+    options = {"skill_mode": "tree", "character_class": "sorceress", "skill_tree_shuffle": True}
+
+    def test_shuffled_trees_only_hold_usable_skills(self) -> None:
+        from .. import can_use, deal_skill_trees
+        from ..data import SKILLS
+        import random
+        slot_class = {sid: cls for sid, _name, cls in SKILLS}
+        for seed in range(50):
+            dealt = deal_skill_trees(random.Random(seed))
+            for skill, slot in dealt.items():
+                self.assertTrue(can_use(skill, slot_class[slot]), f"seed {seed}: {skill} in {slot_class[slot]}'s tree")
+
+
+class TestDruidFullStart(D2RTestBase):
+    options = {"character_class": "druid", "skill_classes": ["Druid"], "skill_focus": "any_skills", "skill_pool_size": 30,
+               "skill_copies": 1, "starting_skills": 10}
+
+    def test_starting_attacks_swap_instead_of_vanishing(self) -> None:
+        from ..data import SKILL_FORMS, SKILLS
+        from ..ids import skill_item_name
+        id_of = {skill_item_name(sid, name, cls): sid for sid, name, cls in SKILLS}
+        for seed in range(20):
+            self.world_setup(seed)
+            self.assertEqual(len(self.world.starting), 10, f"seed {seed}")
+            starting = {id_of[name] for name in self.world.starting}
+            for skill in starting:
+                if skill in SKILL_FORMS:
+                    self.assertTrue(starting & set(SKILL_FORMS[skill]), f"seed {seed}: starting {skill} without a starting form")
+
+
+class TestClassWeightedBackfill(D2RTestBase):
+    options = {"character_class": "sorceress", "skill_classes": ["Sorceress", "Assassin"], "skill_focus": "class_weighted"}
+
+    def test_pool_fills_from_the_class_when_others_run_out(self) -> None:
+        sorceress = [f"Skill {n} (Sorceress)" for n in range(28)]
+        assassin = [f"Skill {n} (Assassin)" for n in range(16)]
+        self.world.item_name_groups = {**self.world.item_name_groups, "Sorceress": set(sorceress)}
+        rest = sorceress + assassin
+        for count in (10, 30, 44):
+            picked = self.world.pick_skill_pool(rest, count)
+            self.assertEqual(len(picked), count)
+            self.assertEqual(len(set(picked)), count)
+        self.assertEqual(len([name for name in self.world.pick_skill_pool(rest, 10) if name in sorceress]), 5)

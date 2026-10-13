@@ -121,6 +121,31 @@ EXCLUDED_CODES = {"cm1", "cm2", "cm3"}
 
 # The Druid's shapeshifts stay with the Druid in a skill tree shuffle.
 PINNED_SKILLS = {"Wearwolf", "Wearbear", "Shape Shifting"}
+# Only the Barbarian and the Assassin have the S2-S4 animation modes (animdata.d2); any other class
+# casting an S2 skill (the Assassin's traps) freezes in place.
+SPECIAL_MODE_CLASSES = ("bar", "ass")
+# The classes that can hold a second weapon: the Barbarian anything, the Assassin claws (h2h is mele).
+DUAL_WIELD = {"mele": ("bar", "ass"), "h2h": ("ass",), "h2h2": ("ass",)}
+# Druid forms by skills.txt state, for the attacks that need one (restrict 2).
+FORM_SKILLS = {"wolf": "Wearwolf", "bear": "Wearbear"}
+
+
+def skill_users(row: dict[str, str]) -> tuple[str, ...] | None:
+    """The classes that can use a skill, or None for every class: claw skills need claws (Assassin
+    only), two-weapon skills a class that dual wields, S2-S4 skills the animation mode, and form attacks
+    a Druid form."""
+    users = set(CLASSES)
+    if any(row.get(column) in ("h2h", "h2h2") for column in ("itypea1", "itypea2", "itypea3", "itypeb1", "itypeb2", "itypeb3")):
+        users &= {"ass"}
+    second = row.get("itypeb1", "")
+    if second:
+        users &= set(DUAL_WIELD.get(second, ("bar",)))
+    if row.get("restrict") == "2":
+        # Form attacks play the form's animations, not the class's.
+        users &= {"dru"}
+    elif row.get("anim") in ("S2", "S3", "S4"):
+        users &= set(SPECIAL_MODE_CLASSES)
+    return None if users == set(CLASSES) else tuple(code for code in CLASSES if code in users)
 
 
 def read_table(path: Path):
@@ -133,10 +158,18 @@ def main() -> None:
     skills = []
     # Active skills a level 1 character could normally take, for class starting skills.
     starters = []
+    # Skills only some classes can use, and the Druid form each form attack needs.
+    users, forms = {}, {}
+    skill_ids = {row["skill"]: int(row["*Id"]) for row in read_table(excel / "skills.txt") if row.get("*Id", "").isdigit()}
     for row in read_table(excel / "skills.txt"):
         cls = row.get("charclass", "")
         if cls in CLASSES and row.get("*Id", "").isdigit():
             skills.append((int(row["*Id"]), row["skill"], cls))
+            if (who := skill_users(row)) is not None:
+                users[int(row["*Id"])] = who
+            if row.get("restrict") == "2":
+                states = [row.get(f"State{n}", "") for n in (1, 2, 3)]
+                forms[int(row["*Id"])] = tuple(skill_ids[FORM_SKILLS[state]] for state in states if state in FORM_SKILLS)
             if row.get("reqlevel") == "1" and row.get("passive") != "1":
                 starters.append(int(row["*Id"]))
     skills.sort()
@@ -306,6 +339,12 @@ def main() -> None:
           f"CLASSES = {CLASSES!r}", "", "# (skill id, name, class code)", "SKILLS = ["]
     py += [f"    ({sid}, {name!r}, {cls!r})," for sid, name, cls in skills]
     py += ["]", "", "# Active skills with a vanilla level requirement of 1.", f"STARTER_SKILLS = frozenset({sorted(starters)!r})"]
+    py += ["", "# Skills only these classes can use (claws, two weapons, the S2-S4 animations, Druid forms).",
+           "SKILL_USERS = {"]
+    py += [f"    {sid}: {who!r}," for sid, who in sorted(users.items())]
+    py += ["}", "", "# Druid form attacks: skill id -> the form skills (any one) it needs.", "SKILL_FORMS = {"]
+    py += [f"    {sid}: {need!r}," for sid, need in sorted(forms.items())]
+    py += ["}"]
     py += ["", "# (skill id, tree page, row, column, pinned): class skills' tree places, for the skill tree shuffle.", "SKILL_SLOTS = ["]
     py += [f"    ({sid}, {page}, {row}, {column}, {pinned})," for sid, page, row, column, pinned in skill_slots]
     py += ["]"]

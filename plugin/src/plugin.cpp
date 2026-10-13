@@ -79,6 +79,8 @@ const D2RL::WidgetService*      gWidgets;
 const D2RL::OverlayService*   gOverlay;
 // Optional: blocks Town Portal and potion use while those are locked.
 const D2RL::ItemInteractionService* gInteractions;
+// Optional: lets ap-relearn tell which unlocked skills a respec took away.
+const D2RL::GameRuleService* gGameRules;
 // Optional: the command panel (F9 or ap-panel) and the debug panel (F10 or ap-debug).
 const D2RL::PanelService*     gPanels;
 D2RL::Panels::RegistrationHandle gPanel = D2RL::Panels::InvalidHandle;
@@ -2930,6 +2932,79 @@ auto CommandCore(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command,
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
+// ap-relearn [confirm]: unlocks the received tree skills again after a respec,
+// which takes away the level skadd gave. Nothing reads a skill's level, and
+// canAllocateSkill also says no for an unlocked skill with no unspent points,
+// below its level requirement or at its cap, while skadd adds a level each
+// time. So ap-relearn only lists the skills that won't take a point, and
+// ap-relearn confirm (you just respecced) gives each of them a level back. A
+// failed check changes nothing.
+bool gRelearnConfirmed = false;
+
+void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
+	auto say = [](const std::string& text) {
+		std::lock_guard lock(gMutex);
+		gConsoleQueue.push_back(text);
+	};
+	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
+	if (gInventory->getLocalPlayer(gContext, &player) != D2RL::Inventory::Result::Success) {
+		say("Archipelago: join a game first, then ap-relearn.");
+		return;
+	}
+	if (gGameRules == nullptr) {
+		say("Archipelago: ap-relearn needs a newer D2RLoader (its game rule service) to tell which skills a respec took.");
+		return;
+	}
+	std::set<uint32_t> unlocked;
+	bool confirmed = false;
+	{
+		std::lock_guard lock(gMutex);
+		unlocked = gSave.unlockedSkills;
+		confirmed = gRelearnConfirmed;
+		gRelearnConfirmed = false;
+	}
+	std::vector<uint32_t> refused;
+	std::string names;
+	for (const uint32_t skill : unlocked) {
+		bool allowed = false;
+		if (gGameRules->canAllocateSkill(gContext, player, skill, &allowed) != D2RL::GameRules::Result::Success) {
+			say("Archipelago: couldn't check " + SkillName(skill) + ", so ap-relearn changed nothing.");
+			return;
+		}
+		if (!allowed) {
+			refused.push_back(skill);
+			names += (names.empty() ? "" : ", ") + SkillName(skill);
+		}
+	}
+	if (refused.empty()) {
+		say("Archipelago: all your Archipelago skills are still unlocked.");
+		return;
+	}
+	if (!confirmed) {
+		say("Archipelago: these skills won't take a point: " + names + ". After a respec that's expected, but it's the same with no unspent "
+		    "skill points, below a skill's level requirement or at its cap. If you just respecced, type ap-relearn confirm.");
+		return;
+	}
+	std::lock_guard lock(gMutex);
+	for (const uint32_t skill : refused) {
+		gCommandQueue.push_back("skadd " + SkillName(skill) + ",1");
+	}
+	gConsoleQueue.push_back("Archipelago: unlocked again: " + names + ".");
+}
+
+auto CommandRelearn(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
+	const auto args = SplitArgs(command);
+	{
+		std::lock_guard lock(gMutex);
+		gRelearnConfirmed = !args.empty() && args[0] == "confirm";
+	}
+	if (gThreads->runOnGameThread(gContext, RelearnWork, nullptr) != D2RL::Threads::Result::Success) {
+		Reply("ap-relearn: join a game first.");
+		return D2RL::ConsoleCommandResult::Failed;
+	}
+	return D2RL::ConsoleCommandResult::Handled;
+}
+
 // ap-personalize [name]: puts name on the item in your hand, the way rewards
 // from other players get the sender's; with no name it only logs the item data.
 std::string gPersonalizeName;
@@ -3269,6 +3344,7 @@ void RunPanelCommand(std::string_view action) {
 		{ "ap-reconnect", CommandReconnect },
 		{ "ap-disconnect", CommandDisconnect },
 		{ "ap-core", CommandCore },
+		{ "ap-relearn", CommandRelearn },
 		{ "ap-debug", CommandDebug },
 	};
 	const size_t           space   = action.find(' ');
@@ -3406,6 +3482,9 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		context->LogError("Archipelago: a required D2RLoader service is missing; update D2RLoader.");
 		return false;
 	}
+	if (!Query(gGameRules, D2RL::HasGameRuleServiceField, D2RL::GameRuleServiceRequiredSize)) {
+		gGameRules = nullptr;
+	}
 	if (context->QueryService(&gTables) != D2RL::ServiceQueryResult::Success || !D2RL::HasDataTableServiceField(gTables, D2RL::DataTableServiceRequiredSize)) {
 		gTables = nullptr;
 		context->LogWarn("Archipelago: no data table service; unique and set rows come from the generated numbers.");
@@ -3499,6 +3578,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-status", CommandStatus, "Show the Archipelago connection and progress.")
 	                   && context->RegisterConsoleCommand("ap-say", CommandSay, "Send a chat message to the Archipelago server.")
 	                   && context->RegisterConsoleCommand("ap-core", CommandCore, "Run a D2RCore console command: ap-core <command>.")
+	                   && context->RegisterConsoleCommand("ap-relearn", CommandRelearn, "Unlock your Archipelago skills again after a respec (ap-relearn confirm if it asks).")
 	                   && context->RegisterConsoleCommand("ap-personalize", CommandPersonalize, "Put a name on the item in your hand: ap-personalize [name]; with no name it only logs the item.")
 	                   && context->RegisterConsoleCommand("ap-chat", CommandChat, "Show a line in the game chat: ap-chat <text>.")
 	                   && context->RegisterConsoleCommand("ap-codex", CommandCodex, "Rebuild the Archipelago Codex charm.")
