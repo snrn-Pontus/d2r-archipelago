@@ -47,23 +47,26 @@ two Ral runes or `ap-debug give lsd 1 3` for a 3-socket Long Sword to try a shuf
 
 Built, pushed and installed, still to check in game:
 
-- [ ] Class without a kill: a new character in town gets a banner and chat line saying rewards and locks wait
+- [x] Class without a kill: a new character in town gets a banner and chat line saying rewards and locks wait
       (kill a monster or ap-claim). **Claim Character** (F9) or `ap-claim`: the skills unlock, the locks apply
-      (belt potions set aside), and an Archipelago Ledger arrives. Save and Exit, join again: everything works
-      at once, no kill or claim needed (the Ledger says the class). With the Ledger in the shared stash it
-      doesn't count. A character with a Ledger from before this gets it swapped for a new one (log: "swapped").
-- [ ] With Merchant Access locked, an Identify scroll or tome works outside a shop; buying and selling stay
-      blocked. If something is still blocked, the log names the UI message.
+      (Town Portal scroll crumbled), and an Archipelago Ledger arrives. Save and Exit, join again: everything
+      works at once, no kill or claim needed (2026-10-13).
+- [ ] Still open from the item above: belt potions set aside at the claim (the log had no "set aside" line
+      then); with the Ledger in the shared stash it doesn't count; a character with a Ledger from before this
+      gets it swapped for a new one (log: "swapped").
+- [x] With Merchant Access locked, an Identify scroll works outside a shop; buying stays blocked (2026-10-13).
 
-- [ ] Debug tools: on a new character, **Starter Kit** puts its 10 items in the inventory (the chat lists them)
-      and `ap-missing` shows no new checks; with the Cube lock on, the Cube still arrives. Cubing the four
-      essences makes a Token, which sends the Token of Absolution check (if `special_item_checks` is on).
-      `ap-debug give lsd 1 3` makes a Long Sword with 3 sockets.
-- [ ] Session log: `d2rloader\archipelago\logs\` has a `session-<date>_<time>.log` for this launch that can be
+- [x] Debug tools: on a new character, **Starter Kit** puts its 10 items in the inventory (the chat lists them)
+      and `ap-missing` shows no new checks; with the Cube lock on, the Cube still arrives (2026-10-13).
+- [ ] Still open: with Horadric Cube Access, cubing the four essences makes a Token, which sends the Token of
+      Absolution check (if `special_item_checks` is on). `ap-debug give lsd 1 3` makes a Long Sword with 3
+      sockets (the log only says "gave lsd", so check the sockets in game).
+- [x] Session log: `d2rloader\archipelago\logs\` has a `session-<date>_<time>.log` for this launch that can be
       opened while the game runs. It starts with the plugin version and config, has "seed options:" after
       connecting, "found ... checks", "sending ... checks", "received #..." and "shown: ..." lines as you play,
       and "entered <area>" on each area change. **Mark the Log** twice adds "mark 1" and "mark 2"; **Log
-      State** adds the "state:" lines. Quit with the menu's Exit and relaunch: the new file doesn't say the
+      State** adds the "state:" lines (2026-10-13; town logs as "entered area 1", without its name).
+- [ ] Still open: quit with the menu's Exit and relaunch: the new file doesn't say the
       last session "has no normal exit". End D2R in Task Manager (or **Crash D2R** twice) and relaunch: it does. (Does Alt+F4 count as
       a normal exit? Note which.)
 - [ ] With the server down, the session log says "Could not connect" once, not every 5 seconds. While it
@@ -94,7 +97,7 @@ Built, pushed and installed, still to check in game:
       Stony Field and his minions show their new monster's model (section 8).
 - [ ] Main-path superunique cap (#3, new seed needed, `superunique_shuffle: nearby`, default
       `main_path_superunique_cap: 2`): setup prints the superuniques that changed shape. On Normal, Griswold
-      in Tristram and Rakanishu in Stony Field are no tougher than their usual selves (no level-15 mummy for
+      in Tristram (seemed normal, 2026-10-13, seed with `superunique_shuffle: nearby`) and Rakanishu in Stony Field are no tougher than their usual selves (no level-15 mummy for
       Griswold); the stronger swaps show up in the Crypt, the Cave or the Stony Tomb. With the cap at 50,
       Griswold can be strong again.
 - [ ] Shuffle tuning (#38, new seed needed): with defaults, a reshaped Rakanishu brings 5 minions, not 8;
@@ -122,11 +125,13 @@ Built, pushed and installed, still to check in game:
       Resurrected Options**; it opens a window (no error in the Launcher log). **Open...** a copy of
       `Players\Snrn.yaml`, change Goal Difficulty and Shop Checks, **Save**: only those two lines change and
       the comments stay. A preset, then **Save as...** a new name, generates a seed.
-- [ ] D2RLoader settings from the YAML (#9, new seed needed): with `show_ground_sockets: on`,
-      `display_item_levels: on`, `shared_stash_tabs: 10` and `materials_limit: 150`, setup lists them and writes
-      `mods\Archipelago\d2rloader\config\d2rloader.toml`. In game, white items on the ground show sockets,
-      tooltips show item levels, the shared stash has 10 extra tabs (after Stash Access with Stash Lock) and
-      runes stack past 99. D2RLoader's Options show the mod's values winning. Then a seed with everything at
+- [x] D2RLoader settings from the YAML (#9): with `show_ground_sockets: on`, `display_item_levels: on`,
+      `shared_stash_tabs: 10` and `materials_limit: 150`, setup lists them and writes
+      `mods\Archipelago\d2rloader\config\d2rloader.toml`. In game, items on the ground show sockets and item
+      levels, and the shared stash has 10 extra tabs (Page 1 / 13) (2026-10-13).
+- [ ] Still open from #9: runes stack past 99. Can't be tested on a Lord of Destruction character: its runes
+      don't stack anywhere (inventory, personal or shared stash) and Options has no advanced stash setting
+      (2026-10-13). Needs a Reign of the Warlock character, or skip it. D2RLoader's Options show the mod's values winning. Then a seed with everything at
       `keep`: your own D2RLoader settings are back. Watch the loader log for a complaint about the mod file.
 - [ ] Character switch (#72, `level_checks` on): play a high-level character (any seed), Save and Exit,
       then connect a fresh seed and start a level 1 character. No level checks are sent (`ap-missing` still
@@ -388,7 +393,7 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 - [x] Blocked with a chat message: drinking a potion, opening the stash (`BankExpansionLayout`), trading
       with a merchant (`VendorPanelLayout`), using an Act I waypoint (`WaypointsPanelExpansion`). You can
       still move afterwards.
-- [ ] Opening the Cube is blocked (its panel name hasn't been seen yet; the log lists each panel opened).
+- [x] Opening the Cube is blocked (right-click in the inventory; 2026-10-13).
 - [x] Potions stay locked from the belt hotkeys too.
 - [x] D2RLoader doesn't report drinking from the inventory (only the belt), so within 5 seconds potions
       in the inventory are set aside, with a chat message (confirmed 2026-10-12).
@@ -479,6 +484,11 @@ a guess checked against the item before writing, so test the command first.
       class's gear (no Arreat's Face or Paladin shield on a Sorceress); your own class's still turn up.
 
 ## Found in testing
+
+- **Bug (2026-10-13):** a rune sent as a reward counts as found after rejoining. A Mid Rune reward (Amn)
+  arrived at 13:50; on the next join the plugin sent "Find Amn Rune". The reward marker lives in the item
+  seed, which runes and other simple items don't keep in the save, so `IsReward` misses them after a reload.
+  Gems and other simple items likely do the same.
 
 - `ap-core <command>` runs any D2RCore command for testing, e.g. `ap-core skillpoints 3`.
 - D2RCore runs gold, experience, mspawn, pcloud, killme, skadd and the rest only as cheats
