@@ -21,6 +21,8 @@ namespace {
 constexpr const char* GameName = "Diablo II Resurrected";
 constexpr unsigned short DefaultPort = 38281;
 constexpr size_t MaxMessages = 50;
+// Others' sends waiting to be taken; a big release can bring hundreds between two frames.
+constexpr size_t MaxOtherSends = 500;
 
 auto Widen(const std::string& text) -> std::wstring {
 	if (text.empty()) {
@@ -238,6 +240,49 @@ auto DataPackageGames(const std::set<std::string>& games, const std::map<std::st
 		}
 	}
 	return fetch;
+}
+
+auto PrintJsonAudience(const std::string& type, int receiver, int finder, int flags, int me, OtherSends setting) -> PrintAudience {
+	if (type == "Tutorial" || type == "TagsChanged") {
+		return PrintAudience::Hidden;
+	}
+	const bool send = type == "ItemSend" || type == "ItemCheat";
+	if ((!send && type != "Hint") || receiver == me || finder == me) {
+		return PrintAudience::Own;
+	}
+	const bool shown = send && (setting == OtherSends::All || (setting == OtherSends::Progression && (flags & 1) != 0));
+	return shown ? PrintAudience::Others : PrintAudience::Hidden;
+}
+
+void OtherSendsFeed::Add(std::string line) {
+	// Once a burst runs over, the rest of it is counted rather than trickling in after the count.
+	if (skipped_ > 0 || lines_.size() >= Shown) {
+		++skipped_;
+		return;
+	}
+	lines_.push_back(std::move(line));
+}
+
+void OtherSendsFeed::Skip(size_t count) {
+	skipped_ += count;
+}
+
+auto OtherSendsFeed::Empty() const -> bool {
+	return lines_.empty() && skipped_ == 0;
+}
+
+auto OtherSendsFeed::Take(size_t room) -> std::vector<std::string> {
+	std::vector<std::string> taken;
+	while (taken.size() < room && !lines_.empty()) {
+		taken.push_back(std::move(lines_.front()));
+		lines_.pop_front();
+	}
+	if (taken.size() < room && lines_.empty() && skipped_ > 0) {
+		taken.push_back("Archipelago: " + std::to_string(skipped_) + (skipped_ == 1 ? " more item" : " more items")
+		    + " sent between other players " + (skipped_ == 1 ? "is" : "are") + " in the D2RLoader log.");
+		skipped_ = 0;
+	}
+	return taken;
 }
 
 Client::Client(LogFn log) : log_(std::move(log)) {
@@ -629,24 +674,44 @@ void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 		}
 	} else if (cmd == "PrintJSON") {
 		const std::string type = Get(packet, "type", std::string());
-		if (type == "Tutorial" || type == "TagsChanged") {
+		const json item = Object(packet, "item");
+		int me = 0;
+		OtherSends setting = OtherSends::Progression;
+		{
+			std::lock_guard lock(mutex_);
+			me = mySlot_;
+			setting = otherSends_;
+		}
+		const PrintAudience audience
+		    = PrintJsonAudience(type, Get(packet, "receiving", -1), Get(item, "player", -1), Get(item, "flags", 0), me, setting);
+		if (audience == PrintAudience::Hidden) {
 			return;
 		}
-		if (type == "ItemSend" || type == "ItemCheat" || type == "Hint") {
-			int me = 0;
-			{
-				std::lock_guard lock(mutex_);
-				me = mySlot_;
-			}
-			const int receiver = Get(packet, "receiving", -1);
-			const int finder = Get(Object(packet, "item"), "player", -1);
-			if (receiver != me && finder != me) {
+		const std::string line = Render(&packet);
+		if (line.empty()) {
+			return;
+		}
+		if (audience == PrintAudience::Own) {
+			Notify(line, target);
+			return;
+		}
+		// Others' sends have their own queue, so a release can't push our messages out of ours.
+		// One the queue lets go is still logged.
+		std::string dropped;
+		{
+			std::lock_guard lock(mutex_);
+			if (IsStale(target)) {
 				return;
 			}
+			otherSendLines_.push_back(line);
+			if (otherSendLines_.size() > MaxOtherSends) {
+				dropped = std::move(otherSendLines_.front());
+				otherSendLines_.pop_front();
+				++otherSendsDropped_;
+			}
 		}
-		const std::string line = Render(&packet);
-		if (!line.empty()) {
-			Notify(line, target);
+		if (!dropped.empty()) {
+			log_("Archipelago: not shown: " + dropped);
 		}
 	}
 }
@@ -888,6 +953,18 @@ auto Client::TakeMessages() -> std::vector<std::string> {
 	std::lock_guard lock(mutex_);
 	std::vector<std::string> taken(messages_.begin(), messages_.end());
 	messages_.clear();
+	return taken;
+}
+
+void Client::SetOtherSends(OtherSends setting) {
+	std::lock_guard lock(mutex_);
+	otherSends_ = setting;
+}
+
+auto Client::TakeOtherSends() -> OtherSendLines {
+	std::lock_guard lock(mutex_);
+	OtherSendLines taken { { otherSendLines_.begin(), otherSendLines_.end() }, std::exchange(otherSendsDropped_, 0) };
+	otherSendLines_.clear();
 	return taken;
 }
 

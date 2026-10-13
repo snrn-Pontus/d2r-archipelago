@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include "randomizer.h"
 #include "websocket.h"
 
@@ -114,6 +115,38 @@ struct ItemSnapshot {
 auto DataPackageGames(const std::set<std::string>& games, const std::map<std::string, std::string>& roomChecksums,
 	const std::map<std::string, std::string>& held) -> std::vector<std::string>;
 
+// Who a PrintJSON line is for: us (an item we found or got, or any other message), the
+// multiworld (an item between two other players, shown quieter), or no one.
+enum class PrintAudience { Own, Others, Hidden };
+
+// Sorts a PrintJSON line by its type, the item's receiving and finding slots and its flags
+// (bit 0: progression), for our slot and the other_sends setting. Hints between other
+// players stay hidden; the server doesn't send those to us anyway.
+auto PrintJsonAudience(const std::string& type, int receiver, int finder, int flags, int me, OtherSends setting) -> PrintAudience;
+
+// Other players' send lines taken from the client, and how many it let go (logged) since.
+struct OtherSendLines {
+	std::vector<std::string> lines;
+	size_t dropped = 0;
+};
+
+// Other players' send lines waiting for the chat, behind our own. A burst (a release or
+// collect) shows its first few, then one line counting the rest, which are only in the log.
+class OtherSendsFeed {
+public:
+	static constexpr size_t Shown = 6;
+
+	void Add(std::string line);
+	void Skip(size_t count);
+	auto Empty() const -> bool;
+	// Up to `room` lines for the chat; the count line comes once the shown ones are out.
+	auto Take(size_t room) -> std::vector<std::string>;
+
+private:
+	std::deque<std::string> lines_;
+	size_t skipped_ = 0;
+};
+
 // Archipelago protocol client. Runs its own network thread; every public
 // method is thread-safe.
 class Client {
@@ -168,6 +201,11 @@ public:
 	auto ItemsGeneration() const -> uint64_t;
 	auto Items() const -> std::vector<NetworkItem>;
 	auto TakeMessages() -> std::vector<std::string>;
+	// Which sends between other players reach TakeOtherSends (other_sends).
+	void SetOtherSends(OtherSends setting);
+	// Sends between other players since the last call, kept apart so a release can't push our
+	// own messages out.
+	auto TakeOtherSends() -> OtherSendLines;
 	// Deaths from other DeathLink players since the last call, as messages.
 	auto TakeDeaths() -> std::vector<std::string>;
 	auto ItemName(int64_t item, int player) const -> std::string;
@@ -222,6 +260,9 @@ private:
 	bool itemsSynced_ = false;
 	uint64_t itemsGeneration_ = 0;
 	std::deque<std::string> messages_;
+	OtherSends otherSends_ = OtherSends::Progression;
+	std::deque<std::string> otherSendLines_;
+	size_t otherSendsDropped_ = 0;
 	std::vector<std::string> deaths_;
 	std::map<int64_t, NetworkItem> scouted_;
 	std::unordered_map<int, std::string> playerNames_;

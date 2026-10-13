@@ -96,6 +96,9 @@ int main(int argc, char** argv) {
 	for (const auto& message : client.TakeMessages()) {
 		std::printf("message: %s\n", message.c_str());
 	}
+	for (const auto& line : client.TakeOtherSends().lines) {
+		std::printf("other players: %s\n", line.c_str());
+	}
 	std::printf("checked %zu of %zu locations after sending\n", client.Checked().size(), client.LocationCount());
 	return 0;
 }

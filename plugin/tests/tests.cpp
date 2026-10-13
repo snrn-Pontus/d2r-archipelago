@@ -155,6 +155,15 @@ void TestConfigRoundTrip() {
 	EXPECT(ap::ParseConfig("banner_volume = 60 # quieter").bannerVolume == 60);
 	config.notifications = false;
 	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).notifications);
+	EXPECT(ap::ParseConfig("").otherSends == ap::OtherSends::Progression);
+	for (const ap::OtherSends setting : { ap::OtherSends::Mine, ap::OtherSends::Progression, ap::OtherSends::All }) {
+		config.otherSends = setting;
+		EXPECT(ap::ParseConfig(ap::FormatConfig(config)).otherSends == setting);
+	}
+	EXPECT(ap::ParseConfig("other_sends = all # everything").otherSends == ap::OtherSends::All);
+	std::vector<std::string> warnings;
+	EXPECT(ap::ParseConfig("other_sends = \"mine\"\nother_sends = \"loud\"", &warnings).otherSends == ap::OtherSends::Mine);
+	EXPECT(warnings.size() == 1 && warnings[0].find("other_sends on config line 2") != std::string::npos);
 	EXPECT(parsed.server == config.server);
 	EXPECT(parsed.slot == config.slot);
 	EXPECT(parsed.password == config.password);
@@ -897,6 +906,112 @@ void TestHintPackets() {
 	EXPECT(others.size() == 1 && others[0]["cmd"] == "LocationScouts");
 	const auto own = nlohmann::json::parse(ap::HintPackets({ { 9, 1, 3 } }, {}));
 	EXPECT(own.size() == 1 && own[0]["cmd"] == "CreateHints");
+}
+
+// An ItemSend PrintJSON as the server words it: finder sent item to receiver (location).
+auto ItemSendPacket(int finder, int receiver, int64_t item, int64_t location, int flags, const char* type = "ItemSend") -> std::string {
+	const nlohmann::json parts = nlohmann::json::array({
+		{ { "type", "player_id" }, { "text", std::to_string(finder) } },
+		{ { "text", " sent " } },
+		{ { "type", "item_id" }, { "text", std::to_string(item) }, { "player", receiver }, { "flags", flags } },
+		{ { "text", " to " } },
+		{ { "type", "player_id" }, { "text", std::to_string(receiver) } },
+		{ { "text", " (" } },
+		{ { "type", "location_id" }, { "text", std::to_string(location) }, { "player", finder } },
+		{ { "text", ")" } },
+	});
+	return nlohmann::json::array({ { { "cmd", "PrintJSON" }, { "type", type }, { "data", parts }, { "receiving", receiver },
+		{ "item", { { "item", item }, { "location", location }, { "player", finder }, { "flags", flags } } } } }).dump();
+}
+
+// Sends between other players (#49) show as other_sends allows, apart from our own messages, and a
+// release's burst is cut to a few lines and a count.
+void TestOtherSends() {
+	using ap::OtherSends;
+	using ap::PrintAudience;
+	constexpr int Me = 1;
+	// Ours whatever the setting: we found it, we got it, or it isn't an item line.
+	for (const OtherSends setting : { OtherSends::Mine, OtherSends::Progression, OtherSends::All }) {
+		EXPECT(ap::PrintJsonAudience("ItemSend", Me, 2, 0, Me, setting) == PrintAudience::Own);
+		EXPECT(ap::PrintJsonAudience("ItemSend", 2, Me, 0, Me, setting) == PrintAudience::Own);
+		EXPECT(ap::PrintJsonAudience("ItemCheat", Me, 0, 0, Me, setting) == PrintAudience::Own);
+		EXPECT(ap::PrintJsonAudience("Hint", 2, Me, 1, Me, setting) == PrintAudience::Own);
+		EXPECT(ap::PrintJsonAudience("Chat", 2, 3, 0, Me, setting) == PrintAudience::Own);
+		EXPECT(ap::PrintJsonAudience("", -1, -1, 0, Me, setting) == PrintAudience::Own);
+		EXPECT(ap::PrintJsonAudience("Tutorial", -1, -1, 0, Me, setting) == PrintAudience::Hidden);
+		// Hints between other players stay out.
+		EXPECT(ap::PrintJsonAudience("Hint", 2, 3, 1, Me, setting) == PrintAudience::Hidden);
+	}
+	EXPECT(ap::PrintJsonAudience("ItemSend", 2, 3, 1, Me, OtherSends::Mine) == PrintAudience::Hidden);
+	EXPECT(ap::PrintJsonAudience("ItemSend", 2, 3, 1, Me, OtherSends::Progression) == PrintAudience::Others);
+	// Flags: 1 progression, 2 useful, 4 trap.
+	EXPECT(ap::PrintJsonAudience("ItemSend", 2, 3, 3, Me, OtherSends::Progression) == PrintAudience::Others);
+	EXPECT(ap::PrintJsonAudience("ItemSend", 2, 3, 2, Me, OtherSends::Progression) == PrintAudience::Hidden);
+	EXPECT(ap::PrintJsonAudience("ItemSend", 2, 3, 0, Me, OtherSends::Progression) == PrintAudience::Hidden);
+	EXPECT(ap::PrintJsonAudience("ItemCheat", 2, 3, 1, Me, OtherSends::Progression) == PrintAudience::Others);
+	EXPECT(ap::PrintJsonAudience("ItemCheat", 2, 3, 0, Me, OtherSends::Progression) == PrintAudience::Hidden);
+	EXPECT(ap::PrintJsonAudience("ItemSend", 2, 3, 0, Me, OtherSends::All) == PrintAudience::Others);
+	EXPECT(ap::PrintJsonAudience("ItemSend", 2, 2, 4, Me, OtherSends::All) == PrintAudience::Others);
+
+	// Through the client: others' sends come out of TakeOtherSends, ours out of TakeMessages.
+	std::vector<std::string> logged;
+	ap::Client client([&](const std::string& line) { logged.push_back(line); });
+	client.Handle(R"json([{"cmd":"DataPackage","data":{"games":{"A Link to the Past":{"item_name_to_id":{"Hookshot":77,"Rupee":78},
+		"location_name_to_id":{"Ice Palace":88},"checksum":"z"}}}}])json");
+	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[{"team":0,"slot":1,"alias":"Snrn"},{"team":0,"slot":2,"alias":"Alice"},
+		{"team":0,"slot":3,"alias":"Bob"}],"missing_locations":[],"checked_locations":[],"slot_data":{},
+		"slot_info":{"1":{"game":"Diablo II Resurrected"},"2":{"game":"A Link to the Past"},"3":{"game":"A Link to the Past"}}}])json");
+	client.TakeMessages();
+	EXPECT(client.TakeOtherSends().lines.empty());
+	client.Handle(ItemSendPacket(2, 3, 77, 88, 1));
+	client.Handle(ItemSendPacket(2, 3, 78, 88, 0));
+	client.Handle(ItemSendPacket(2, 1, 77, 88, 0));
+	auto others = client.TakeOtherSends();
+	EXPECT(others.lines == std::vector<std::string> { "Alice sent Hookshot to Bob (Ice Palace)" } && others.dropped == 0);
+	// The item is named from the receiver's game; this test has no names for ours.
+	EXPECT(client.TakeMessages() == std::vector<std::string> { "Alice sent item 77 to Snrn (Ice Palace)" });
+	client.SetOtherSends(OtherSends::All);
+	client.Handle(ItemSendPacket(2, 3, 78, 88, 0, "ItemCheat"));
+	EXPECT(client.TakeOtherSends().lines == std::vector<std::string> { "Alice sent Rupee to Bob (Ice Palace)" });
+	client.SetOtherSends(OtherSends::Mine);
+	client.Handle(ItemSendPacket(2, 3, 77, 88, 1));
+	EXPECT(client.TakeOtherSends().lines.empty() && client.TakeMessages().empty());
+	// A release past the client's queue lets the oldest go, logged, and counts them; our own
+	// messages keep their place.
+	client.SetOtherSends(OtherSends::All);
+	client.Handle(ItemSendPacket(2, 1, 77, 88, 1));
+	for (int i = 0; i < 505; ++i) {
+		client.Handle(ItemSendPacket(2, 3, 78, 88, 0));
+	}
+	others = client.TakeOtherSends();
+	EXPECT(others.lines.size() == 500 && others.dropped == 5);
+	EXPECT(std::ranges::count(logged, std::string("Archipelago: not shown: Alice sent Rupee to Bob (Ice Palace)")) == 5);
+	EXPECT(client.TakeMessages().size() == 1);
+	EXPECT(client.TakeOtherSends().dropped == 0);
+
+	// The chat's queue: a burst shows its first few, then one line counting the rest.
+	ap::OtherSendsFeed feed;
+	EXPECT(feed.Empty() && feed.Take(3).empty());
+	for (int i = 0; i < 40; ++i) {
+		feed.Add("line " + std::to_string(i));
+	}
+	feed.Skip(5);
+	EXPECT(!feed.Empty());
+	EXPECT(feed.Take(3) == std::vector<std::string>({ "line 0", "line 1", "line 2" }));
+	EXPECT(feed.Take(0).empty());
+	EXPECT(feed.Take(3) == std::vector<std::string>({ "line 3", "line 4", "line 5" }));
+	// Lines still arriving are counted too, not shown after the count.
+	feed.Add("late");
+	EXPECT(feed.Take(3) == std::vector<std::string> { "Archipelago: 40 more items sent between other players are in the D2RLoader log." });
+	EXPECT(feed.Empty());
+	feed.Add("next");
+	EXPECT(feed.Take(3) == std::vector<std::string> { "next" });
+	for (int i = 0; i < 7; ++i) {
+		feed.Add("burst " + std::to_string(i));
+	}
+	EXPECT(feed.Take(5).size() == 5);
+	EXPECT(feed.Take(5) == std::vector<std::string>({ "burst 5", "Archipelago: 1 more item sent between other players is in the D2RLoader log." }));
+	EXPECT(feed.Empty());
 }
 
 void TestClientReconnect() {
@@ -1808,6 +1923,7 @@ int main() {
 	TestClientSurvivesBadPackets();
 	TestClientDeathLink();
 	TestHintPackets();
+	TestOtherSends();
 	TestClientReconnect();
 	TestConfigRoundTrip();
 	TestConfigDefaults();

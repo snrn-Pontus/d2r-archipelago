@@ -68,6 +68,12 @@ Built, pushed and installed, still to check in game:
       Rune reward), "Find Ral Rune" isn't sent. Save and Exit, join again: still not sent, and the seed's save
       has a `rewardcopies` line. Then a Ral you find (or `ap-debug spawn r08`) sends it. Same with a
       reward gem.
+- [ ] Other players' sends (#49): first `ap-chat grey test` shows "test" in grey (not "ÿc5test"). In a
+      multiworld with other games, another player's progression item for a third player shows in the chat as
+      "Alice sent Hookshot to Bob (Ice Palace)" in grey, no banner, and the session log has an "other players:"
+      line for it; their filler doesn't show. `other_sends = "all"` in archipelago.toml (relaunch) shows filler
+      too; `"mine"` hides them all. A `/release` of another slot (or `!collect`) shows a few grey lines, then
+      "N more items sent between other players are in the D2RLoader log", and your own lines still come first.
 
 - [x] Debug tools: on a new character, **Starter Kit** puts its 10 items in the inventory (the chat lists them)
       and `ap-missing` shows no new checks; with the Cube lock on, the Cube still arrives (2026-10-13).

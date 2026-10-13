@@ -11,6 +11,12 @@
 
 namespace ap {
 
+// Which items other players send each other show in the chat: none (only ours),
+// their progression items, or all of them.
+enum class OtherSends { Mine, Progression, All };
+
+auto OtherSendsName(OtherSends setting) -> const char*;
+
 struct Config {
 	std::string server;
 	std::string slot;
@@ -33,6 +39,8 @@ struct Config {
 	// bottom-left or bottom-right.
 	bool statusLine = true;
 	std::string statusPosition = "top-left";
+	// Other players' sends to each other in the chat (mine, progression or all).
+	OtherSends otherSends = OtherSends::Progression;
 	// The Codex is the "Archipelago Codex" unique small charm that d2r-ap-setup
 	// adds to UniqueItems. If D2R refuses it, the plugin makes a Magic small
 	// charm with a fixed, level-1 affix instead ("Stout", +1 Defense).

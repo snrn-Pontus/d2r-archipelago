@@ -46,6 +46,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -358,6 +359,8 @@ constexpr size_t         LinesPerFlush  = 3;
 constexpr size_t         ConsoleBacklog = 30;
 constexpr auto           FlushGap       = std::chrono::milliseconds(250);
 Clock::time_point        gNextFlushAt;
+// Sends between other players (#49): only into room our own lines leave, in grey.
+ap::OtherSendsFeed       gOtherSends;
 std::atomic<bool>        gBannerQueued;
 
 // The overlay doesn't render, so messages also go to D2R's chat through
@@ -374,10 +377,16 @@ auto ChatFunction() -> DisplayServerChatMessageFn {
 	return function;
 }
 
-void ShowInChat(const std::string& text) {
+// D2R's colour code for grey text ("ÿc5", UTF-8), for the quieter lines about other players.
+constexpr std::string_view QuietColor = "\xC3\xBF" "c5";
+
+void ShowInChat(std::string text, bool quiet = false) {
 	const auto display = ChatFunction();
 	if (display == nullptr || text.empty()) {
 		return;
+	}
+	if (quiet) {
+		text.insert(0, QuietColor);
 	}
 	constexpr size_t NameOffset = 0x0A, TextOffset = 0x47, TextBytes = 0xFF;
 	constexpr char   Sender[]   = "Archipelago";
@@ -393,6 +402,7 @@ void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 	gConsoleQueued = false;
 	std::vector<std::string> lines;
 	std::vector<std::string> skipped;
+	std::vector<std::string> others;
 	bool inGame = false;
 	{
 		std::lock_guard lock(gMutex);
@@ -407,6 +417,10 @@ void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 		const auto take = static_cast<std::ptrdiff_t>(std::min(gConsoleQueue.size(), LinesPerFlush));
 		lines.assign(gConsoleQueue.begin(), gConsoleQueue.begin() + take);
 		gConsoleQueue.erase(gConsoleQueue.begin(), gConsoleQueue.begin() + take);
+		// Other players' sends only once ours are all out.
+		if (gConsoleQueue.empty()) {
+			others = gOtherSends.Take(LinesPerFlush - lines.size());
+		}
 		inGame = gInGame;
 		gNextFlushAt = Clock::now() + FlushGap;
 	}
@@ -418,6 +432,12 @@ void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 		gContext->WriteConsoleMessage(line.c_str());
 		if (inGame) {
 			ShowInChat(line);
+		}
+	}
+	for (const auto& line : others) {
+		gContext->WriteConsoleMessage(line.c_str());
+		if (inGame) {
+			ShowInChat(line, true);
 		}
 	}
 }
@@ -3626,6 +3646,17 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	for (const std::string& message : gClient->TakeMessages()) {
 		Feed(message);
 	}
+	// Other players' sends are all logged; the chat gets what gOtherSends lets through.
+	if (ap::OtherSendLines others = gClient->TakeOtherSends(); !others.lines.empty() || others.dropped > 0) {
+		for (const std::string& line : others.lines) {
+			Log("other players: " + line);
+		}
+		std::lock_guard lock(gMutex);
+		gOtherSends.Skip(others.dropped);
+		for (std::string& line : others.lines) {
+			gOtherSends.Add(std::move(line));
+		}
+	}
 	if (const uint64_t items = gClient->ItemsGeneration(); items != gKeyItems && gClient->State() == ap::ConnectionState::Connected) {
 		gKeyItems = items;
 		SendReady();
@@ -3771,7 +3802,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	bool console = false;
 	{
 		std::lock_guard lock(gMutex);
-		console = !gConsoleQueue.empty() && Clock::now() >= gNextFlushAt;
+		console = (!gConsoleQueue.empty() || !gOtherSends.Empty()) && Clock::now() >= gNextFlushAt;
 	}
 	if (console && !gConsoleQueued.exchange(true) && gThreads->runOnUiThread(gContext, FlushConsole, nullptr) != D2RL::Threads::Result::Success) {
 		gConsoleQueued = false;
@@ -4500,9 +4531,14 @@ auto CommandPersonalize(D2R::Game::Client*, const D2RL::ConsoleCommandContext* c
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
-// ap-chat <text>: show a line in D2R's chat, to test the chat output.
+// ap-chat [grey] <text>: show a line in D2R's chat, to test the chat output; grey shows it
+// in the colour of other players' sends.
 auto CommandChat(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
-	const std::string text(command->args != nullptr ? command->args : "", command->argsLength);
+	std::string text(command->args != nullptr ? command->args : "", command->argsLength);
+	const bool grey = text.starts_with("grey ");
+	if (grey) {
+		text.erase(0, 5);
+	}
 	if (text.empty()) {
 		return D2RL::ConsoleCommandResult::InvalidArguments;
 	}
@@ -4510,7 +4546,7 @@ auto CommandChat(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command,
 		gContext->WriteConsoleMessage("ap-chat: D2RCore has no DisplayServerChatMessage export.");
 		return D2RL::ConsoleCommandResult::Failed;
 	}
-	ShowInChat(text);
+	ShowInChat(text, grey);
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
@@ -5411,6 +5447,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	}
 	ap::notify::SetSounds((GameDirectory() / ap::sounds::Folder).wstring(), gConfig.bannerSounds, gConfig.bannerVolume);
 	gClient = std::make_unique<ap::Client>(Log);
+	gClient->SetOtherSends(gConfig.otherSends);
 
 	using Kind = D2RL::Lifecycle::GameplayEventKind;
 	for (const auto kind : { Kind::GameJoined, Kind::GameLeft, Kind::LocalPlayerReady, Kind::ActChanged, Kind::LevelChanged, Kind::PlayerLevelChanged,
@@ -5454,7 +5491,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-core", CommandCore, "Run a D2RCore console command: ap-core <command>.")
 	                   && context->RegisterConsoleCommand("ap-relearn", CommandRelearn, "Unlock your Archipelago skills again after a respec (ap-relearn confirm if it asks).")
 	                   && context->RegisterConsoleCommand("ap-personalize", CommandPersonalize, "Put a name on the item in your hand: ap-personalize [name]; with no name it only logs the item.")
-	                   && context->RegisterConsoleCommand("ap-chat", CommandChat, "Show a line in the game chat: ap-chat <text>.")
+	                   && context->RegisterConsoleCommand("ap-chat", CommandChat, "Show a line in the game chat: ap-chat [grey] <text>.")
 	                   && context->RegisterConsoleCommand("ap-codex", CommandCodex, "Rebuild the Archipelago Codex charm.")
 	                   && context->RegisterConsoleCommand("ap-hints", CommandHints, "List the hints you've found in game.")
 	                   && context->RegisterConsoleCommand("ap-ledger", CommandLedger, "Get a new Archipelago Ledger if you lost yours.")
@@ -5473,7 +5510,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	Log("Archipelago: config: server " + (gConfig.server.empty() ? std::string("(none)") : gConfig.server) + ", slot "
 	    + (gConfig.slot.empty() ? std::string("(none)") : gConfig.slot) + ", auto-connect " + (gConfig.autoConnect ? "on" : "off") + ", debug tools "
 	    + (gConfig.debugTools ? "on" : "off") + ", notifications " + (gConfig.notifications ? "on" : "off") + ", repairs "
-	    + (gConfig.repairOnly ? "on" : "off") + ".");
+	    + (gConfig.repairOnly ? "on" : "off") + ", other sends " + ap::OtherSendsName(gConfig.otherSends) + ".");
 	if (gConfig.autoConnect && !gConfig.server.empty() && !gConfig.slot.empty()) {
 		gClient->Connect(gConfig.server, gConfig.slot, gConfig.password);
 	}
