@@ -17,6 +17,8 @@ banner_volume = 10
 # The always-on checks line; status_position is top-left, top, top-right, bottom-left or bottom-right.
 status_line = true
 status_position = "top-left"
+# Items other players send each other, shown greyed in the chat: mine (none of them), progression or all.
+other_sends = "progression"
 
 # The Codex charm that carries your received skills.
 codex_item = "cm1"

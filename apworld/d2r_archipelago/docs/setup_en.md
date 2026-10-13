@@ -88,6 +88,9 @@ connect to, the plugin tells you to set up again.
 
 Items you receive, checks you send and other server messages show in the game chat as
 `Archipelago: ...`, and in the console. The Codex charm's tooltip keeps the latest few.
+Progression items other players send each other show too, in grey and after your own messages; a big
+release or collect shows a few and counts the rest, which are in the log. Set `other_sends` in
+`mods/Archipelago/d2rloader/config/archipelago.toml` to `"mine"` to hide them or `"all"` to see every item.
 
 Use a fresh character for each seed. The Codex charms (one for your class's skills, one for other
 classes') must stay in your inventory; if you lose one, `ap-codex` rebuilds it.

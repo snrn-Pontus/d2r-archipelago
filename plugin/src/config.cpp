@@ -45,6 +45,10 @@ auto Quote(const std::string& text) -> std::string {
 
 } // namespace
 
+auto OtherSendsName(OtherSends setting) -> const char* {
+	return setting == OtherSends::Mine ? "mine" : setting == OtherSends::All ? "all" : "progression";
+}
+
 auto ParseConfig(const std::string& text, std::vector<std::string>* warnings) -> Config {
 	Config config;
 	std::istringstream lines(text);
@@ -86,6 +90,13 @@ auto ParseConfig(const std::string& text, std::vector<std::string>* warnings) ->
 			config.statusLine = value != "false";
 		} else if (key == "status_position" && !value.empty()) {
 			config.statusPosition = value;
+		} else if (key == "other_sends") {
+			if (value == "mine" || value == "progression" || value == "all") {
+				config.otherSends = value == "mine" ? OtherSends::Mine : value == "all" ? OtherSends::All : OtherSends::Progression;
+			} else if (warnings != nullptr) {
+				warnings->push_back("Archipelago: invalid other_sends on config line " + std::to_string(lineNumber)
+				    + "; expected mine, progression or all, keeping " + OtherSendsName(config.otherSends) + ".");
+			}
 		} else if (key == "codex_item" && !value.empty()) {
 			config.codexItem = value;
 		} else if (key == "codex_unique" || key == "codex_prefix" || key == "oskill_property") {
@@ -130,7 +141,9 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "banner_volume = " << config.bannerVolume << "\n"
 	    << "# The always-on checks line; status_position is top-left, top, top-right, bottom-left or bottom-right.\n"
 	    << "status_line = " << (config.statusLine ? "true" : "false") << "\n"
-	    << "status_position = " << Quote(config.statusPosition) << "\n\n"
+	    << "status_position = " << Quote(config.statusPosition) << "\n"
+	    << "# Items other players send each other, shown greyed in the chat: mine (none of them), progression or all.\n"
+	    << "other_sends = " << Quote(OtherSendsName(config.otherSends)) << "\n\n"
 	    << "# The Codex charm that carries your received skills.\n"
 	    << "codex_item = " << Quote(config.codexItem) << "\n"
 	    << "# UniqueItems record of the Archipelago Codex, added by d2r-ap-setup.\n"
