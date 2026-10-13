@@ -1,6 +1,7 @@
 from typing import Any, ClassVar
 
 from BaseClasses import Item, ItemClassification, Location, LocationProgressType, Region, Tutorial
+from Options import OptionError
 from settings import Group, OptionalUserFolderPath
 from worlds.AutoWorld import WebWorld, World
 from worlds.generic.Rules import add_item_rule, add_rule
@@ -333,7 +334,14 @@ class D2RWorld(World):
         keys += [self.create_item(name) for name in self.lock_items()]
         unfilled = self.multiworld.get_unfilled_locations(self.player)
         # Keys, skills and empowerments can't go on filler-only locations.
-        location_count = sum(1 for location in unfilled if location.progress_type != LocationProgressType.EXCLUDED) - len(keys)
+        fillable = sum(1 for location in unfilled if location.progress_type != LocationProgressType.EXCLUDED)
+        if fillable < len(keys):
+            # A one-act game with every check off and all the locks on has more keys and locks than
+            # places to put them; say so instead of failing deep in the pool maths.
+            raise OptionError(f"[{GAME} - '{self.player_name}'] The seed has {fillable} locations that can hold a key or "
+                              f"lock item but {len(keys)} such items. Turn on more checks (areas, side areas, levels, "
+                              f"superuniques, quest items, shops) or fewer locks.")
+        location_count = fillable - len(keys)
         filler_only = len(unfilled) - len(keys) - location_count
         starting = min(self.options.starting_skills.value, len(candidates))
         copies, distinct = self.options.skill_copies.value, self.options.skill_pool_size.value
