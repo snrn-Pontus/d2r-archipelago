@@ -185,8 +185,11 @@ private:
 	// Sets Idle with the "Disconnected" status; mutex_ must be held.
 	void SetDisconnected();
 	void HandlePacket(const void* packet, std::optional<uint64_t> target);
+	// Whether a packet read for this connection target belongs to one since let go (mutex_ held).
+	// Checked under the same lock as each change a packet makes, so a switch can't slip between.
+	auto IsStale(std::optional<uint64_t> target) const -> bool;
 	void Send(const std::string& text);
-	void Notify(const std::string& message);
+	void Notify(const std::string& message, std::optional<uint64_t> target = std::nullopt);
 	auto Render(const void* printJson) const -> std::string;
 	auto GameOf(int slot) const -> std::string;
 

@@ -439,8 +439,8 @@ void Feed(const std::string& text) {
 // write is numbered, and one older than the last written to the same file is dropped, so a late
 // copy never overwrites a newer save.
 std::mutex            gSaveFileMutex;
-std::filesystem::path gWrittenPath;   // gSaveFileMutex
-uint64_t              gWrittenSerial = 0;
+// The number of the last write to each file (gSaveFileMutex).
+std::map<std::filesystem::path, uint64_t> gWrittenSerials;
 uint64_t              gSaveSerial = 0; // gMutex, from here on
 bool                  gSaveDue = false;
 // A failed save (folder not writable, disk full) pauses rewards: ones handed out but never
@@ -459,14 +459,14 @@ std::map<std::filesystem::path, UnsavedState> gUnsaved;
 // Writes one copy of a save. True once it's on disk, or a newer one is.
 auto WriteSave(const ap::SaveState& state, const std::filesystem::path& path, uint64_t serial) -> bool {
 	std::lock_guard lock(gSaveFileMutex);
-	if (path == gWrittenPath && serial < gWrittenSerial) {
+	uint64_t& written = gWrittenSerials[path];
+	if (serial < written) {
 		return true;
 	}
 	if (!state.Save(path)) {
 		return false;
 	}
-	gWrittenPath = path;
-	gWrittenSerial = serial;
+	written = serial;
 	return true;
 }
 

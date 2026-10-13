@@ -373,8 +373,15 @@ void Client::Send(const std::string& text) {
 	}
 }
 
-void Client::Notify(const std::string& message) {
+auto Client::IsStale(std::optional<uint64_t> target) const -> bool {
+	return target && *target != targetGeneration_;
+}
+
+void Client::Notify(const std::string& message, std::optional<uint64_t> target) {
 	std::lock_guard lock(mutex_);
+	if (IsStale(target)) {
+		return;
+	}
 	messages_.push_back(message);
 	while (messages_.size() > MaxMessages) {
 		messages_.pop_front();
@@ -429,7 +436,7 @@ void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 		{
 			std::lock_guard lock(mutex_);
 			// From a socket an ap-connect or ap-disconnect has since let go: not the seed we want.
-			if (target && *target != targetGeneration_) {
+			if (IsStale(target)) {
 				return;
 			}
 			seed_ = Get(packet, "seed_name", std::string());
@@ -462,7 +469,7 @@ void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 		std::lock_guard lock(mutex_);
 		// The old target's Connected, read just before an ap-connect: it must not make the client
 		// Connected again (the plugin would bind that session with the new slot or an empty seed).
-		if (target && *target != targetGeneration_) {
+		if (IsStale(target)) {
 			return;
 		}
 		team_ = Get(packet, "team", 0);
@@ -518,7 +525,7 @@ void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 		}
 		std::lock_guard lock(mutex_);
 		// An old target's refusal must not cancel the new one.
-		if (target && *target != targetGeneration_) {
+		if (IsStale(target)) {
 			return;
 		}
 		state_ = ConnectionState::Refused;
@@ -530,6 +537,9 @@ void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 		bool resync = false;
 		{
 			std::lock_guard lock(mutex_);
+			if (IsStale(target)) {
+				return;
+			}
 			if (index == 0) {
 				items_.clear();
 				itemsSynced_ = true;
@@ -549,6 +559,9 @@ void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 		}
 	} else if (cmd == "RoomUpdate") {
 		std::lock_guard lock(mutex_);
+		if (IsStale(target)) {
+			return;
+		}
 		for (const int64_t location : Integers(packet, "checked_locations")) {
 			checked_.insert(location);
 		}
@@ -559,6 +572,9 @@ void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 		}
 	} else if (cmd == "LocationInfo") {
 		std::lock_guard lock(mutex_);
+		if (IsStale(target)) {
+			return;
+		}
 		for (const json& item : Array(packet, "locations")) {
 			const int64_t location = Get(item, "location", int64_t { 0 });
 			scouted_[location] = { Get(item, "item", int64_t { 0 }), location, Get(item, "player", 0), Get(item, "flags", 0) };
@@ -572,8 +588,9 @@ void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 		const std::string source = Get(data, "source", std::string());
 		const std::string cause = Get(data, "cause", std::string());
 		std::lock_guard lock(mutex_);
-		// The server bounces our own deaths back to us too.
-		if (!slotData_.deathLink || source == slot_) {
+		// The server bounces our own deaths back to us too. An abandoned session's death must not
+		// kill the player after ap-connect or ap-disconnect.
+		if (IsStale(target) || !slotData_.deathLink || source == slot_) {
 			return;
 		}
 		deaths_.push_back(!cause.empty() ? cause : (source.empty() ? "Someone" : source) + " died.");
@@ -628,7 +645,7 @@ void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 		}
 		const std::string line = Render(&packet);
 		if (!line.empty()) {
-			Notify(line);
+			Notify(line, target);
 		}
 	}
 }
