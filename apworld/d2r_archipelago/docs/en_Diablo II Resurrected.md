@@ -38,8 +38,10 @@ shapeshifts. It works in both modes; in tree mode, the shuffled tree is the one 
   every difficulty up to your goal (`superunique_checks`). Quest bosses and the Chaos Sanctuary seal bosses
   don't count.
 - The Secret Cow Level, on each difficulty you finish before the goal (`cow_level_checks`): entering it,
-  killing The Cow King, and killing 100 cows. The King closes the portal, so kill him last; the 100 cows
-  only hold filler, in case you don't.
+  killing The Cow King, and killing 100 cows. The cows add up per difficulty over the whole seed, so they
+  can take several games (cows killed before you connect count too, once you do). Only cows in the Cow Level
+  count, unless `shuffle_cow_level` moved them to another area, where they count instead. The King closes the
+  portal, so kill him last; the 100 cows only hold filler, in case you don't.
 - Optional collections, which only ever hold filler: each rune up to `rune_checks`, every gem (`gem_checks`),
   every complete Lord of Destruction set (`set_checks`), and with a Hell goal through Baal the Pandemonium keys, organs,
   essences, Token of Absolution, Hellfire Torch and Annihilus (`special_item_checks`). Items count anywhere on

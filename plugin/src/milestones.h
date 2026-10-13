@@ -6,7 +6,12 @@
 // between the kill and the check reaching the save), so these look at every
 // threshold a counter has reached, not just the one it equals, and the plugin
 // runs them when a seed binds as well as after each kill.
+//
+// Cows add up per difficulty over the whole seed: every game and every
+// connection counts toward the same 100. Cows killed while no seed is bound
+// are held and join the next seed the game binds to.
 
+#include "game_data.h"
 #include "ids.h"
 #include "save_state.h"
 
@@ -41,6 +46,61 @@ inline auto CowChecks(int difficulty, int count) -> std::vector<int64_t> {
 	}
 	return { ids::CowLocation(static_cast<uint32_t>(difficulty), 2) };
 }
+
+// Whether a cow killed in `levelId` counts toward the 100: only in the Secret
+// Cow Level, unless the seed shuffled the cow level's line-up into another
+// area, whose cows count wherever they went. Ambush traps spawn the act's or
+// the current area's monsters, so they only bring cows where cows live anyway.
+inline auto CowCounts(int levelId, bool cowsShuffled) -> bool {
+	return cowsShuffled || levelId == static_cast<int>(data::CowLevel);
+}
+
+struct CowKill {
+	// Whether the cow counted (see CowCounts).
+	bool counted = false;
+	// The cow check it reached that isn't among the save's checks yet.
+	std::vector<int64_t> reached;
+};
+
+// Counts a cow killed on a difficulty in an area into a bound seed's save.
+inline auto CountCow(SaveState& save, int difficulty, int levelId, bool cowsShuffled) -> CowKill {
+	CowKill kill;
+	if (difficulty < 0 || difficulty >= Difficulties || !CowCounts(levelId, cowsShuffled)) {
+		return kill;
+	}
+	kill.counted = true;
+	for (const int64_t location : CowChecks(difficulty, ++save.cowKills[difficulty])) {
+		if (!save.checks.contains(location)) {
+			kill.reached.push_back(location);
+		}
+	}
+	return kill;
+}
+
+// Cows killed while no seed is bound (before connecting, or after ap-connect
+// to another slot), per difficulty. Whether one counts depends on the seed,
+// so those outside the Cow Level are kept apart until a seed binds.
+struct HeldCows {
+	int inCowLevel[Difficulties] = {};
+	int elsewhere[Difficulties]  = {};
+
+	void Kill(int difficulty, int levelId) {
+		if (difficulty >= 0 && difficulty < Difficulties) {
+			++(levelId == static_cast<int>(data::CowLevel) ? inCowLevel : elsewhere)[difficulty];
+		}
+	}
+
+	// Adds the held cows that count for a seed to its save, and forgets them all.
+	// Missing() then finds a check they completed.
+	void MoveTo(SaveState& save, bool cowsShuffled) {
+		for (int difficulty = 0; difficulty < Difficulties; ++difficulty) {
+			if (const int count = inCowLevel[difficulty] + (cowsShuffled ? elsewhere[difficulty] : 0); count > 0) {
+				save.cowKills[difficulty] += count;
+			}
+		}
+		*this = {};
+	}
+};
 
 // The checks the save's counters have reached that aren't among its checks
 // (which include the server's), for the categories the seed has.

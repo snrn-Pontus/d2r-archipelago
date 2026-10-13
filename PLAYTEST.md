@@ -443,6 +443,13 @@ These need a character that has beaten Baal, so test them during a real run.
 - [ ] Cow recovery (#78): with D2R closed, set `cows_<difficulty> 100` in the seed's save (the 100-cow check
       not yet sent). Start again and connect: the 100-cow check goes out once, without another cow. Disconnect
       from the server before the 100th cow and reconnect after it: the check also goes out, once.
+- [ ] Lifetime cows (#79): the 100 cows add up per difficulty over the seed. Kill about 60 cows, leave the
+      game (the save's `cows_<difficulty>` shows them), make a new game and kill 40 more: the check goes out at
+      the 100th. Likewise 60, `ap-connect` again to the same slot in the same game, then 40. Cows on Normal
+      don't count toward Nightmare's. With `ap-connect` to the slot only after killing some cows, they join
+      the save's count once it binds. With `ambush_monsters: area`, an Ambush trap in the Cow Level brings cows
+      that count (they're cows in the Cow Level); elsewhere no cows show up. With
+      the 100-cow check held behind the Act V key, it waits and goes out once the key arrives.
 - [ ] With `merchant_lock`: the cow portal needs a Tome of Town Portal, so logic now waits for Merchant
       Access. Check whether a tome ever drops or can be had without a merchant (new characters only have
       a scroll); if it can't, the rule is right.

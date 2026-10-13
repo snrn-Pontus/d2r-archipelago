@@ -143,9 +143,10 @@ int                   gSuperUniqueBase[2] = { -1, -1 };
 bool                  gSuperUniqueMod = false;
 
 // Secret Cow Level checks (server thread), as difficulty * 10 + check, and cow
-// kills per difficulty while no save is bound (the save keeps them otherwise).
+// kills while no save is bound (the save keeps them otherwise), which join the
+// next seed bound.
 std::set<int>         gCowQueue;
-int                   gCowKills[3] = {};
+ap::milestones::HeldCows gHeldCows;
 // Collection checks found by the item scan (game thread).
 std::vector<int64_t>  gCollectionQueue;
 // D2RCore console commands to run on the UI thread (gold, experience, shrines),
@@ -497,6 +498,12 @@ auto GoalLocation(const ap::SlotData& slots) -> int64_t {
 	return ap::ids::QuestLocation(static_cast<uint32_t>(slots.goal), static_cast<uint32_t>(slots.goalQuest));
 }
 
+// Whether the seed's mod moved the cows out of the Secret Cow Level (Shuffle Cow Level
+// only acts with Monster Shuffle on), so cows count wherever they are.
+auto CowsShuffled(const ap::SlotData& slots) -> bool {
+	return slots.randomizer.shuffleCowLevel && slots.randomizer.monsters != ap::randomizer::Shuffle::Off;
+}
+
 // Sends every recorded check (and the goal) that isn't held behind a key.
 void SendReady() {
 	if (!gClient || gClient->State() != ap::ConnectionState::Connected) {
@@ -721,9 +728,15 @@ void BindSession(uint64_t session) {
 	std::vector<int64_t> counted;
 	{
 		std::lock_guard lock(gMutex);
+		// Counters only reach the file every so often; a reconnect reloads it, so write them first.
+		if (gBoundSession != 0) {
+			gSave.Save(gSavePath);
+		}
 		gSave = {};
 		gSavePath = SaveDirectory() / (SanitizeFileName(seed) + "_" + SanitizeFileName(slot) + ".txt");
 		gSave.Load(gSavePath);
+		// Cows killed while unbound count toward this seed (before Missing() below looks at them).
+		gHeldCows.MoveTo(gSave, CowsShuffled(slots));
 		// A goal quest finished before this seed was bound left only its check behind (ReachGoal
 		// can't know the seed's goal yet), so it's recognised here, against this seed's goal.
 		unboundGoal = !gSave.goalReached && gUnbound.contains(GoalLocation(slots));
@@ -3053,6 +3066,11 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			std::lock_guard lock(gMutex);
 			gInGame = false;
 			ForgetPlayer();
+			// Kill and cow counters only reach the file every so often; leaving the game
+			// (or closing D2R) writes the rest, so the next game carries on from them.
+			if (gBoundSession != 0) {
+				gSave.Save(gSavePath);
+			}
 			gRepairOffer.Cancel();
 			gRepairOfferQueued = false;
 			gRespecToken = D2RL::InvalidItemHandle;
@@ -3360,18 +3378,17 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 	}
 	if (monster == ap::data::CowKingMonster) {
 		gCowQueue.insert(difficulty * 10 + 1);
+	} else if (monster == ap::data::CowMonster && gBoundSession == 0) {
+		gHeldCows.Kill(difficulty, event->levelId);
 	} else if (monster == ap::data::CowMonster) {
-		const bool bound = gBoundSession != 0;
-		int& cows = bound ? gSave.cowKills[difficulty] : gCowKills[difficulty];
-		bool milestone = false;
+		// Cows add up over the whole seed, per difficulty (see milestones.h).
+		const auto kill = ap::milestones::CountCow(gSave, difficulty, event->levelId, CowsShuffled(gSlots));
 		// A seed without cow checks never saves the check, so don't queue (and save) it on every cow.
-		for (const int64_t location : ap::milestones::CowChecks(difficulty, ++cows)) {
-			if ((!bound || gSlots.cowLevelChecks) && !(bound ? gSave.checks : gUnbound).contains(location)) {
-				gCowQueue.insert(difficulty * 10 + 2);
-				milestone = true;
-			}
+		const bool milestone = gSlots.cowLevelChecks && !kill.reached.empty();
+		if (milestone) {
+			gCowQueue.insert(difficulty * 10 + 2);
 		}
-		if (bound && (milestone || cows % 25 == 0)) {
+		if (milestone || (kill.counted && gSave.cowKills[difficulty] % 25 == 0)) {
 			gSave.Save(gSavePath);
 		}
 	}
@@ -3425,6 +3442,10 @@ auto CommandConnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 		gConfig.slot = args[1];
 		gConfig.password = args.size() > 2 ? args[2] : "";
 		config = gConfig;
+		// The bound seed's counters only reach the file every so often.
+		if (gBoundSession != 0) {
+			gSave.Save(gSavePath);
+		}
 		gBoundSession = 0;
 	}
 	if (!gContext->WriteConfig(ap::FormatConfig(config).c_str())) {

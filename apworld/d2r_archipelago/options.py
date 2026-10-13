@@ -311,8 +311,10 @@ class ProphecyWeight(Range):
 
 class CowLevelChecks(DefaultOnToggle):
     """On each difficulty you finish (Baal beaten) before the goal: entering the Secret Cow Level, killing
-    The Cow King, and killing 100 cows in one session are checks. Killing the Cow King closes the portal
-    for that difficulty, so get the other two first."""
+    The Cow King, and killing 100 cows are checks. The cows add up per difficulty over the whole seed, across
+    games and reconnects (cows killed before connecting count too); only cows in the Cow Level count, unless
+    Shuffle Cow Level moved them. Killing the Cow King closes the portal for that difficulty, so get the
+    other two first."""
     display_name = "Cow Level Checks"
 
 
