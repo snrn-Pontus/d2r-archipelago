@@ -501,6 +501,7 @@ void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 		const std::vector<int64_t> missing = Integers(packet, "missing_locations");
 		locations_.insert(missing.begin(), missing.end());
 		slotData_ = std::move(slots);
+		acceptedTargetGeneration_ = target.value_or(targetGeneration_);
 		state_ = ConnectionState::Connected;
 		status_ = "Connected as " + slot_ + ".";
 		++sessionGeneration_;
@@ -795,6 +796,16 @@ auto Client::State() const -> ConnectionState {
 auto Client::StatusText() const -> std::string {
 	std::lock_guard lock(mutex_);
 	return status_;
+}
+
+auto Client::HasCurrentSession() const -> bool {
+	std::lock_guard lock(mutex_);
+	return state_ == ConnectionState::Connected && acceptedTargetGeneration_ == targetGeneration_;
+}
+
+auto Client::TargetGeneration() const -> uint64_t {
+	std::lock_guard lock(mutex_);
+	return targetGeneration_;
 }
 
 auto Client::SessionGeneration() const -> uint64_t {

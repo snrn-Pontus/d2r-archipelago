@@ -30,6 +30,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <deque>
@@ -99,6 +100,12 @@ std::string gRepairVendorPanel;
 bool gRepairOfferQueued = false;
 // UI-thread-only: only our one-shot request may pass the native repair action.
 bool gNativeRepairDispatch = false;
+// UI-thread-only: one handle per confirmation, no pending action after Cancel.
+std::array<D2RL::Panels::RegistrationHandle, 3> gConfirmPanels {};
+std::array<uint64_t, 3> gConfirmSessions {};
+std::array<uint64_t, 3> gConfirmTargets {};
+std::array<uint64_t, 3> gConfirmGames {};
+std::atomic<uint64_t> gPanelGame = 0;
 
 std::unique_ptr<ap::Client> gClient;
 std::atomic<bool>           gWorkQueued;
@@ -171,6 +178,13 @@ struct QueuedTrap {
 // Commands that aren't rewards (goto, ap-core, relearning). Reward commands wait in
 // gSave.commands instead, so they outlive a crash and only go once D2RCore takes them.
 std::vector<std::string> gCommandQueue;
+struct ScopedRelearnCommand {
+	std::string text;
+	ap::panel::SessionScope scope;
+};
+std::deque<ScopedRelearnCommand> gRelearnCommandQueue;
+// gMutex held; defined beside the Relearn request handler.
+auto RelearnScope() -> ap::panel::SessionScope;
 std::vector<QueuedTrap> gTrapQueue;
 
 // Queues a reward's console command; item is the received item it's for, or -1.
@@ -2852,6 +2866,17 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	gCommandsQueued = false;
 	const ap::SlotData::Traps settings = gClient->Slots().traps;
 	std::vector<std::string> commands;
+	std::vector<ScopedRelearnCommand> relearn;
+	std::vector<ap::panel::SessionScope> cancelledRelearn;
+	// Called with gMutex held. Report once and remove the rest of that request's
+	// scope, including commands waiting for later batches.
+	const auto cancelRelearn = [&](const ap::panel::SessionScope& scope) {
+		if (std::ranges::find(cancelledRelearn, scope) == cancelledRelearn.end()) {
+			cancelledRelearn.push_back(scope);
+			QueueLine("Archipelago: Relearn cancelled after the connection or character changed; remaining skill commands were discarded.");
+		}
+		std::erase_if(gRelearnCommandQueue, [&](const ScopedRelearnCommand& command) { return command.scope == scope; });
+	};
 	std::vector<ap::PendingCommand> rewards;
 	std::filesystem::path rewardSave;
 	std::vector<QueuedTrap> traps;
@@ -2861,10 +2886,19 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 		if (!gInGame) {
 			return;
 		}
-		if (Clock::now() >= gNextCommandsAt && !gCommandQueue.empty()) {
+		if (Clock::now() >= gNextCommandsAt && (!gCommandQueue.empty() || !gRelearnCommandQueue.empty())) {
 			const auto take = static_cast<std::ptrdiff_t>(std::min(gCommandQueue.size(), CommandsPerRun));
 			commands.assign(gCommandQueue.begin(), gCommandQueue.begin() + take);
 			gCommandQueue.erase(gCommandQueue.begin(), gCommandQueue.begin() + take);
+			while (commands.size() + relearn.size() < CommandsPerRun && !gRelearnCommandQueue.empty()) {
+				auto command = std::move(gRelearnCommandQueue.front());
+				gRelearnCommandQueue.pop_front();
+				if (ap::panel::SameReadyScope(command.scope, RelearnScope())) {
+					relearn.push_back(std::move(command));
+				} else {
+					cancelRelearn(command.scope);
+				}
+			}
 			gNextCommandsAt = Clock::now() + CommandGap;
 		}
 		// Reward commands stay queued in the save until D2RCore takes them, and only
@@ -2890,6 +2924,19 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	for (const auto& command : commands) {
 		if (!ExecuteCommand(command)) {
 			Feed("Archipelago: D2RCore refused \"" + command + "\".");
+		}
+	}
+	for (const auto& command : relearn) {
+		{
+			std::lock_guard lock(gMutex);
+			// A later UI update (or an earlier batch) may have switched the slot.
+			if (!ap::panel::SameReadyScope(command.scope, RelearnScope())) {
+				cancelRelearn(command.scope);
+				continue;
+			}
+		}
+		if (!ExecuteCommand(command.text)) {
+			Feed("Archipelago: D2RCore refused \"" + command.text + "\".");
 		}
 	}
 	// In order: a refused one, and the ones after it, wait and try again.
@@ -3614,7 +3661,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		std::lock_guard lock(gMutex);
 		cows.swap(gCowQueue);
 		collections.swap(gCollectionQueue);
-		commands = (!gCommandQueue.empty() && Clock::now() >= gNextCommandsAt)
+		commands = ((!gCommandQueue.empty() || !gRelearnCommandQueue.empty()) && Clock::now() >= gNextCommandsAt)
 		        || (!gSave.commands.empty() && gBoundSession != 0 && gInGame && Clock::now() >= gNextRewardCommandsAt
 		            && CharacterVerdict(gSlots) == ap::character::Verdict::Match)
 		        || (!gTrapQueue.empty() && gInGame && Clock::now() >= gNextTrapAt && !TrapsHeld(gSlots.traps.waitForTown)
@@ -3729,6 +3776,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 	switch (event->kind) {
 		case Kind::GameJoined:
 		case Kind::LocalPlayerReady: {
+			gPanelGame = event->sessionGeneration;
 			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
 			// Only on joining: by LocalPlayerReady this game may already have said the level.
@@ -3767,6 +3815,15 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			break;
 		}
 		case Kind::GameLeft: {
+			gPanelGame = 0;
+			// Dialog handles are UI-thread-only, like lifecycle callbacks.
+			if (gPanels != nullptr) {
+				for (const auto handle : gConfirmPanels) {
+					if (handle != D2RL::Panels::InvalidHandle) {
+						gPanels->closePanel(gContext, handle);
+					}
+				}
+			}
 			gWorkQueued = false;
 			std::lock_guard lock(gMutex);
 			gInGame = false;
@@ -4258,9 +4315,35 @@ auto CommandCore(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command,
 // ap-relearn confirm (you just respecced) gives each of them a level back. A
 // failed check changes nothing. A Token or Writ of Absolution does this on its own
 // (RelearnAfterToken); Akara's respec can't be seen, so it needs ap-relearn.
-bool gRelearnConfirmed = false;
+struct RelearnRequest {
+	bool confirmed = false;
+	ap::panel::SessionScope scope;
+};
+std::optional<RelearnRequest> gRelearnRequest;
+uint64_t gRelearnRequestId = 0;
 
-void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
+// gMutex held; the game generation is also read on the game thread.
+auto RelearnScope() -> ap::panel::SessionScope {
+	const auto session = gClient->SessionGeneration();
+	return { gClient->TargetGeneration(), session, gPanelGame.load(), GameClass(), SeedClass(gSlots),
+		gClient->HasCurrentSession() && gInGame && gBoundSession != 0 && gBoundSession == session
+			&& CharacterVerdict(gSlots) == ap::character::Verdict::Match };
+}
+
+void __cdecl RelearnWork(const D2RL::PluginContext*, void* userData) noexcept {
+	RelearnRequest request;
+	{
+		std::lock_guard lock(gMutex);
+		if (reinterpret_cast<uintptr_t>(userData) != gRelearnRequestId || !gRelearnRequest) {
+			return;
+		}
+		request = *gRelearnRequest;
+		gRelearnRequest.reset();
+		if (!ap::panel::SameReadyScope(request.scope, RelearnScope())) {
+			QueueLine("Archipelago: Relearn cancelled because the connection or character changed.");
+			return;
+		}
+	}
 	auto say = [](const std::string& text) {
 		std::lock_guard lock(gMutex);
 		QueueLine(text);
@@ -4281,13 +4364,7 @@ void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 		say("Archipelago: ap-relearn needs a newer D2RLoader (its game rule service) to tell which skills a respec took.");
 		return;
 	}
-	bool confirmed = false;
-	{
-		std::lock_guard lock(gMutex);
-		confirmed = gRelearnConfirmed;
-		gRelearnConfirmed = false;
-	}
-	const auto checked = RefusedSkills(player);
+		const auto checked = RefusedSkills(player);
 	if (!checked) {
 		say("Archipelago: couldn't check your skills, so ap-relearn changed nothing.");
 		return;
@@ -4298,25 +4375,43 @@ void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 		say("Archipelago: all your Archipelago skills are still unlocked.");
 		return;
 	}
-	if (!confirmed) {
+	if (!request.confirmed) {
 		say("Archipelago: these skills won't take a point: " + names + ". After a respec that's expected, but it's the same with no unspent "
 		    "skill points, below a skill's level requirement or at its cap. If you just respecced, type ap-relearn confirm.");
 		return;
 	}
 	std::lock_guard lock(gMutex);
-	for (const uint32_t skill : refused) {
-		gCommandQueue.push_back("skadd " + SkillName(skill) + ",1");
+	if (!ap::panel::SameReadyScope(request.scope, RelearnScope())) {
+		QueueLine("Archipelago: Relearn cancelled because the connection or character changed.");
+		return;
 	}
-	QueueLine("Archipelago: unlocked again: " + names + ".");
+	for (const uint32_t skill : refused) {
+		gRelearnCommandQueue.push_back({ "skadd " + SkillName(skill) + ",1", request.scope });
+	}
+	QueueLine("Archipelago: Relearn queued for this character: " + names + ".");
 }
 
 auto CommandRelearn(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
 	const auto args = SplitArgs(command);
+	uint64_t requestId = 0;
 	{
 		std::lock_guard lock(gMutex);
-		gRelearnConfirmed = !args.empty() && args[0] == "confirm";
+		const auto scope = RelearnScope();
+		if (!scope.ready) {
+			QueueLine("Archipelago: Relearn needs an accepted connection and its claimed character.");
+			return D2RL::ConsoleCommandResult::Failed;
+		}
+		gRelearnRequest = RelearnRequest { !args.empty() && args[0] == "confirm", scope };
+		requestId = ++gRelearnRequestId;
 	}
-	if (gThreads->runOnGameThread(gContext, RelearnWork, nullptr) != D2RL::Threads::Result::Success) {
+	// The token selects the immutable request; no allocation survives dropped game work.
+	if (gThreads->runOnGameThread(gContext, RelearnWork, reinterpret_cast<void*>(static_cast<uintptr_t>(requestId))) != D2RL::Threads::Result::Success) {
+		{
+			std::lock_guard lock(gMutex);
+			if (requestId == gRelearnRequestId) {
+				gRelearnRequest.reset();
+			}
+		}
 		Reply("ap-relearn: join a game first.");
 		return D2RL::ConsoleCommandResult::Failed;
 	}
@@ -4575,14 +4670,15 @@ void __cdecl TogglePanelWork(const D2RL::PluginContext*, void* userData) noexcep
 	if (gPanels == nullptr) {
 		return;
 	}
+	if (userData == &gPanel) {
+		for (const auto handle : gConfirmPanels) {
+			if (handle != D2RL::Panels::InvalidHandle) {
+				gPanels->closePanel(gContext, handle);
+			}
+		}
+	}
 	if (const auto result = gPanels->togglePanel(gContext, *static_cast<D2RL::Panels::RegistrationHandle*>(userData)); result != D2RL::Panels::Result::Success) {
 		Log("Archipelago: couldn't open a panel (result " + std::to_string(static_cast<uint32_t>(result)) + ").");
-	}
-}
-
-void __cdecl ClosePanelWork(const D2RL::PluginContext*, void* userData) noexcept {
-	if (gPanels != nullptr) {
-		gPanels->closePanel(gContext, *static_cast<D2RL::Panels::RegistrationHandle*>(userData));
 	}
 }
 
@@ -4772,7 +4868,7 @@ void LogState() {
 		                + std::to_string(gUnbound.size()) + " found while unbound, goal " + (gSave.goalReached ? "reached" : "not reached")
 		                + (gGoalSent ? " and sent" : "") + ", level " + std::to_string(gSave.level) + ", class " + std::to_string(gSave.playerClass) + ".");
 		lines.push_back("rewards: " + std::to_string(gSave.fillersDelivered) + " items handed out, " + std::to_string(gSave.notifiedItems)
-		                + " announced, " + std::to_string(gSave.commands.size()) + " reward commands waiting, " + std::to_string(gCommandQueue.size())
+		                + " announced, " + std::to_string(gSave.commands.size()) + " reward commands waiting, " + std::to_string(gCommandQueue.size() + gRelearnCommandQueue.size())
 		                + " queued commands, " + std::to_string(gTrapQueue.size()) + " traps queued" + (gRewardRefused ? ", last reward refused" : "")
 		                + ", lost to a crash " + std::to_string(gSave.lostFrom) + "-" + std::to_string(gSave.lostTo) + (gSave.redeliver ? " (redelivering)" : "")
 		                + ", held potions " + std::to_string(gSave.heldPotions.size()) + ", skill points given " + std::to_string(gSave.skillPointsGiven)
@@ -5023,9 +5119,29 @@ void RunPanelCommand(std::string_view action) {
 	handler->second(nullptr, &command, nullptr);
 }
 
-// A panel button (UI thread): closes its panel, so the chat with the answer
-// shows, and runs the button's commands. Debug buttons only run while the
-// debug tools are on.
+// A stale button message must not execute a closed dialog (UI thread).
+auto PanelOpen(D2RL::Panels::RegistrationHandle handle) -> bool {
+	if (gPanels == nullptr || handle == D2RL::Panels::InvalidHandle) {
+		return false;
+	}
+	D2RL::Panels::PanelInfo info { .structSize = D2RL::Panels::PanelInfoSize };
+	return gPanels->getPanelInfo(gContext, handle, &info) == D2RL::Panels::Result::Success
+		&& info.presentationState == D2RL::Panels::PresentationState::Open;
+}
+
+// Relearn reads the character-bound save. A pending/refused connection must not
+// reuse the previous slot's unlocked skills, even if its dialog was opened later.
+auto PanelRelearnReady() -> bool {
+	if (!gClient->HasCurrentSession()) {
+		return false;
+	}
+	const auto session = gClient->SessionGeneration();
+	std::lock_guard lock(gMutex);
+	return gInGame && gBoundSession != 0 && gBoundSession == session
+		&& CharacterVerdict(gSlots) == ap::character::Verdict::Match;
+}
+
+// Confirmation is a separate panel. Escape/Cancel just close it.
 void RunPanelButton(std::string_view id) {
 	if (ap::panel::Find(ap::panel::Repairs(), id) != nullptr) {
 		// CommandRepairs requires this modal to still be open and consumes its
@@ -5033,24 +5149,69 @@ void RunPanelButton(std::string_view id) {
 		RunPanelCommand("ap-repairs all");
 		return;
 	}
-	auto* handle = &gPanel;
+	auto handle = gPanel;
 	const auto* button = ap::panel::Find(ap::panel::Main(), id);
 	if (button == nullptr && DebugToolsOn()) {
-		handle = &gDebugPanel;
+		handle = gDebugPanel;
 		button = ap::panel::Find(ap::panel::Debug(), id);
 	}
+	const auto confirmations = ap::panel::Confirmations();
 	if (button == nullptr) {
-		Log("Archipelago: panel button " + std::string(id) + " isn't on an open panel (debug tools " + (DebugToolsOn() ? "on" : "off") + ").");
+		for (size_t i = 0; i < confirmations.size(); ++i) {
+			if (const auto* found = ap::panel::Find(confirmations[i], id); found != nullptr) {
+				handle = gConfirmPanels[i];
+				button = found;
+				if (!PanelOpen(handle)) {
+					return;
+				}
+				if (gConfirmTargets[i] != gClient->TargetGeneration()
+					|| gConfirmSessions[i] != gClient->SessionGeneration() || gConfirmGames[i] != gPanelGame) {
+					gPanels->closePanel(gContext, handle);
+					Reply("The session changed. Open the command panel again.");
+					return;
+				}
+				break;
+			}
+		}
+	}
+	if (button == nullptr || !PanelOpen(handle)) {
+		return;
+	}
+	if ((id == "relearn" || id == "confirm-relearn") && !PanelRelearnReady()) {
+		gPanels->closePanel(gContext, handle);
+		Reply("Relearn Skills needs an accepted connection and its claimed character. Connect and use Claim Character if needed.");
+		return;
+	}
+	if (button->confirm) {
+		const auto* dialog = ap::panel::ConfirmationFor(id);
+		if (dialog == nullptr) {
+			return;
+		}
+		const size_t index = static_cast<size_t>(dialog - confirmations.data());
+		if (gPanels->closePanel(gContext, handle) != D2RL::Panels::Result::Success) {
+			return;
+		}
+		// Missing registrations or failed opens never fall through to the action.
+		gConfirmTargets[index] = gClient->TargetGeneration();
+		gConfirmSessions[index] = gClient->SessionGeneration();
+		gConfirmGames[index] = gPanelGame;
+		if (gConfirmPanels[index] == D2RL::Panels::InvalidHandle
+			|| gPanels->openPanel(gContext, gConfirmPanels[index]) != D2RL::Panels::Result::Success) {
+			Reply("Couldn't open the confirmation dialog. Use the console command instead.");
+		}
+		return;
+	}
+	// Close before running, so a queued double click cannot repeat the action.
+	if (gPanels->closePanel(gContext, handle) != D2RL::Panels::Result::Success) {
 		return;
 	}
 	Log("Archipelago: panel button: " + std::string(button->action));
-	gThreads->runOnUiThread(gContext, ClosePanelWork, handle);
 	for (const auto part : ap::panel::SplitAction(button->action)) {
 		if (!part.starts_with('!')) {
 			RunPanelCommand(part);
 			continue;
 		}
-		if (gClient->State() != ap::ConnectionState::Connected) {
+		if (!gClient->HasCurrentSession()) {
 			Reply("Not connected to Archipelago: " + gClient->StatusText());
 			return;
 		}
@@ -5116,6 +5277,10 @@ void RegisterPanels(const D2RL::PluginContext* context) {
 	const bool main = RegisterPanel(context, resources, input, ap::panel::Main(), gPanel, "command-panel", "Archipelago Commands", D2RL::Input::Key::F9);
 	const bool debug = RegisterPanel(context, resources, input, ap::panel::Debug(), gDebugPanel, "debug-panel", "Archipelago Debug Panel", D2RL::Input::Key::F10);
 	const bool repairs = RegisterPanel(context, resources, nullptr, ap::panel::Repairs(), gRepairPanel, "repairs", "Repairs", D2RL::Input::Key::None);
+	const auto confirmations = ap::panel::Confirmations();
+	for (size_t i = 0; i < confirmations.size(); ++i) {
+		RegisterPanel(context, resources, nullptr, confirmations[i], gConfirmPanels[i], nullptr, nullptr, D2RL::Input::Key::None);
+	}
 	if (!main && !debug && !repairs) {
 		gPanels = nullptr;
 	}

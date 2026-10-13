@@ -241,14 +241,33 @@ Any seed with the defaults.
 
 Any seed, connected.
 
-- [ ] F9 opens the Archipelago panel: a title, "Answers show in the chat.", twelve buttons in two
-      columns and Close under them, over a dimmed screen. F9 again, Escape and Close each close it.
-- [ ] `ap-panel` in the console opens and closes it too; Options, Controls lists "Archipelago Commands".
-- [ ] Each button closes the panel and answers in the chat: Status, Checks Left Here, Checks Left by Act,
-      Hints Found, New Ledger, Rebuild Codex; Server Hints, Items Left, Multiworld Status and Collect show the
-      server's reply. Disconnect then Reconnect drops and restores the connection.
+Restart D2R after updating the plugin: the game caches panel layouts.
+
+- [ ] F9 opens the Archipelago panel with three headed columns: This Game (5 buttons), Server
+      (4 buttons), Maintenance (5 buttons), plus Close. Title, help and every button fit on screen
+      at the usual resolution and UI scale. F9 again, Escape and Close each close it.
+- [ ] `ap-panel` opens and closes it too; Options, Controls lists "Archipelago Commands".
+- [ ] Status, Checks Left Here, Checks Left by Act and Hints Found close the panel and answer in chat.
+      Claim Character retains its existing character-binding flow. Server Hints, Items Left and Multiworld Status show the server's reply. New Ledger and Rebuild
+      Codex work as before; Reconnect restores the saved connection.
+- [ ] Collect, Disconnect and Relearn Skills first show a description and action button with **Cancel
+      focused by default**. Cancel or Escape changes nothing. Reopen and explicitly confirm: Collect
+      asks the server to collect the slot (use a disposable seed), Disconnect drops the connection,
+      Relearn restores missing AP tree skills after a respec without needing to type a command.
+- [ ] Double-clicking Confirm runs the action once. Confirm Relearn then immediately switch AP slots:
+      deferred work reports cancellation and adds no old-slot skills. Also switch after the first
+      Relearn batch: no remaining old-slot skill commands run in subsequent batches, and one cancellation
+      message says the remaining commands were discarded. Opening F9 during a dialog closes that dialog and
+      returns to the main panel. Cancel then opening another action never runs the cancelled action.
+- [ ] Start reconnecting to another AP slot while a confirmation is open: the old confirmation refuses
+      to run even before the handshake finishes (also test a refused/unreachable server).
+      Relearn cannot open while connecting/refused, before the slot is bound, or on another character.
+      Leaving the D2R game also cancels a pending dialog, including when joining another character.
 - [ ] Clicks on the panel don't move the character or hit anything behind it.
-- [ ] Controller: the buttons can be reached and pressed with the gamepad.
+- [ ] Controller: all three columns, Close, Confirm and Cancel can be reached and pressed; entering
+      a confirmation selects Cancel. A controller-only shortcut remains a follow-up (F9/`ap-panel`
+      still opens it). Live panel text and inline answer history remain for the related UI stories;
+      the existing status overlay and Codex history still provide live data.
 
 ## 1c. Debug panel
 

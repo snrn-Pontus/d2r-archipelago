@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,12 +22,25 @@ auto ClickMessage(std::string_view id) -> std::string;
 // The button id a UI message carries, or empty if it isn't a button click.
 auto ClickedButton(std::string_view target, std::string_view command, std::string_view text) -> std::string_view;
 
+// Identity captured before queuing a character-changing command.
+struct SessionScope {
+	uint64_t target = 0, session = 0, game = 0;
+	int playerClass = -1, seedClass = -1;
+	bool ready = false;
+	auto operator==(const SessionScope&) const -> bool = default;
+};
+
+inline auto SameReadyScope(const SessionScope& captured, const SessionScope& current) -> bool {
+	return captured.ready && current.ready && captured == current;
+}
+
 struct Button {
 	std::string_view id;
 	std::string_view label;
 	// What it does: a plugin console command ("ap-core goto 3"), or server chat
 	// commands ("!hint"), several joined by "; ".
 	std::string_view action;
+	bool confirm = false;
 };
 
 // A column of buttons under an optional heading.
@@ -44,11 +58,16 @@ struct Panel {
 	std::span<const Column> columns;
 	// Space between buttons.
 	int gap;
+	bool confirmation = false;
 };
 
 auto Main() -> const Panel&;
 auto Debug() -> const Panel&;
 auto Repairs() -> const Panel&;
+
+// Dedicated dialogs; their default focus is Cancel, never the action.
+auto Confirmations() -> std::span<const Panel>;
+auto ConfirmationFor(std::string_view id) -> const Panel*;
 
 // The button with this id on the panel, or nullptr.
 auto Find(const Panel& panel, std::string_view id) -> const Button*;

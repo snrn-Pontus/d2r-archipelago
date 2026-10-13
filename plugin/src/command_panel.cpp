@@ -11,30 +11,50 @@ namespace {
 
 using json = nlohmann::json;
 
-// Game-side tools left, the server's right.
+// Keep routine queries separate from maintenance and consequential actions.
 constexpr std::array MainLeft {
 	Button { "status", "Status", "ap-status" },
 	Button { "missing", "Checks Left Here", "ap-missing" },
 	Button { "missing-all", "Checks Left by Act", "ap-missing all" },
 	Button { "hints", "Hints Found", "ap-hints" },
-	Button { "ledger", "New Ledger", "ap-ledger" },
-	Button { "codex", "Rebuild Codex", "ap-codex" },
-	Button { "relearn", "Relearn Skills", "ap-relearn" },
+	Button { "claim", "Claim Character", "ap-claim" },
 };
 
 constexpr std::array MainRight {
 	Button { "server-hints", "Server Hints", "!hint" },
 	Button { "remaining", "Items Left", "!remaining" },
 	Button { "players", "Multiworld Status", "!status" },
-	Button { "collect", "Collect", "!collect" },
-	Button { "claim", "Claim Character", "ap-claim" },
 	Button { "reconnect", "Reconnect", "ap-reconnect" },
-	Button { "disconnect", "Disconnect", "ap-disconnect" },
+};
+
+constexpr std::array MainTools {
+	Button { "ledger", "New Ledger", "ap-ledger" },
+	Button { "codex", "Rebuild Codex", "ap-codex" },
+	Button { "relearn", "Relearn Skills...", "ap-relearn confirm", true },
+	Button { "collect", "Collect...", "!collect", true },
+	Button { "disconnect", "Disconnect...", "ap-disconnect", true },
 };
 
 constexpr std::array MainColumns {
-	Column { "", MainLeft },
-	Column { "", MainRight },
+	Column { "This Game", MainLeft },
+	Column { "Server", MainRight },
+	Column { "Maintenance", MainTools },
+};
+
+constexpr std::array ConfirmRelearn { Button { "confirm-relearn", "Relearn Skills", "ap-relearn confirm" } };
+constexpr std::array ConfirmCollect { Button { "confirm-collect", "Collect", "!collect" } };
+constexpr std::array ConfirmDisconnect { Button { "confirm-disconnect", "Disconnect", "ap-disconnect" } };
+constexpr std::array RelearnColumn { Column { "", ConfirmRelearn } };
+constexpr std::array CollectColumn { Column { "", ConfirmCollect } };
+constexpr std::array DisconnectColumn { Column { "", ConfirmDisconnect } };
+
+const std::array ConfirmationPanels {
+	Panel { "ConfirmRelearn", "archipelago/ConfirmRelearn", "data/global/ui/layouts/archipelago/ConfirmRelearnhd.json",
+		"Relearn Skills?", "Restore one level to each missing Archipelago tree skill after a respec.", RelearnColumn, 30, true },
+	Panel { "ConfirmCollect", "archipelago/ConfirmCollect", "data/global/ui/layouts/archipelago/ConfirmCollecthd.json",
+		"Collect Remaining Checks?", "Ask the server to collect this slot's remaining checks. This cannot be undone.", CollectColumn, 30, true },
+	Panel { "ConfirmDisconnect", "archipelago/ConfirmDisconnect", "data/global/ui/layouts/archipelago/ConfirmDisconnecthd.json",
+		"Disconnect?", "Stop receiving items and sending checks until you reconnect.", DisconnectColumn, 30, true },
 };
 
 // The debug panel, for the playtest checklist. Level ids from Levels.txt.
@@ -138,7 +158,7 @@ const Panel MainPanel {
 	.name    = "archipelago/CommandPanel",
 	.path    = "data/global/ui/layouts/archipelago/CommandPanelhd.json",
 	.title   = "Archipelago",
-	.help    = "Answers show in the chat.",
+	.help    = "Choose a command. The panel closes so you can read its answer in chat.",
 	.columns = MainColumns,
 	.gap     = 30,
 };
@@ -205,6 +225,19 @@ auto Repairs() -> const Panel& {
 	return RepairPanel;
 }
 
+auto Confirmations() -> std::span<const Panel> {
+	return ConfirmationPanels;
+}
+
+auto ConfirmationFor(std::string_view id) -> const Panel* {
+	for (const auto& panel : ConfirmationPanels) {
+		if (panel.columns[0].buttons[0].id == "confirm-" + std::string(id)) {
+			return &panel;
+		}
+	}
+	return nullptr;
+}
+
 auto Find(const Panel& panel, std::string_view id) -> const Button* {
 	for (const auto& column : panel.columns) {
 		for (const auto& button : column.buttons) {
@@ -254,6 +287,7 @@ auto Layout(const Panel& panel) -> std::string {
 	// Centred on the screen: the headings, the grid, then the Close button under it.
 	const int pitch = ButtonHeight + panel.gap;
 	const int width = columns * ButtonWidth + (columns - 1) * panel.gap;
+	const bool confirmation = panel.confirmation;
 	const int heading = headings ? HeadingHeight : 0;
 	const int height = heading + (rows + 1) * pitch - panel.gap;
 	const int left = -width / 2, top = -height / 2;
@@ -273,7 +307,7 @@ auto Layout(const Panel& panel) -> std::string {
 		{ "fields",
 			{
 				{ "anchor", { { "x", 0.5 }, { "y", 0.5 } } },
-				{ "rect", { { "x", left }, { "y", top - 230 }, { "width", width }, { "height", 110 } } },
+				{ "rect", { { "x", confirmation ? -800 : left }, { "y", top - 230 }, { "width", confirmation ? 1600 : width }, { "height", 110 } } },
 				{ "text", panel.title },
 				{ "style", { { "fontColor", "$PanelTitleColor" }, { "pointSize", "$XExtraLargeFontSize" }, { "alignment", { { "h", "center" }, { "v", "center" } } } } },
 			} },
@@ -284,7 +318,7 @@ auto Layout(const Panel& panel) -> std::string {
 		{ "fields",
 			{
 				{ "anchor", { { "x", 0.5 }, { "y", 0.5 } } },
-				{ "rect", { { "x", left }, { "y", top - 110 }, { "width", width }, { "height", 70 } } },
+				{ "rect", { { "x", confirmation ? -800 : left }, { "y", top - 110 }, { "width", confirmation ? 1600 : width }, { "height", 90 } } },
 				{ "text", panel.help },
 				{ "style", "$StyleModalDialogDescription" },
 			} },
@@ -311,12 +345,12 @@ auto Layout(const Panel& panel) -> std::string {
 				ClickMessage(button.id)));
 		}
 	}
-	children.push_back(ButtonWidget("Close", "Close", -ButtonWidth / 2, grid + rows * pitch, std::string("PanelManager:ClosePanel:") + panel.name));
+	children.push_back(ButtonWidget("Close", confirmation ? "Cancel" : "Close", -ButtonWidth / 2, grid + rows * pitch, std::string("PanelManager:ClosePanel:") + panel.name));
 
 	const json root {
 		{ "type", "Panel" },
 		{ "name", panel.name },
-		{ "fields", { { "fitToParent", true }, { "priority", 8500 }, { "defaultWidget", panel.columns[0].buttons[0].id } } },
+		{ "fields", { { "fitToParent", true }, { "priority", 8500 }, { "defaultWidget", confirmation ? std::string_view("Close") : panel.columns[0].buttons[0].id } } },
 		{ "children", std::move(children) },
 	};
 	return root.dump(1, '\t');

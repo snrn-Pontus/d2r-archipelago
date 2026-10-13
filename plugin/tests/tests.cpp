@@ -805,6 +805,33 @@ void TestClientSurvivesBadPackets() {
 	EXPECT(client.State() == ap::ConnectionState::Idle && client.StatusText().starts_with("Disconnected."));
 }
 
+void TestPanelConnectionTarget() {
+	ap::Client client([](const std::string&) {});
+	client.Handle(R"json([{"cmd":"Connected","checked_locations":[2420001],"missing_locations":[2420002]},
+		{"cmd":"ReceivedItems","index":0,"items":[{"item":2430054,"location":-2,"player":1}]}])json");
+	// A pending dialog must become stale as soon as another connection is requested,
+	// while the previous accepted session generation still matches.
+	EXPECT(client.HasCurrentSession());
+	const auto accepted = client.SessionGeneration();
+	const auto target = client.TargetGeneration();
+	client.Connect("localhost:1", "OtherSlot", "");
+	EXPECT(client.TargetGeneration() == target + 1);
+	EXPECT(!client.HasCurrentSession());
+	EXPECT(client.SessionGeneration() == accepted);
+	client.Disconnect();
+	EXPECT(client.TargetGeneration() == target + 2);
+	EXPECT(client.SessionGeneration() == accepted);
+	EXPECT(!client.HasCurrentSession());
+	// A late Connected from the old socket must not count as acceptance of the
+	// newly requested target. Feed explicit connection generations deterministically.
+	client.Handle(R"json([{"cmd":"Connected"}])json", target);
+	EXPECT(!client.HasCurrentSession());
+	client.Handle(R"json([{"cmd":"Connected"}])json", client.TargetGeneration());
+	EXPECT(client.HasCurrentSession());
+	client.Handle(R"json([{"cmd":"ConnectionRefused","errors":["InvalidSlot"]}])json", client.TargetGeneration());
+	EXPECT(!client.HasCurrentSession());
+}
+
 void TestClientDeathLink() {
 	ap::Client client([](const std::string&) {});
 	client.Connect("localhost", "Snrn", "");
@@ -1553,11 +1580,38 @@ void TestPersonalization() {
 	EXPECT(HexDump(std::span(data).first(18)).find("\n0010: ") != std::string::npos);
 }
 
+void TestDeferredPanelScope() {
+	const ap::panel::SessionScope confirmed { 1, 2, 3, 0, 0, true };
+	EXPECT(ap::panel::SameReadyScope(confirmed, confirmed));
+	for (int change = 0; change < 6; ++change) {
+		auto current = confirmed;
+		switch (change) {
+			case 0: ++current.target; break;
+			case 1: ++current.session; break;
+			case 2: ++current.game; break;
+			case 3: ++current.playerClass; break;
+			case 4: ++current.seedClass; break;
+			case 5: current.ready = false; break;
+		}
+		EXPECT(!ap::panel::SameReadyScope(confirmed, current));
+	}
+	auto disconnected = confirmed;
+	disconnected.ready = false;
+	EXPECT(!ap::panel::SameReadyScope(disconnected, disconnected));
+}
+
 void TestCommandPanel() {
 	std::set<std::string> ids;
-	for (const auto* panel : { &ap::panel::Main(), &ap::panel::Debug(), &ap::panel::Repairs() }) {
+	std::vector<const ap::panel::Panel*> panels { &ap::panel::Main(), &ap::panel::Debug(), &ap::panel::Repairs() };
+	for (const auto& dialog : ap::panel::Confirmations()) {
+		panels.push_back(&dialog);
+	}
+	for (const auto* panel : panels) {
 		const auto layout = nlohmann::json::parse(ap::panel::Layout(*panel));
 		EXPECT(layout["type"] == "Panel" && layout["name"] == panel->name);
+		if (panel->confirmation) {
+			EXPECT(layout["fields"]["defaultWidget"] == "Close");
+		}
 		std::set<std::string> names;
 		std::set<std::string> messages;
 		for (const auto& child : layout["children"]) {
@@ -1573,6 +1627,11 @@ void TestCommandPanel() {
 				++count;
 				EXPECT(ids.insert(std::string(button.id)).second);
 				EXPECT(ap::panel::Find(*panel, button.id) == &button);
+				if (button.confirm) {
+					const auto* dialog = ap::panel::ConfirmationFor(button.id);
+					EXPECT(dialog != nullptr && dialog->confirmation);
+					EXPECT(dialog->columns[0].buttons[0].action == button.action);
+				}
 				EXPECT(messages.contains(ap::panel::ClickMessage(button.id)));
 				EXPECT(ap::panel::ClickedButton("PanelManager", "OpenPanel", ap::panel::ClickMessage(button.id).substr(23)) == button.id);
 				const auto parts = ap::panel::SplitAction(button.action);
@@ -1592,6 +1651,12 @@ void TestCommandPanel() {
 	for (const auto& column : ap::panel::Debug().columns) {
 		EXPECT(column.buttons.size() <= 12);
 	}
+	// Confirmation IDs cannot resolve as ordinary commands on the main panel.
+	for (const auto& dialog : ap::panel::Confirmations()) {
+		EXPECT(ap::panel::Find(ap::panel::Main(), dialog.columns[0].buttons[0].id) == nullptr);
+	}
+	EXPECT(ap::panel::ConfirmationFor("status") == nullptr);
+	EXPECT(ap::panel::ConfirmationFor("confirm-collect") == nullptr);
 	// Debug buttons only run from the debug panel.
 	EXPECT(ap::panel::Find(ap::panel::Main(), "debug-god") == nullptr);
 	EXPECT(ap::panel::Find(ap::panel::Debug(), "debug-god") != nullptr);
@@ -1627,6 +1692,7 @@ void TestRepairOffers() {
 
 int main() {
 	TestCommandPanel();
+	TestDeferredPanelScope();
 	TestRepairOffers();
 	TestQuestTriggers();
 	TestCodexLevels();
@@ -1651,6 +1717,7 @@ int main() {
 	TestGoldExperienceCharms();
 	TestShrinesAndTraps();
 	TestClientParsesServerPackets();
+	TestPanelConnectionTarget();
 	TestClientSurvivesBadPackets();
 	TestClientDeathLink();
 	TestHintPackets();
