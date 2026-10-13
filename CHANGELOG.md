@@ -2,6 +2,16 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.8.1 - 2026-10-13
+
+- Starting a new game no longer carries over the last character's level, class and area, so it no longer
+  sends level checks you didn't earn, builds the Codex for the wrong class or fires town traps outside town
+  (#72)
+- `ap-disconnect` really disconnects, and one bad packet from the server no longer leaves the client stuck
+  on Connecting or loses the items after it (#69)
+- New seeds: locks that gate nothing (Horadric Cube Access in a one-act game, Merchant Access with no shop
+  checks or cow level) count as filler, so they no longer take a spot a skill could have (#77)
+
 ## 0.8.0 - 2026-10-13
 
 - Superuniques you can't avoid keep their usual level on Normal, whatever Superunique Shuffle made them, and
