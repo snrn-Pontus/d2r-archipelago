@@ -183,6 +183,21 @@ recorded the moment you use them. Use each one right after picking it up, within
 - [ ] Note whether handing the Golden Bird to Alkor right after Meshif gives it to you still sends
       "Find The Golden Bird" (this one is handed over, not used, so the change doesn't cover it).
 
+## 2c. D2RLoader's quest event (issue #20)
+
+Quest checks use fallbacks (boss kill, quest item, reaching an area, 20 Den kills) because D2RLoader's
+`QuestCompleted` event didn't fire on 1.3.1-beta. The log now names what completed each quest
+("Normal Den of Evil completed by the quest event / a boss kill / ..."), and every event logs its raw row
+("quest event for row 1 on difficulty 0"). Search the plugin log for "quest event" after each step.
+
+- [ ] Fresh character: clear the Den of Evil. Does "quest event for row 1" show up, and before or after
+      "completed by Den of Evil kills"? Does it come when the last monster dies or when you talk to Akara?
+- [ ] Sisters' Burial Grounds (row 2) and The Search for Cain (row 4): the event's row matches the quest
+      (if not, note the rows; the plugin needs a row-to-quest map instead).
+- [ ] Debug panel "Complete Quests" on a fresh character: note which rows the events log, if any.
+- [ ] Rejoin a character with finished quests: no events for them (they're baselined), and nothing is lost.
+- [ ] Nightmare: the event's difficulty is 1.
+
 ## 3. Act keys
 
 Defaults (`act_keys` and `enforce_act_keys` on).
