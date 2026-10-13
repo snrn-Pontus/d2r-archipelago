@@ -479,3 +479,18 @@ class TestDruidFullStart(D2RTestBase):
             for skill in starting:
                 if skill in SKILL_FORMS:
                     self.assertTrue(starting & set(SKILL_FORMS[skill]), f"seed {seed}: starting {skill} without a starting form")
+
+
+class TestClassWeightedBackfill(D2RTestBase):
+    options = {"character_class": "sorceress", "skill_classes": ["Sorceress", "Assassin"], "skill_focus": "class_weighted"}
+
+    def test_pool_fills_from_the_class_when_others_run_out(self) -> None:
+        sorceress = [f"Skill {n} (Sorceress)" for n in range(28)]
+        assassin = [f"Skill {n} (Assassin)" for n in range(16)]
+        self.world.item_name_groups = {**self.world.item_name_groups, "Sorceress": set(sorceress)}
+        rest = sorceress + assassin
+        for count in (10, 30, 44):
+            picked = self.world.pick_skill_pool(rest, count)
+            self.assertEqual(len(picked), count)
+            self.assertEqual(len(set(picked)), count)
+        self.assertEqual(len([name for name in self.world.pick_skill_pool(rest, 10) if name in sorceress]), 5)

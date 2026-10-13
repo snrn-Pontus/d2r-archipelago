@@ -455,14 +455,16 @@ class D2RWorld(World):
         return (starters + others)[:count]
 
     def pick_skill_pool(self, rest: list[str], count: int) -> list[str]:
-        """The pool's distinct skills. class_weighted takes half from the chosen class."""
+        """The pool's distinct skills. class_weighted takes half from the chosen class, and when either half
+        runs out, the other one makes up the difference."""
         own = self.class_name()
         if self.options.skill_focus != self.options.skill_focus.option_class_weighted or not own or self.tree_mode:
             return self.random.sample(rest, count)
         mine = [name for name in rest if name in self.item_name_groups[own]]
         others = [name for name in rest if name not in self.item_name_groups[own]]
-        from_class = min(len(mine), count // 2)
-        return self.random.sample(mine, from_class) + self.random.sample(others, min(len(others), count - from_class))
+        from_others = min(len(others), count - min(len(mine), count // 2))
+        from_class = min(len(mine), count - from_others)
+        return self.random.sample(mine, from_class) + self.random.sample(others, from_others)
 
     def loot_weights(self) -> dict[str, float]:
         weights = {name: self.options.basic_loot_weight.value / len(BASIC_LOOT) for name in BASIC_LOOT}
