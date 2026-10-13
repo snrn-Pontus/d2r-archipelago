@@ -156,6 +156,20 @@ auto TuneMainPathSuperUniques(Table& monstats, const Table& before, int strength
 // Each rune moves at most `spread` tiers.
 auto ShuffleRunewords(Table& runes, std::mt19937& random, int spread = 2) -> std::vector<std::string>;
 
+// One runeword's new recipe and the banks (indexes into the tables given to
+// ShuffleRunewords) that make it this way.
+struct RunewordRecipe {
+	std::string         text; // "Name: Rune Rune ..."
+	std::vector<size_t> banks;
+};
+
+// Shuffles several runes.txt banks (RotW's and Classic/LoD's) alike: a runeword
+// with the same Name and the same runes in several banks gets one new recipe in
+// all of them; the rest (only in one bank, or with other runes there) get their
+// own. No two complete runewords in a bank end with one sequence. With one bank
+// it rolls exactly like the single-table ShuffleRunewords.
+auto ShuffleRunewords(const std::vector<Table*>& banks, std::mt19937& random, int spread = 2) -> std::vector<RunewordRecipe>;
+
 // Appends the "Archipelago Codex" unique small charm (level 1, never drops) as
 // record `record`, unless the table already has it. The plugin adds the
 // received skills to it when it creates the charm.

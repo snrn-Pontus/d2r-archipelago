@@ -43,6 +43,7 @@
 #include <fstream>
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -720,7 +721,34 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			}
 		}
 	}
-	for (const std::string bank : Banks) {
+	// Both banks' runes.txt, shuffled together: a runeword both banks have gets one recipe, so
+	// runewords.txt is right for any character. A word only one bank makes this way says so.
+	std::vector<std::optional<Table>> runeTables(std::size(Banks));
+	if (settings.runewords) {
+		std::vector<Table*> tables;
+		std::vector<const char*> labels;
+		for (size_t i = 0; i < std::size(Banks); ++i) {
+			std::string text;
+			if (ReadCascFile(storage, std::string("data\\global\\excel\\") + Banks[i] + "runes.txt", text)) {
+				runeTables[i] = Table::Parse(text);
+				tables.push_back(&*runeTables[i]);
+				labels.push_back(std::string(Banks[i]).empty() ? "Reign of the Warlock" : "Classic/LoD");
+			}
+		}
+		auto random = TableRandom(settings.seed, "runes");
+		for (auto& recipe : rnd::ShuffleRunewords(tables, random, settings.runeSpread)) {
+			if (recipe.banks.size() < tables.size()) {
+				std::string only;
+				for (const size_t index : recipe.banks) {
+					only += (only.empty() ? "" : ", ") + std::string(labels[index]);
+				}
+				recipe.text += " (" + only + " only)";
+			}
+			recipes.push_back(std::move(recipe.text));
+		}
+	}
+	for (size_t bankIndex = 0; bankIndex < std::size(Banks); ++bankIndex) {
+		const std::string bank = Banks[bankIndex];
 		const char* label = bank.empty() ? "RotW" : "Classic/LoD";
 		int blocked = 0;
 		if (!settings.skillTree.empty()) {
@@ -783,14 +811,8 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			std::printf("  %s: %d superuniques changed shape, %d got a new minion count, %d a new level or strength, %d have their own monster%s\n", label,
 			            changed, minions, tuned, linked, settings.superUniqueChecks ? " (checks)" : "");
 		}
-		if (settings.runewords) {
-			auto random = TableRandom(settings.seed, "runes");
-			PatchTable(storage, excel, bank, "runes.txt", [&](Table& t) {
-				auto list = rnd::ShuffleRunewords(t, random, settings.runeSpread);
-				if (bank.empty()) {
-					recipes = std::move(list);
-				}
-			});
+		if (runeTables[bankIndex]) {
+			PatchTable(storage, excel, bank, "runes.txt", [&](Table& t) { t = *runeTables[bankIndex]; });
 		}
 		if (const auto& xp = settings.xpPercent; xp != unchanged) {
 			PatchTable(storage, excel, bank, "monlvl.txt", [&](Table& t) { rnd::ScaleExperience(t, xp); });
