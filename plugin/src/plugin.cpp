@@ -2823,32 +2823,12 @@ auto CommandCore(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command,
 
 // ap-relearn [confirm]: unlocks the received tree skills again after a respec,
 // which takes away the level skadd gave. Nothing reads a skill's level, and
-// canAllocateSkill also says no for an unlocked skill when you have no unspent
-// points or are below its level requirement, so:
-// - when some received skill takes a point, you have points, and the ones that
-//   don't (and whose level requirement you meet) lost their level;
-// - when none does, that's a respec or no points; ap-relearn confirm says it's
-//   a respec and gives every one of them a level back.
-// A failed check never counts as a lost skill, since skadd adds a level each time.
+// canAllocateSkill also says no for an unlocked skill with no unspent points,
+// below its level requirement or at its cap, while skadd adds a level each
+// time. So ap-relearn only lists the skills that won't take a point, and
+// ap-relearn confirm (you just respecced) gives each of them a level back. A
+// failed check changes nothing.
 bool gRelearnConfirmed = false;
-
-// A skill's level requirement in this seed: the skill tree shuffle gives it its slot's.
-auto SkillReqLevel(uint32_t skill) -> int {
-	uint32_t slot = skill;
-	if (gClient) {
-		for (const auto& [moved, place] : gClient->Slots().randomizer.skillTree) {
-			if (moved == skill) {
-				slot = place;
-			}
-		}
-	}
-	for (const auto& entry : ap::data::Skills) {
-		if (entry.id == slot) {
-			return entry.reqLevel;
-		}
-	}
-	return 0;
-}
 
 void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 	auto say = [](const std::string& text) {
@@ -2866,50 +2846,39 @@ void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 	std::set<uint32_t> unlocked;
 	bool confirmed = false;
-	int level = 0;
 	{
 		std::lock_guard lock(gMutex);
 		unlocked = gSave.unlockedSkills;
 		confirmed = gRelearnConfirmed;
 		gRelearnConfirmed = false;
-		level = gPlayerLevel;
 	}
 	std::vector<uint32_t> refused;
-	bool anyAllowed = false;
+	std::string names;
 	for (const uint32_t skill : unlocked) {
 		bool allowed = false;
 		if (gGameRules->canAllocateSkill(gContext, player, skill, &allowed) != D2RL::GameRules::Result::Success) {
 			say("Archipelago: couldn't check " + SkillName(skill) + ", so ap-relearn changed nothing.");
 			return;
 		}
-		anyAllowed = anyAllowed || allowed;
 		if (!allowed) {
 			refused.push_back(skill);
+			names += (names.empty() ? "" : ", ") + SkillName(skill);
 		}
 	}
-	std::vector<uint32_t> relearn;
-	if (anyAllowed) {
-		for (const uint32_t skill : refused) {
-			if (level > 0 && SkillReqLevel(skill) <= level) {
-				relearn.push_back(skill);
-			}
-		}
-	} else if (!refused.empty()) {
-		if (!confirmed) {
-			say("Archipelago: none of your Archipelago skills will take a point. After a respec that's expected, but it's the same with no unspent "
-			    "skill points. If you just respecced, type ap-relearn confirm.");
-			return;
-		}
-		relearn = refused;
+	if (refused.empty()) {
+		say("Archipelago: all your Archipelago skills are still unlocked.");
+		return;
+	}
+	if (!confirmed) {
+		say("Archipelago: these skills won't take a point: " + names + ". After a respec that's expected, but it's the same with no unspent "
+		    "skill points, below a skill's level requirement or at its cap. If you just respecced, type ap-relearn confirm.");
+		return;
 	}
 	std::lock_guard lock(gMutex);
-	std::string names;
-	for (const uint32_t skill : relearn) {
+	for (const uint32_t skill : refused) {
 		gCommandQueue.push_back("skadd " + SkillName(skill) + ",1");
-		names += (names.empty() ? "" : ", ") + SkillName(skill);
 	}
-	gConsoleQueue.push_back(relearn.empty() ? "Archipelago: all your Archipelago skills are still unlocked."
-	                                        : "Archipelago: unlocked again: " + names + ".");
+	gConsoleQueue.push_back("Archipelago: unlocked again: " + names + ".");
 }
 
 auto CommandRelearn(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
