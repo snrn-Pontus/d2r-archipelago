@@ -66,6 +66,13 @@ Built, pushed and installed, still to check in game:
       other monsters, the Cow King is still there, and the cows turn up in some other area, where killing 100
       still sends the cow check. `runeword_rune_spread: 0` with `runeword_shuffle` leaves `runewords.txt`
       showing the usual recipes.
+- [ ] Main-path superunique level and strength (#93, new seed needed): with defaults and
+      `superunique_shuffle: nearby`, a reshaped Griswold or Rakanishu shows his usual level on Normal (hover
+      him: the tooltip has no level, so compare how fast he dies at a known character level, or check
+      `monstats.txt` in the mod for `ap_superunique_5`'s Level). `main_path_superunique_strength: 50` makes
+      Bishibosh and Rakanishu die in about half the hits and hit softer, on Normal and Nightmare, while their
+      minions and Bonebreak in the Crypt stay as usual. With `superunique_checks: false` and strength at 50,
+      setup still says the superuniques have their own monster, they show their HD models, and no checks are sent.
 - [ ] Unspawnable superuniques dropped (issue #28, new seed needed): `ap-missing` and the Ledger list 31
       superunique checks per difficulty, none without an area. Frigid Highlands has Eldritch, Sharptooth
       Slayer and Eyeback but no Axe Dweller, Anodized Elite, Vinvear Molech, Magma Torquer or Blaze Ripper.

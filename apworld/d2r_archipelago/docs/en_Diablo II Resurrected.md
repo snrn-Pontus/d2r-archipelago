@@ -131,10 +131,14 @@ The setup tool rewrites the game's tables for your seed:
 - `superunique_shuffle`: field superuniques like Bishibosh and Pindleskin become other monsters. Quest and
   act bosses stay as they are. `main_path_superunique_cap` (default 2) keeps the ones you can't avoid, like
   Rakanishu and Griswold, within that many levels of their own monster; the tougher swaps land in optional
-  dungeons (the Crypt, the Cave, the Stony Tomb, Tal Rasha's tombs and the Icy Cellar). Once one of those
-  main-path superuniques is a new monster, it brings at most `main_path_superunique_minions` minions
-  (default 5). `superunique_shuffle_spread` sets how many swap together with `nearby` (default 6), and
+  dungeons (the Crypt, the Cave, the Stony Tomb, Tal Rasha's tombs, the Ruined Temple and the Icy Cellar). Once
+  one of those main-path superuniques is a new monster, it brings at most `main_path_superunique_minions`
+  minions (default 5). `superunique_shuffle_spread` sets how many swap together with `nearby` (default 6), and
   `superunique_minions` scales every field superunique's minions in percent.
+- `main_path_superunique_strength` scales the main-path superuniques' HP and damage in percent on every
+  difficulty, and `main_path_superunique_level` sets their Normal level relative to their usual one (default 0:
+  their usual level, whatever monster they became). These work on each superunique's own monster, so ordinary
+  monsters of the same kind and the superunique's minions stay as they are.
 - `runeword_shuffle`: every runeword gets a new recipe of similar-tier runes (`runeword_rune_spread` tiers
   away at most, default 2), listed in `runewords.txt` in the mod folder.
 - `monster_density`, `champion_packs`, `better_drops` (uniques, sets and rares) and `better_magic` in percent.

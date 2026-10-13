@@ -761,24 +761,27 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			PatchTable(storage, excel, bank, "itemratio.txt", [&](Table& t) { rnd::BoostDrops(t, settings.betterDrops, settings.betterMagic); });
 			std::printf("  %s: uniques, sets and rares drop at %d%%, magic items at %d%%\n", label, settings.betterDrops, settings.betterMagic);
 		}
-		if (settings.superUniques != rnd::Shuffle::Off || settings.superUniqueChecks || settings.superUniqueMinions != 100) {
+		const bool ownMonsters = settings.SuperUniqueCopies();
+		if (settings.superUniques != rnd::Shuffle::Off || ownMonsters || settings.superUniqueMinions != 100) {
 			std::string stats;
 			ReadCascFile(storage, "data\\global\\excel\\" + bank + "monstats.txt", stats);
 			Table monstats = Table::Parse(stats);
-			int changed = 0, linked = 0, minions = 0;
+			int changed = 0, linked = 0, minions = 0, tuned = 0;
 			auto random = TableRandom(settings.seed, "superuniques");
 			PatchTable(storage, excel, bank, "superuniques.txt", [&](Table& t) {
 				const Table before = t;
 				changed = rnd::ShuffleSuperUniques(t, monstats, settings.superUniques, random, settings.mainPathSuperUniqueCap, settings.superUniqueSpread);
 				minions = rnd::ScaleSuperUniqueMinions(t, before, settings.superUniqueMinions, settings.mainPathSuperUniqueMinions);
-				if (settings.superUniqueChecks) {
+				if (ownMonsters) {
 					linked = rnd::AddSuperUniqueMonsters(monstats, t, &superUniqueCopies);
+					tuned = rnd::TuneMainPathSuperUniques(monstats, before, settings.mainPathSuperUniqueStrength, settings.mainPathSuperUniqueLevel);
 				}
 			});
-			if (settings.superUniqueChecks) {
+			if (ownMonsters) {
 				PatchTable(storage, excel, bank, "monstats.txt", [&](Table& t) { t = monstats; });
 			}
-			std::printf("  %s: %d superuniques changed shape, %d got a new minion count, %d count as checks\n", label, changed, minions, linked);
+			std::printf("  %s: %d superuniques changed shape, %d got a new minion count, %d a new level or strength, %d have their own monster%s\n", label,
+			            changed, minions, tuned, linked, settings.superUniqueChecks ? " (checks)" : "");
 		}
 		if (settings.runewords) {
 			auto random = TableRandom(settings.seed, "runes");

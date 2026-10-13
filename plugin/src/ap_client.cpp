@@ -293,6 +293,10 @@ void Client::Handle(const std::string& text) {
 			slotData_.randomizer.superUniques = static_cast<randomizer::Shuffle>(randomizer.value("superunique_shuffle", 0));
 			slotData_.randomizer.mainPathSuperUniqueCap = randomizer.value("main_path_superunique_cap", -1);
 			slotData_.randomizer.mainPathSuperUniqueMinions = randomizer.value("main_path_superunique_minions", -1);
+			slotData_.randomizer.mainPathSuperUniqueStrength = randomizer.value("main_path_superunique_strength", 100);
+			// A number pins Normal's level to the superunique's usual one plus it; missing or null keeps the new monster's.
+			const json level = randomizer.value("main_path_superunique_level", json());
+			slotData_.randomizer.mainPathSuperUniqueLevel = level.is_number_integer() ? std::optional<int>(level.get<int>()) : std::nullopt;
 			slotData_.randomizer.superUniqueSpread = randomizer.value("superunique_shuffle_spread", 6);
 			slotData_.randomizer.superUniqueMinions = randomizer.value("superunique_minions", 100);
 			slotData_.randomizer.shuffleTolerance = randomizer.value("monster_shuffle_tolerance", 3);

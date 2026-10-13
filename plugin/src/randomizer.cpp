@@ -34,7 +34,8 @@ auto IsFieldSuperUnique(const std::string& name) -> bool {
 // Field superuniques off the main path: in side dungeons no quest or act
 // route needs. The others stand on an act's route or at a quest objective, so
 // the main-path cap keeps them close to their own strength.
-const std::set<std::string> OptionalSuperUniques = { "Bonebreak", "Coldcrow", "Leatherarm", "Ancient Kaa the Soulless", "Snapchip Shatter" };
+const std::set<std::string> OptionalSuperUniques = { "Bonebreak", "Coldcrow", "Leatherarm", "Ancient Kaa the Soulless", "Sarina the Battlemaid",
+	"Snapchip Shatter" };
 // Scaling never takes a superunique past this many minions (the most in the
 // game is 9, Battlemaid Sarina's).
 constexpr int MaxSuperUniqueMinions = 18;
@@ -57,7 +58,13 @@ void Permute(std::vector<T>& values, std::mt19937& random) {
 auto Settings::Any() const -> bool {
 	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != PerDifficulty { 100, 100, 100 } || !itemLevelRequirements
 	    || !itemStatRequirements || monsterDensity != PerDifficulty { 100, 100, 100 } || championPacks != 100 || superUniqueMinions != 100
-	    || betterDrops != 100 || betterMagic != 100 || superUniqueChecks || !skillTree.empty() || treeMode;
+	    || betterDrops != 100 || betterMagic != 100 || SuperUniqueCopies() || !skillTree.empty() || treeMode;
+}
+
+auto Settings::SuperUniqueCopies() const -> bool {
+	// Level 0 on unshuffled superuniques is their own level already.
+	const bool level = mainPathSuperUniqueLevel.has_value() && (superUniques != Shuffle::Off || *mainPathSuperUniqueLevel != 0);
+	return superUniqueChecks || mainPathSuperUniqueStrength != 100 || level;
 }
 
 // A short fingerprint of a skill tree deal, for the mod's stamp.
@@ -96,6 +103,8 @@ auto Settings::Stamp() const -> std::string {
 	add(superUniques != Shuffle::Off && mainPathSuperUniqueMinions >= 0, "superunique_minion_cap", mainPathSuperUniqueMinions);
 	add(superUniqueMinions != 100, "superunique_minions", superUniqueMinions);
 	add(runewords && runeSpread != 2, "rune_spread", runeSpread);
+	add(mainPathSuperUniqueStrength != 100, "superunique_strength", mainPathSuperUniqueStrength);
+	add(SuperUniqueCopies() && mainPathSuperUniqueLevel.has_value(), "superunique_level", mainPathSuperUniqueLevel.value_or(0));
 	// The count, so a mod written for an older superunique list doesn't
 	// match: the plugin finds each copy by its distance from the end.
 	return stamp + (superUniqueChecks ? " superunique_checks=" + std::to_string(std::size(data::SuperUniques)) : "")
@@ -661,6 +670,64 @@ auto AddSuperUniqueMonsters(Table& monstats, Table& superUniques, std::vector<st
 		++linked;
 	}
 	return linked;
+}
+
+auto TuneMainPathSuperUniques(Table& monstats, const Table& before, int strengthPercent, std::optional<int> level) -> int {
+	const int id = monstats.Column("Id");
+	const int normalLevel = monstats.Column("Level");
+	const int key = before.Column("Superunique");
+	const int cls = before.Column("Class");
+	if (id < 0 || key < 0 || cls < 0) {
+		return 0;
+	}
+	// HP and every attack's damage, on all three difficulties.
+	std::vector<int> scaled;
+	for (const char* base : { "minHP", "maxHP", "A1MinD", "A1MaxD", "A2MinD", "A2MaxD", "S1MinD", "S1MaxD", "El1MinD", "El1MaxD", "El2MinD", "El2MaxD",
+	                          "El3MinD", "El3MaxD" }) {
+		for (const char* suffix : { "", "(N)", "(H)" }) {
+			std::string name = std::string(base) + suffix;
+			// Nightmare and Hell spell HP with a capital M (MinHP(N), MaxHP(N)).
+			if (*suffix != '\0' && name[0] == 'm') {
+				name[0] = 'M';
+			}
+			if (const int column = monstats.Column(name); column >= 0) {
+				scaled.push_back(column);
+			}
+		}
+	}
+	std::unordered_map<std::string, size_t> monsterRow;
+	for (size_t row = 0; row < monstats.Rows().size(); ++row) {
+		monsterRow.emplace(monstats.Cell(row, id), row);
+	}
+	std::unordered_map<std::string, std::string> originalClass;
+	for (size_t row = 0; row < before.Rows().size(); ++row) {
+		originalClass.emplace(before.Cell(row, key), before.Cell(row, cls));
+	}
+	int changed = 0;
+	for (const auto& entry : data::SuperUniques) {
+		const auto copy = monsterRow.find(std::string(SuperUniqueMonsterPrefix) + std::to_string(entry.id));
+		const auto original = originalClass.find(entry.name);
+		if (OptionalSuperUniques.contains(entry.name) || copy == monsterRow.end() || original == originalClass.end()) {
+			continue;
+		}
+		const size_t row = copy->second;
+		bool edited = false;
+		for (const int column : scaled) {
+			const std::string value = monstats.Cell(row, column);
+			if (strengthPercent != 100 && !value.empty() && ParseInt(value) > 0) {
+				monstats.Set(row, column, std::to_string(std::max(1, ParseInt(value) * strengthPercent / 100)));
+				edited = true;
+			}
+		}
+		const auto source = monsterRow.find(original->second);
+		if (level.has_value() && normalLevel >= 0 && source != monsterRow.end()) {
+			const std::string target = std::to_string(std::max(1, ParseInt(monstats.Cell(source->second, normalLevel)) + *level));
+			edited = edited || monstats.Cell(row, normalLevel) != target;
+			monstats.Set(row, normalLevel, target);
+		}
+		changed += edited ? 1 : 0;
+	}
+	return changed;
 }
 
 void AddCodexUnique(Table& uniques, uint32_t record) {

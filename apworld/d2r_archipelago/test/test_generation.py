@@ -255,6 +255,8 @@ class TestShortGame(D2RTestBase):
         self.assertEqual(data["randomizer"]["monster_shuffle"], 1)
         self.assertEqual(data["randomizer"]["main_path_superunique_cap"], 2)
         self.assertEqual(data["randomizer"]["main_path_superunique_minions"], 5)
+        self.assertEqual(data["randomizer"]["main_path_superunique_strength"], 100)
+        self.assertEqual(data["randomizer"]["main_path_superunique_level"], 0)
         self.assertEqual(data["randomizer"]["superunique_shuffle_spread"], 6)
         self.assertEqual(data["randomizer"]["runeword_rune_spread"], 2)
         # Nightmare and Hell follow Normal by default.
@@ -564,7 +566,8 @@ class TestDruidFullStart(D2RTestBase):
 
 class TestShuffleTuning(D2RTestBase):
     options = {"experience_multiplier": 200, "experience_multiplier_hell": 400, "monster_density_nightmare": 300,
-               "main_path_superunique_minions": "off", "better_drops": 50, "shuffle_cow_level": True}
+               "main_path_superunique_minions": "off", "better_drops": 50, "shuffle_cow_level": True,
+               "main_path_superunique_level": "off", "main_path_superunique_strength": 70}
 
     def test_slot_data(self) -> None:
         randomizer = self.world.fill_slot_data()["randomizer"]
@@ -572,6 +575,8 @@ class TestShuffleTuning(D2RTestBase):
                          (200, 200, 400))
         self.assertEqual((randomizer["monster_density_nightmare"], randomizer["monster_density_hell"]), (300, 100))
         self.assertEqual(randomizer["main_path_superunique_minions"], -1)
+        self.assertIsNone(randomizer["main_path_superunique_level"])
+        self.assertEqual(randomizer["main_path_superunique_strength"], 70)
         self.assertEqual(randomizer["better_drops"], 50)
         self.assertTrue(randomizer["shuffle_cow_level"])
 

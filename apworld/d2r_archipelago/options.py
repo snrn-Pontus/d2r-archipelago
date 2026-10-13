@@ -590,7 +590,8 @@ class SuperUniqueShuffle(Choice):
 class MainPathSuperUniqueCap(Range):
     """With Superunique Shuffle on, superuniques you can't avoid (on an act's route or at a quest objective, like
     Rakanishu, Griswold and Pindleskin) only become a monster at most this many levels above their own; the
-    tougher ones go to the optional dungeons. 0 never makes them stronger; 50 turns the cap off."""
+    tougher ones go to the optional dungeons (Crypt, Cave, Stony Tomb, Tal Rasha's false tombs, Ruined Temple,
+    Icy Cellar). 0 never makes them stronger; 50 turns the cap off."""
     display_name = "Main-Path Superunique Cap"
     range_start = 0
     range_end = 50
@@ -606,6 +607,27 @@ class MainPathSuperUniqueMinions(NamedRange):
     range_end = 18
     default = 5
     special_range_names = {"off": -1}
+
+
+class MainPathSuperUniqueStrength(Range):
+    """HP and damage of the superuniques you can't avoid (on an act's route or at a quest objective; not the ones
+    in optional dead-end dungeons), in percent, on every difficulty. Their minions are unaffected. Spells take
+    their damage from the monster's level, so they don't scale."""
+    display_name = "Main-Path Superunique Strength"
+    range_start = 25
+    range_end = 200
+    default = 100
+
+
+class MainPathSuperUniqueLevel(NamedRange):
+    """On Normal, a main-path superunique's level is its usual level plus this, whatever monster Superunique
+    Shuffle made it, so a reshaped Griswold is still level 5 at 0. Nightmare and Hell take every monster's level
+    from the area, so they aren't affected. off: it takes its new monster's level."""
+    display_name = "Main-Path Superunique Level"
+    range_start = -10
+    range_end = 10
+    default = 0
+    special_range_names = {"off": -11}
 
 
 class SuperUniqueShuffleSpread(Range):
@@ -891,6 +913,8 @@ class D2ROptions(PerGameCommonOptions):
     superunique_shuffle: SuperUniqueShuffle
     main_path_superunique_cap: MainPathSuperUniqueCap
     main_path_superunique_minions: MainPathSuperUniqueMinions
+    main_path_superunique_strength: MainPathSuperUniqueStrength
+    main_path_superunique_level: MainPathSuperUniqueLevel
     superunique_shuffle_spread: SuperUniqueShuffleSpread
     superunique_minions: SuperUniqueMinions
     runeword_shuffle: RunewordShuffle
@@ -934,7 +958,8 @@ OPTION_GROUPS = [
                           TaxCollectorWeight, MercenaryDownWeight, TrapsWaitForTown, AmbushSize, AmbushMonsters, TaxCollectorGold,
                           JunkBackpackSize], start_collapsed=True),
     OptionGroup("Game Changes", [MonsterShuffle, MonsterShuffleTolerance, ShuffleCowLevel, SuperUniqueShuffle, MainPathSuperUniqueCap,
-                                 MainPathSuperUniqueMinions, SuperUniqueShuffleSpread, SuperUniqueMinions, RunewordShuffle,
+                                 MainPathSuperUniqueMinions, MainPathSuperUniqueStrength, MainPathSuperUniqueLevel,
+                                 SuperUniqueShuffleSpread, SuperUniqueMinions, RunewordShuffle,
                                  RunewordRuneSpread, MonsterDensity, MonsterDensityNightmare, MonsterDensityHell, ChampionPacks,
                                  BetterDrops, BetterMagic, ExperienceMultiplier, ExperienceMultiplierNightmare,
                                  ExperienceMultiplierHell, ItemLevelRequirements, ItemStatRequirements]),
