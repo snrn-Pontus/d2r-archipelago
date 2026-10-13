@@ -399,6 +399,35 @@ void TestClientParsesServerPackets() {
 	EXPECT(client.Items().empty() && client.ItemsSynced());
 }
 
+void TestClientSurvivesBadPackets() {
+	ap::Client client([](const std::string&) {});
+	// Fields of the wrong type fall back to their defaults instead of failing the whole Connected,
+	// and the ReceivedItems after it in the same message still arrives.
+	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[{"team":0,"slot":1,"alias":7,"name":"Snrn"}],
+		"missing_locations":[2420002,"x"],"checked_locations":"none","slot_data":{"goal":"two","level_cap":90,"locks":true,
+		"hints":[[1,"2",3],[4,1,5]],"randomizer":{"skill_tree":[[1,-2]],"xp_multiplier":"lots"}},
+		"slot_info":{"one":{"game":"Diablo II Resurrected"},"1":{"game":5}}},
+		{"cmd":"ReceivedItems","index":0,"items":[{"item":2430054,"location":-2,"player":1,"flags":1}]}])json");
+	EXPECT(client.State() == ap::ConnectionState::Connected);
+	EXPECT(client.Missing() == std::vector<int64_t> { 2420002 } && client.Checked().empty());
+	EXPECT(client.Slots().goal == 0 && client.Slots().levelCap == 90 && !client.Slots().locks.cube);
+	EXPECT(client.Slots().hints.size() == 1 && client.Slots().hints[0].location == 4);
+	EXPECT(client.Slots().randomizer.skillTree.empty() && client.Slots().randomizer.xpPercent[2] == 100);
+	EXPECT(client.PlayerName(1) == "Snrn");
+	EXPECT(client.Items().size() == 1 && client.ItemsSynced());
+	client.TakeMessages();
+	// Bad fields in one packet don't take the rest of the message with them; ids that aren't numbers print as text.
+	client.Handle(R"json([{"cmd":"DataPackage","data":{"games":{"Diablo II Resurrected":{"item_name_to_id":{"Bad":"1"}}}}},
+		{"cmd":"PrintJSON","data":[{"type":"player_id","text":"abc"},{"text":" found "},{"type":"item_id","text":"2430054","player":1}]},
+		{"cmd":"RoomUpdate","checked_locations":[2420002]}])json");
+	EXPECT(client.Missing().empty());
+	const auto messages = client.TakeMessages();
+	EXPECT(messages.size() == 1 && messages[0] == "abc found item 2430054");
+	// ap-disconnect stops claiming Connected right away, so nothing is sent into the closed socket.
+	client.Disconnect();
+	EXPECT(client.State() == ap::ConnectionState::Idle && client.StatusText().starts_with("Disconnected."));
+}
+
 void TestClientDeathLink() {
 	ap::Client client([](const std::string&) {});
 	client.Connect("localhost", "Snrn", "");
@@ -1173,6 +1202,7 @@ int main() {
 	TestGoldExperienceCharms();
 	TestShrinesAndTraps();
 	TestClientParsesServerPackets();
+	TestClientSurvivesBadPackets();
 	TestClientDeathLink();
 	TestConfigRoundTrip();
 	TestConfigDefaults();

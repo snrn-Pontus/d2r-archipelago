@@ -5,8 +5,11 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
+#include <optional>
 #include <random>
+#include <type_traits>
 #include <utility>
 
 using json = nlohmann::json;
@@ -68,6 +71,159 @@ auto ParseServer(std::string server) -> Target {
 	return target;
 }
 
+// object[key] when it's there and of T's JSON type, else the fallback. A field of an unexpected
+// type must not throw out of a packet (nlohmann's value() does), least of all out of Connected.
+template <typename T>
+auto Get(const json& object, const char* key, T fallback) -> T {
+	if (!object.is_object()) {
+		return fallback;
+	}
+	const auto field = object.find(key);
+	if (field == object.end()) {
+		return fallback;
+	}
+	if constexpr (std::is_same_v<T, bool>) {
+		return field->is_boolean() ? field->get<bool>() : fallback;
+	} else if constexpr (std::is_integral_v<T>) {
+		return field->is_number_integer() ? field->get<T>() : fallback;
+	} else {
+		return field->is_string() ? field->get<std::string>() : fallback;
+	}
+}
+
+// object[key] when it's a JSON object or array (as asked), else an empty one.
+auto Object(const json& object, const char* key) -> json {
+	const json field = object.is_object() ? object.value(key, json()) : json();
+	return field.is_object() ? field : json::object();
+}
+
+auto Array(const json& object, const char* key) -> json {
+	const json field = object.is_object() ? object.value(key, json()) : json();
+	return field.is_array() ? field : json::array();
+}
+
+// The integers in object[key], skipping anything else.
+auto Integers(const json& object, const char* key) -> std::vector<int64_t> {
+	std::vector<int64_t> values;
+	for (const json& value : Array(object, key)) {
+		if (value.is_number_integer()) {
+			values.push_back(value.get<int64_t>());
+		}
+	}
+	return values;
+}
+
+// A whole decimal number in text ("12", "-3"), as PrintJSON parts and slot_info keys carry them.
+auto ParseInteger(const std::string& text) -> std::optional<int64_t> {
+	int64_t value = 0;
+	const char* last = text.data() + text.size();
+	const auto [end, error] = std::from_chars(text.data(), last, value);
+	return error == std::errc {} && end == last && !text.empty() ? std::optional(value) : std::nullopt;
+}
+
+auto ReadSlotData(const json& data) -> SlotData {
+	SlotData slots;
+	slots.worldVersion = Get(data, "world_version", std::string());
+	slots.goal = Get(data, "goal", 0);
+	slots.goalAct = Get(data, "goal_act", 5);
+	slots.characterClass = Get(data, "character_class", std::string());
+	slots.actKeys = Get(data, "act_keys", false);
+	slots.skillScaling = Get(data, "skill_scaling", 0);
+	slots.skillScalingCap = Get(data, "skill_scaling_cap", 0);
+	slots.goalQuest = Get(data, "goal_quest", 40);
+	slots.areaChecks = Get(data, "area_checks", true);
+	for (const int64_t location : Integers(data, "side_areas")) {
+		slots.sideAreas.insert(location);
+	}
+	slots.levelChecks = Get(data, "level_checks", true);
+	slots.levelStep = Get(data, "level_step", 5);
+	slots.levelCap = Get(data, "level_cap", 30);
+	slots.superUniqueChecks = Get(data, "superunique_checks", false);
+	slots.deathLink = Get(data, "death_link", false);
+	slots.cowLevelChecks = Get(data, "cow_level_checks", false);
+	slots.runeChecks = Get(data, "rune_checks", 0);
+	slots.gemChecks = Get(data, "gem_checks", false);
+	slots.setChecks = Get(data, "set_checks", false);
+	slots.specialItemChecks = Get(data, "special_item_checks", false);
+	slots.questItemChecks = Get(data, "quest_item_checks", false);
+	slots.shopChecks = Get(data, "shop_checks", 0);
+	slots.uberChecks = Get(data, "uber_checks", false);
+	slots.killCountChecks = Get(data, "kill_count_checks", false);
+	slots.findCountChecks = Get(data, "find_count_checks", false);
+	slots.enforceActKeys = Get(data, "enforce_act_keys", false);
+	for (const json& hint : Array(data, "hints")) {
+		if (hint.is_array() && hint.size() == 3 && std::ranges::all_of(hint, [](const json& part) { return part.is_number_integer(); })) {
+			slots.hints.push_back({ hint[0].get<int64_t>(), hint[1].get<int>(), hint[2].get<int64_t>() });
+		}
+	}
+	slots.hintBalance = Get(data, "hint_balance", 0);
+	const json sources = Object(data, "hint_sources");
+	slots.cainHints = Get(sources, "cain", false);
+	slots.pageHintChance = Get(sources, "page_chance", 0);
+	slots.prophecyShop = Get(sources, "prophecy_shop", false);
+	const json locks = Object(data, "locks");
+	slots.locks = {
+		.cube = Get(locks, "cube", false),
+		.townPortal = Get(locks, "town_portal", false),
+		.potions = Get(locks, "potions", false),
+		.stash = Get(locks, "stash", false),
+		.merchants = Get(locks, "merchants", false),
+		.waypoints = Get(locks, "waypoints", false),
+	};
+	const json traps = Object(data, "traps");
+	slots.traps = {
+		.waitForTown = Get(traps, "wait_for_town", true),
+		.ambushSize = Get(traps, "ambush_size", 6),
+		.areaAmbush = Get(traps, "ambush_monsters", std::string("act")) == "area",
+		.taxPerLevel = Get(traps, "tax_per_level", 1000),
+		.junkSize = Get(traps, "junk_size", 40),
+	};
+	const json randomizer = Object(data, "randomizer");
+	slots.randomizer.seed = Get(randomizer, "seed", 0U);
+	slots.randomizer.monsters = static_cast<randomizer::Shuffle>(Get(randomizer, "monster_shuffle", 0));
+	slots.randomizer.superUniques = static_cast<randomizer::Shuffle>(Get(randomizer, "superunique_shuffle", 0));
+	slots.randomizer.mainPathSuperUniqueCap = Get(randomizer, "main_path_superunique_cap", -1);
+	slots.randomizer.mainPathSuperUniqueMinions = Get(randomizer, "main_path_superunique_minions", -1);
+	slots.randomizer.mainPathSuperUniqueStrength = Get(randomizer, "main_path_superunique_strength", 100);
+	// A number pins Normal's level to the superunique's usual one plus it; missing or null keeps the new monster's.
+	const json level = randomizer.value("main_path_superunique_level", json());
+	slots.randomizer.mainPathSuperUniqueLevel = level.is_number_integer() ? std::optional<int>(level.get<int>()) : std::nullopt;
+	slots.randomizer.superUniqueSpread = Get(randomizer, "superunique_shuffle_spread", 6);
+	slots.randomizer.superUniqueMinions = Get(randomizer, "superunique_minions", 100);
+	slots.randomizer.shuffleTolerance = Get(randomizer, "monster_shuffle_tolerance", 3);
+	slots.randomizer.shuffleCowLevel = Get(randomizer, "shuffle_cow_level", false);
+	slots.randomizer.runewords = Get(randomizer, "runeword_shuffle", false);
+	slots.randomizer.runeSpread = Get(randomizer, "runeword_rune_spread", 2);
+	// Nightmare and Hell follow Normal unless the slot sets them.
+	const int xp = Get(randomizer, "xp_multiplier", 100);
+	slots.randomizer.xpPercent = { xp, Get(randomizer, "xp_multiplier_nightmare", xp), Get(randomizer, "xp_multiplier_hell", xp) };
+	slots.randomizer.itemLevelRequirements = Get(randomizer, "item_level_requirements", true);
+	slots.randomizer.itemStatRequirements = Get(randomizer, "item_stat_requirements", true);
+	const int density = Get(randomizer, "monster_density", 100);
+	slots.randomizer.monsterDensity = { density, Get(randomizer, "monster_density_nightmare", density),
+		Get(randomizer, "monster_density_hell", density) };
+	slots.randomizer.championPacks = Get(randomizer, "champion_packs", 100);
+	slots.randomizer.betterDrops = Get(randomizer, "better_drops", 100);
+	slots.randomizer.betterMagic = Get(randomizer, "better_magic", 100);
+	for (const json& pair : Array(randomizer, "skill_tree")) {
+		if (pair.is_array() && pair.size() == 2 && pair[0].is_number_unsigned() && pair[1].is_number_unsigned()) {
+			slots.randomizer.skillTree.emplace_back(pair[0].get<uint32_t>(), pair[1].get<uint32_t>());
+		}
+	}
+	slots.randomizer.treeMode = Get(randomizer, "tree_mode", false);
+	slots.randomizer.superUniqueChecks = slots.superUniqueChecks;
+	// Bound first: items() on a temporary would iterate a destroyed object.
+	const json loaderSettings = Object(data, "loader_settings");
+	for (const auto& [path, value] : loaderSettings.items()) {
+		if (value.is_boolean()) {
+			slots.loaderSettings.emplace_back(path, value.get<bool>() ? "true" : "false");
+		} else if (value.is_number_integer()) {
+			slots.loaderSettings.emplace_back(path, std::to_string(value.get<int64_t>()));
+		}
+	}
+	return slots;
+}
+
 } // namespace
 
 Client::Client(LogFn log) : log_(std::move(log)) {
@@ -105,9 +261,16 @@ void Client::Disconnect() {
 		std::lock_guard lock(mutex_);
 		wantConnection_ = false;
 		++targetGeneration_;
+		// Not Connected from here on, so nothing is sent into the closed socket and lost.
+		SetDisconnected();
 	}
 	socket_.Close();
 	wake_.notify_all();
+}
+
+void Client::SetDisconnected() {
+	state_ = ConnectionState::Idle;
+	status_ = "Disconnected. Use ap-connect <server> <slot> [password] to connect again.";
 }
 
 void Client::Run() {
@@ -130,12 +293,31 @@ void Client::Run() {
 		for (const bool secure : target.secureAttempts) {
 			if (socket_.Connect(target.host, target.port, secure, lastError)) {
 				lastError.clear();
-				Session();
+				// A Connect or Disconnect during the handshake found no socket to close, so the
+				// session would run on the old target (or after ap-disconnect): drop it instead.
+				bool current = false;
+				{
+					std::lock_guard lock(mutex_);
+					current = wantConnection_ && generation == targetGeneration_;
+				}
+				if (current) {
+					Session();
+				} else {
+					socket_.Close();
+				}
 				break;
 			}
 		}
 		std::unique_lock lock(mutex_);
-		if (state_ == ConnectionState::Refused || !wantConnection_ || generation != targetGeneration_) {
+		if (state_ == ConnectionState::Refused) {
+			continue;
+		}
+		if (!wantConnection_) {
+			// A Connected packet handled while Disconnect ran may have set Connected again.
+			SetDisconnected();
+			continue;
+		}
+		if (generation != targetGeneration_) {
 			continue;
 		}
 		const bool wasConnected = state_ == ConnectionState::Connected;
@@ -176,275 +358,197 @@ void Client::Notify(const std::string& message) {
 
 void Client::Handle(const std::string& text) {
 	const json packets = json::parse(text);
+	if (!packets.is_array()) {
+		log_("Archipelago: bad message (not a packet list): " + text.substr(0, 300));
+		return;
+	}
+	// One bad packet must not take the rest of the message (often the Connected reply's
+	// ReceivedItems) down with it.
 	for (const json& packet : packets) {
-		const std::string cmd = packet.value("cmd", "");
-		if (cmd == "RoomInfo") {
-			std::string slot, password;
-			{
-				std::lock_guard lock(mutex_);
-				seed_ = packet.value("seed_name", "");
-				slot = slot_;
-				password = password_;
-			}
-			json games = packet.value("games", json::array());
-			Send(json::array({ json { { "cmd", "GetDataPackage" }, { "games", games } } }).dump());
-			const json connect {
-				{ "cmd", "Connect" },
-				{ "game", GameName },
-				{ "name", slot },
-				{ "password", password },
-				{ "uuid", RandomUuid() },
-				{ "version", { { "major", 0 }, { "minor", 6 }, { "build", 4 }, { "class", "Version" } } },
-				{ "items_handling", 0b111 },
-				{ "tags", json::array() },
-				{ "slot_data", true },
-			};
-			Send(json::array({ connect }).dump());
-		} else if (cmd == "Connected") {
+		try {
+			HandlePacket(&packet);
+		} catch (const std::exception& error) {
+			log_(std::string("Archipelago: bad packet: ") + error.what() + " in " + packet.dump().substr(0, 300));
+		}
+	}
+}
+
+void Client::HandlePacket(const void* message) {
+	const json& packet = *static_cast<const json*>(message);
+	const std::string cmd = Get(packet, "cmd", std::string());
+	if (cmd == "RoomInfo") {
+		std::string slot, password;
+		{
 			std::lock_guard lock(mutex_);
-			team_ = packet.value("team", 0);
-			mySlot_ = packet.value("slot", 0);
-			// A new session: the previous slot's items and players must not carry over. The server
-			// follows with ReceivedItems index 0 when this slot has any items (same reply), and sends
-			// nothing when it has none, so the list stays empty and unsynced until then.
-			items_.clear();
-			itemsSynced_ = false;
-			++itemsGeneration_;
-			playerNames_.clear();
-			playerGames_.clear();
-			for (const json& player : packet.value("players", json::array())) {
-				if (player.value("team", 0) == team_) {
-					playerNames_[player.value("slot", 0)] = player.value("alias", player.value("name", ""));
-				}
+			seed_ = Get(packet, "seed_name", std::string());
+			slot = slot_;
+			password = password_;
+		}
+		const json games = Array(packet, "games");
+		Send(json::array({ json { { "cmd", "GetDataPackage" }, { "games", games } } }).dump());
+		const json connect {
+			{ "cmd", "Connect" },
+			{ "game", GameName },
+			{ "name", slot },
+			{ "password", password },
+			{ "uuid", RandomUuid() },
+			{ "version", { { "major", 0 }, { "minor", 6 }, { "build", 4 }, { "class", "Version" } } },
+			{ "items_handling", 0b111 },
+			{ "tags", json::array() },
+			{ "slot_data", true },
+		};
+		Send(json::array({ connect }).dump());
+	} else if (cmd == "Connected") {
+		// Read before taking the lock; a field of the wrong type falls back to its default.
+		SlotData slots = ReadSlotData(Object(packet, "slot_data"));
+		std::lock_guard lock(mutex_);
+		team_ = Get(packet, "team", 0);
+		mySlot_ = Get(packet, "slot", 0);
+		// A new session: the previous slot's items and players must not carry over. The server
+		// follows with ReceivedItems index 0 when this slot has any items (same reply), and sends
+		// nothing when it has none, so the list stays empty and unsynced until then.
+		items_.clear();
+		itemsSynced_ = false;
+		++itemsGeneration_;
+		playerNames_.clear();
+		playerGames_.clear();
+		for (const json& player : Array(packet, "players")) {
+			if (Get(player, "team", 0) == team_) {
+				playerNames_[Get(player, "slot", 0)] = Get(player, "alias", Get(player, "name", std::string()));
 			}
-			const json slotInfo = packet.value("slot_info", json::object());
-			for (const auto& [slot, info] : slotInfo.items()) {
-				playerGames_[std::stoi(slot)] = info.value("game", "");
+		}
+		const json slotInfo = Object(packet, "slot_info");
+		for (const auto& [slot, info] : slotInfo.items()) {
+			if (const auto number = ParseInteger(slot)) {
+				playerGames_[static_cast<int>(*number)] = Get(info, "game", std::string());
 			}
-			checked_.clear();
-			for (const json& location : packet.value("checked_locations", json::array())) {
-				checked_.insert(location.get<int64_t>());
-			}
-			locations_ = checked_;
-			for (const json& location : packet.value("missing_locations", json::array())) {
-				locations_.insert(location.get<int64_t>());
-			}
-			const json data = packet.value("slot_data", json::object());
-			slotData_.worldVersion = data.value("world_version", "");
-			slotData_.goal = data.value("goal", 0);
-			slotData_.goalAct = data.value("goal_act", 5);
-			slotData_.characterClass = data.value("character_class", "");
-			slotData_.actKeys = data.value("act_keys", false);
-			slotData_.skillScaling = data.value("skill_scaling", 0);
-			slotData_.skillScalingCap = data.value("skill_scaling_cap", 0);
-			slotData_.goalQuest = data.value("goal_quest", 40);
-			slotData_.areaChecks = data.value("area_checks", true);
-			slotData_.sideAreas.clear();
-			for (const json& location : data.value("side_areas", json::array())) {
-				slotData_.sideAreas.insert(location.get<int64_t>());
-			}
-			slotData_.levelChecks = data.value("level_checks", true);
-			slotData_.levelStep = data.value("level_step", 5);
-			slotData_.levelCap = data.value("level_cap", 30);
-			slotData_.superUniqueChecks = data.value("superunique_checks", false);
-			slotData_.deathLink = data.value("death_link", false);
-			slotData_.cowLevelChecks = data.value("cow_level_checks", false);
-			slotData_.runeChecks = data.value("rune_checks", 0);
-			slotData_.gemChecks = data.value("gem_checks", false);
-			slotData_.setChecks = data.value("set_checks", false);
-			slotData_.specialItemChecks = data.value("special_item_checks", false);
-			slotData_.questItemChecks = data.value("quest_item_checks", false);
-			slotData_.shopChecks = data.value("shop_checks", 0);
-			slotData_.uberChecks = data.value("uber_checks", false);
-			slotData_.killCountChecks = data.value("kill_count_checks", false);
-			slotData_.findCountChecks = data.value("find_count_checks", false);
-			slotData_.enforceActKeys = data.value("enforce_act_keys", false);
-			slotData_.hints.clear();
-			for (const json& hint : data.value("hints", json::array())) {
-				if (hint.is_array() && hint.size() == 3) {
-					slotData_.hints.push_back({ hint[0].get<int64_t>(), hint[1].get<int>(), hint[2].get<int64_t>() });
-				}
-			}
-			slotData_.hintBalance = data.value("hint_balance", 0);
-			const json sources = data.value("hint_sources", json::object());
-			slotData_.cainHints = sources.value("cain", false);
-			slotData_.pageHintChance = sources.value("page_chance", 0);
-			slotData_.prophecyShop = sources.value("prophecy_shop", false);
-			const json locks = data.value("locks", json::object());
-			slotData_.locks = {
-				.cube = locks.value("cube", false),
-				.townPortal = locks.value("town_portal", false),
-				.potions = locks.value("potions", false),
-				.stash = locks.value("stash", false),
-				.merchants = locks.value("merchants", false),
-				.waypoints = locks.value("waypoints", false),
-			};
-			const json traps = data.value("traps", json::object());
-			slotData_.traps = {
-				.waitForTown = traps.value("wait_for_town", true),
-				.ambushSize = traps.value("ambush_size", 6),
-				.areaAmbush = traps.value("ambush_monsters", "act") == "area",
-				.taxPerLevel = traps.value("tax_per_level", 1000),
-				.junkSize = traps.value("junk_size", 40),
-			};
-			const json randomizer = data.value("randomizer", json::object());
-			slotData_.randomizer.seed = randomizer.value("seed", 0U);
-			slotData_.randomizer.monsters = static_cast<randomizer::Shuffle>(randomizer.value("monster_shuffle", 0));
-			slotData_.randomizer.superUniques = static_cast<randomizer::Shuffle>(randomizer.value("superunique_shuffle", 0));
-			slotData_.randomizer.mainPathSuperUniqueCap = randomizer.value("main_path_superunique_cap", -1);
-			slotData_.randomizer.mainPathSuperUniqueMinions = randomizer.value("main_path_superunique_minions", -1);
-			slotData_.randomizer.mainPathSuperUniqueStrength = randomizer.value("main_path_superunique_strength", 100);
-			// A number pins Normal's level to the superunique's usual one plus it; missing or null keeps the new monster's.
-			const json level = randomizer.value("main_path_superunique_level", json());
-			slotData_.randomizer.mainPathSuperUniqueLevel = level.is_number_integer() ? std::optional<int>(level.get<int>()) : std::nullopt;
-			slotData_.randomizer.superUniqueSpread = randomizer.value("superunique_shuffle_spread", 6);
-			slotData_.randomizer.superUniqueMinions = randomizer.value("superunique_minions", 100);
-			slotData_.randomizer.shuffleTolerance = randomizer.value("monster_shuffle_tolerance", 3);
-			slotData_.randomizer.shuffleCowLevel = randomizer.value("shuffle_cow_level", false);
-			slotData_.randomizer.runewords = randomizer.value("runeword_shuffle", false);
-			slotData_.randomizer.runeSpread = randomizer.value("runeword_rune_spread", 2);
-			// Nightmare and Hell follow Normal unless the slot sets them.
-			const int xp = randomizer.value("xp_multiplier", 100);
-			slotData_.randomizer.xpPercent = { xp, randomizer.value("xp_multiplier_nightmare", xp), randomizer.value("xp_multiplier_hell", xp) };
-			slotData_.randomizer.itemLevelRequirements = randomizer.value("item_level_requirements", true);
-			slotData_.randomizer.itemStatRequirements = randomizer.value("item_stat_requirements", true);
-			const int density = randomizer.value("monster_density", 100);
-			slotData_.randomizer.monsterDensity = { density, randomizer.value("monster_density_nightmare", density),
-				randomizer.value("monster_density_hell", density) };
-			slotData_.randomizer.championPacks = randomizer.value("champion_packs", 100);
-			slotData_.randomizer.betterDrops = randomizer.value("better_drops", 100);
-			slotData_.randomizer.betterMagic = randomizer.value("better_magic", 100);
-			slotData_.randomizer.skillTree.clear();
-			for (const json& pair : randomizer.value("skill_tree", json::array())) {
-				if (pair.is_array() && pair.size() == 2) {
-					slotData_.randomizer.skillTree.emplace_back(pair[0].get<uint32_t>(), pair[1].get<uint32_t>());
-				}
-			}
-			slotData_.randomizer.treeMode = randomizer.value("tree_mode", false);
-			slotData_.randomizer.superUniqueChecks = slotData_.superUniqueChecks;
-			slotData_.loaderSettings.clear();
-			const json loaderSettings = data.value("loader_settings", json::object());
-			for (const auto& [path, value] : loaderSettings.items()) {
-				if (value.is_boolean()) {
-					slotData_.loaderSettings.emplace_back(path, value.get<bool>() ? "true" : "false");
-				} else if (value.is_number_integer()) {
-					slotData_.loaderSettings.emplace_back(path, std::to_string(value.get<int64_t>()));
-				}
-			}
-			state_ = ConnectionState::Connected;
-			status_ = "Connected as " + slot_ + ".";
-			++sessionGeneration_;
-			messages_.push_back("Archipelago: connected as " + slot_ + ".");
-			deaths_.clear();
-			// Learn what our unchecked locations hold, for hints about other players' items.
-			scouted_.clear();
-			const json missing = packet.value("missing_locations", json::array());
-			if (!missing.empty()) {
-				Send(json::array({ json { { "cmd", "LocationScouts" }, { "locations", missing }, { "create_as_hint", 0 } } }).dump());
-			}
-			if (slotData_.deathLink) {
-				// The tag can only be set once slot_data says DeathLink is on.
-				Send(R"([{"cmd":"ConnectUpdate","tags":["DeathLink"]}])");
-				messages_.push_back("Archipelago: DeathLink is on.");
-			}
-		} else if (cmd == "ConnectionRefused") {
-			std::string reasons;
-			for (const json& error : packet.value("errors", json::array())) {
+		}
+		checked_.clear();
+		for (const int64_t location : Integers(packet, "checked_locations")) {
+			checked_.insert(location);
+		}
+		locations_ = checked_;
+		const std::vector<int64_t> missing = Integers(packet, "missing_locations");
+		locations_.insert(missing.begin(), missing.end());
+		slotData_ = std::move(slots);
+		state_ = ConnectionState::Connected;
+		status_ = "Connected as " + slot_ + ".";
+		++sessionGeneration_;
+		messages_.push_back("Archipelago: connected as " + slot_ + ".");
+		deaths_.clear();
+		// Learn what our unchecked locations hold, for hints about other players' items.
+		scouted_.clear();
+		if (!missing.empty()) {
+			Send(json::array({ json { { "cmd", "LocationScouts" }, { "locations", missing }, { "create_as_hint", 0 } } }).dump());
+		}
+		if (slotData_.deathLink) {
+			// The tag can only be set once slot_data says DeathLink is on.
+			Send(R"([{"cmd":"ConnectUpdate","tags":["DeathLink"]}])");
+			messages_.push_back("Archipelago: DeathLink is on.");
+		}
+	} else if (cmd == "ConnectionRefused") {
+		std::string reasons;
+		for (const json& error : Array(packet, "errors")) {
+			if (error.is_string()) {
 				reasons += (reasons.empty() ? "" : ", ") + error.get<std::string>();
 			}
+		}
+		std::lock_guard lock(mutex_);
+		state_ = ConnectionState::Refused;
+		status_ = "Connection refused: " + reasons + ". Check the slot name and password.";
+		messages_.push_back("Archipelago: " + status_);
+		wantConnection_ = false;
+	} else if (cmd == "ReceivedItems") {
+		const int64_t index = Get(packet, "index", int64_t { 0 });
+		bool resync = false;
+		{
 			std::lock_guard lock(mutex_);
-			state_ = ConnectionState::Refused;
-			status_ = "Connection refused: " + reasons + ". Check the slot name and password.";
-			messages_.push_back("Archipelago: " + status_);
-			wantConnection_ = false;
-		} else if (cmd == "ReceivedItems") {
-			const size_t index = packet.value("index", 0);
-			bool resync = false;
-			{
-				std::lock_guard lock(mutex_);
-				if (index == 0) {
-					items_.clear();
-					itemsSynced_ = true;
+			if (index == 0) {
+				items_.clear();
+				itemsSynced_ = true;
+			}
+			if (index < 0 || static_cast<size_t>(index) != items_.size()) {
+				resync = true;
+			} else {
+				for (const json& item : Array(packet, "items")) {
+					items_.push_back({ Get(item, "item", int64_t { 0 }), Get(item, "location", int64_t { 0 }), Get(item, "player", 0), Get(item, "flags", 0) });
 				}
-				if (index != items_.size()) {
-					resync = true;
-				} else {
-					for (const json& item : packet.value("items", json::array())) {
-						items_.push_back({ item.value("item", int64_t { 0 }), item.value("location", int64_t { 0 }), item.value("player", 0), item.value("flags", 0) });
-					}
-					++itemsGeneration_;
-				}
+				++itemsGeneration_;
 			}
-			if (resync) {
-				// We missed a packet; ask for the full list again.
-				Send(R"([{"cmd":"Sync"}])");
+		}
+		if (resync) {
+			// We missed a packet; ask for the full list again.
+			Send(R"([{"cmd":"Sync"}])");
+		}
+	} else if (cmd == "RoomUpdate") {
+		std::lock_guard lock(mutex_);
+		for (const int64_t location : Integers(packet, "checked_locations")) {
+			checked_.insert(location);
+		}
+		for (const json& player : Array(packet, "players")) {
+			if (Get(player, "team", 0) == team_) {
+				playerNames_[Get(player, "slot", 0)] = Get(player, "alias", Get(player, "name", std::string()));
 			}
-		} else if (cmd == "RoomUpdate") {
-			std::lock_guard lock(mutex_);
-			for (const json& location : packet.value("checked_locations", json::array())) {
-				checked_.insert(location.get<int64_t>());
-			}
-			for (const json& player : packet.value("players", json::array())) {
-				if (player.value("team", 0) == team_) {
-					playerNames_[player.value("slot", 0)] = player.value("alias", player.value("name", ""));
-				}
-			}
-		} else if (cmd == "LocationInfo") {
-			std::lock_guard lock(mutex_);
-			for (const json& item : packet.value("locations", json::array())) {
-				const int64_t location = item.value("location", int64_t { 0 });
-				scouted_[location] = { item.value("item", int64_t { 0 }), location, item.value("player", 0), item.value("flags", 0) };
-			}
-		} else if (cmd == "Bounced") {
-			const json tags = packet.value("tags", json::array());
-			if (std::ranges::find(tags, json("DeathLink")) == tags.end()) {
-				continue;
-			}
-			const json data = packet.value("data", json::object());
-			const std::string source = data.value("source", "");
-			const std::string cause = data.value("cause", "");
-			std::lock_guard lock(mutex_);
-			// The server bounces our own deaths back to us too.
-			if (!slotData_.deathLink || source == slot_) {
-				continue;
-			}
-			deaths_.push_back(!cause.empty() ? cause : (source.empty() ? "Someone" : source) + " died.");
-		} else if (cmd == "DataPackage") {
-			std::lock_guard lock(mutex_);
-			// Bind each sub-object before calling items(): value() returns a
-			// temporary, and items() on it would iterate a destroyed object.
-			const json games = packet.at("data").at("games");
-			for (const auto& [game, data] : games.items()) {
-				const json itemIds = data.value("item_name_to_id", json::object());
-				for (const auto& [name, id] : itemIds.items()) {
+		}
+	} else if (cmd == "LocationInfo") {
+		std::lock_guard lock(mutex_);
+		for (const json& item : Array(packet, "locations")) {
+			const int64_t location = Get(item, "location", int64_t { 0 });
+			scouted_[location] = { Get(item, "item", int64_t { 0 }), location, Get(item, "player", 0), Get(item, "flags", 0) };
+		}
+	} else if (cmd == "Bounced") {
+		const json tags = Array(packet, "tags");
+		if (std::ranges::find(tags, json("DeathLink")) == tags.end()) {
+			return;
+		}
+		const json data = Object(packet, "data");
+		const std::string source = Get(data, "source", std::string());
+		const std::string cause = Get(data, "cause", std::string());
+		std::lock_guard lock(mutex_);
+		// The server bounces our own deaths back to us too.
+		if (!slotData_.deathLink || source == slot_) {
+			return;
+		}
+		deaths_.push_back(!cause.empty() ? cause : (source.empty() ? "Someone" : source) + " died.");
+	} else if (cmd == "DataPackage") {
+		std::lock_guard lock(mutex_);
+		// Bind each sub-object before calling items(): Object() returns a
+		// temporary, and items() on it would iterate a destroyed object.
+		const json games = Object(Object(packet, "data"), "games");
+		for (const auto& [game, data] : games.items()) {
+			const json itemIds = Object(data, "item_name_to_id");
+			for (const auto& [name, id] : itemIds.items()) {
+				if (id.is_number_integer()) {
 					itemNames_[game][id.get<int64_t>()] = name;
 				}
-				const json locationIds = data.value("location_name_to_id", json::object());
-				for (const auto& [name, id] : locationIds.items()) {
+			}
+			const json locationIds = Object(data, "location_name_to_id");
+			for (const auto& [name, id] : locationIds.items()) {
+				if (id.is_number_integer()) {
 					locationNames_[game][id.get<int64_t>()] = name;
 				}
 			}
-		} else if (cmd == "PrintJSON") {
-			const std::string type = packet.value("type", "");
-			if (type == "Tutorial" || type == "TagsChanged") {
-				continue;
+		}
+	} else if (cmd == "PrintJSON") {
+		const std::string type = Get(packet, "type", std::string());
+		if (type == "Tutorial" || type == "TagsChanged") {
+			return;
+		}
+		if (type == "ItemSend" || type == "ItemCheat" || type == "Hint") {
+			int me = 0;
+			{
+				std::lock_guard lock(mutex_);
+				me = mySlot_;
 			}
-			if (type == "ItemSend" || type == "ItemCheat" || type == "Hint") {
-				int me = 0;
-				{
-					std::lock_guard lock(mutex_);
-					me = mySlot_;
-				}
-				const int receiver = packet.value("receiving", -1);
-				const int finder = packet.contains("item") ? packet["item"].value("player", -1) : -1;
-				if (receiver != me && finder != me) {
-					continue;
-				}
+			const int receiver = Get(packet, "receiving", -1);
+			const int finder = Get(Object(packet, "item"), "player", -1);
+			if (receiver != me && finder != me) {
+				return;
 			}
-			const std::string line = Render(&packet);
-			if (!line.empty()) {
-				Notify(line);
-			}
+		}
+		const std::string line = Render(&packet);
+		if (!line.empty()) {
+			Notify(line);
 		}
 	}
 }
@@ -452,15 +556,17 @@ void Client::Handle(const std::string& text) {
 auto Client::Render(const void* printJson) const -> std::string {
 	const json& packet = *static_cast<const json*>(printJson);
 	std::string line;
-	for (const json& part : packet.value("data", json::array())) {
-		const std::string type = part.value("type", "text");
-		const std::string text = part.value("text", "");
-		if (type == "player_id") {
-			line += PlayerName(std::stoi(text));
-		} else if (type == "item_id") {
-			line += ItemName(std::stoll(text), part.value("player", 0));
-		} else if (type == "location_id") {
-			line += LocationName(std::stoll(text), part.value("player", 0));
+	for (const json& part : Array(packet, "data")) {
+		const std::string type = Get(part, "type", std::string("text"));
+		const std::string text = Get(part, "text", std::string());
+		// Ids arrive as text; one that isn't a number is shown as it came.
+		const std::optional<int64_t> id = ParseInteger(text);
+		if (type == "player_id" && id) {
+			line += PlayerName(static_cast<int>(*id));
+		} else if (type == "item_id" && id) {
+			line += ItemName(*id, Get(part, "player", 0));
+		} else if (type == "location_id" && id) {
+			line += LocationName(*id, Get(part, "player", 0));
 		} else {
 			line += text;
 		}

@@ -93,6 +93,9 @@ Built, pushed and installed, still to check in game:
       lists them all), the Codex is built for the new class, and loot isn't high-level. With
       `traps_wait_for_town`, a trap sent right as the game loads in town waits until you leave town.
       Level 6 from the debug panel then sends only the level-5 check.
+- [ ] `ap-disconnect` (#69): `ap-status` and the status line say "Disconnected" right away, not "Connected as".
+      Find a check while disconnected, then `ap-connect`: the check is sent on reconnect. Also `ap-connect`
+      to a server that hangs (e.g. a wrong host) and `ap-disconnect` straight after: no session starts later.
 
 Ideas, not started:
 

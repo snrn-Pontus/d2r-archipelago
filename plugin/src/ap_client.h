@@ -168,6 +168,9 @@ public:
 private:
 	void Run();
 	void Session();
+	// Sets Idle with the "Disconnected" status; mutex_ must be held.
+	void SetDisconnected();
+	void HandlePacket(const void* packet);
 	void Send(const std::string& text);
 	void Notify(const std::string& message);
 	auto Render(const void* printJson) const -> std::string;
