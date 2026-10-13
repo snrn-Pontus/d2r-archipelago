@@ -173,6 +173,14 @@ Built, pushed and installed, still to check in game:
       from the base bank's recipe; the list itself is #110).
 - [ ] Writ name (#113, rerun setup): the Writ of Absolution in a potion seller's Misc tab is named "Writ of
       Absolution", not "An Evil Force".
+- [ ] Ground drops one at a time (#109): with potions and Town Portal locked, fill the inventory, set potions
+      aside (`ap-debug give hp1 4` makes them, the lock takes them), then `!getitem` Town Portal Access and
+      Potion Access together (or the debug panel's From the Server). No crash: the Tome lands at your feet,
+      the chat says your inventory is full so the potions come back one at a time, and they drop about one
+      every five seconds (or go straight to the inventory once you make room), ending with "the last of your
+      set-aside potions is back". A few rewards `/send` with full bags and a locked cube and stash drop one a
+      second, with "rewards drop at your feet one at a time". Nothing drops right after joining a game: it
+      waits until you're in an area for a couple of seconds.
 
 Ideas, not started:
 
