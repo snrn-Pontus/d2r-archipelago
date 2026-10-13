@@ -13,6 +13,20 @@
 The plugin and the mod are installed for you. The game runs offline through D2RLoader; don't use
 Battle.net characters.
 
+## Your options
+
+Your options YAML decides how your game plays. In the Archipelago Launcher, **Diablo II Resurrected Options**
+opens an editor with a checkbox, dropdown or slider for each option, with its description:
+
+- **Open...** loads an existing YAML, such as `Diablo II Resurrected.yaml` from the release zip or one you made
+  before.
+- **Preset** starts from Quick Normal, Full Hell, Locked Down or Treasure Hunter.
+- **Save** writes the file back. It only changes the lines of options you changed, so your comments stay.
+  Options the file sets to weights or `random` are kept unless you change them here.
+
+Put the saved YAML in Archipelago's `Players` folder, or send it to whoever hosts the multiworld.
+Archipelago's own Options Creator works too, but it can only make new files.
+
 ## Playing
 
 With the game closed, do one of these:

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from typing import Any
 
-from Options import Choice, DeathLink, DefaultOnToggle, OptionGroup, OptionSet, PerGameCommonOptions, Range, Toggle
+from Options import Choice, DeathLink, DefaultOnToggle, NamedRange, OptionGroup, OptionSet, PerGameCommonOptions, Range, Toggle
 
 from .data import CLASSES
 
@@ -226,7 +226,7 @@ class EnforceActKeys(DefaultOnToggle):
     display_name = "Enforce Act Keys"
 
 
-class ActKeyWindow(Range):
+class ActKeyWindow(NamedRange):
     """How far into a Diablo II world (another player's or yours) each of your act keys can land, counted
     from the act it unlocks. The key for your Act N may only be at their Act N - 1 + this or earlier, so
     with 1 your Normal Act II Key is somewhere in their Normal Act I or II, and a Nightmare key can sit
