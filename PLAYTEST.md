@@ -210,13 +210,16 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 - [x] Potions stay locked from the belt hotkeys too.
 - [x] D2RLoader doesn't report drinking from the inventory (only the belt), so within 5 seconds potions
       in the inventory are set aside, with a chat message (confirmed 2026-10-12).
-- [ ] Locked items aren't blocked when moved with Ctrl+click (to the stash or Cube) or Shift+click (a
-      potion to the belt), and Ctrl+clicking the Horadric Scroll into the stash doesn't send its check (#17).
-      Right-clicking still blocks, with or without Shift or Ctrl, and so does Shift+right-clicking a belt potion (feeding the mercenary).
-      Each "activated" log line now lists the input (1 mouse, 2 controller), modifiers (1 Shift, 2 Ctrl,
-      4 Alt) and the mouse buttons held (L, R). A move only passes if the left button shows as held, so if
-      Ctrl+click moves are still blocked with an empty "buttons", the event fires on release; report it, as
-      well as any plain left click or controller pickup that gets logged.
+- [ ] Moving locked items with modifier clicks (#17). If any of these fails, copy the "activated" lines
+      from the plugin log: each lists the input (1 mouse, 2 controller), modifiers (1 Shift, 2 Ctrl, 4 Alt)
+      and the mouse buttons held (L, R). A move only passes with L held, so an empty "buttons" means the
+      event fires on release. Also report any plain left click or controller pickup that gets logged.
+  - [ ] Ctrl+click a locked potion, or a Town Portal scroll before it crumbles, into the stash: it moves,
+        with no lock message.
+  - [ ] Shift+click a potion to the belt: it moves.
+  - [ ] Right-click a locked potion in the inventory, with or without Shift: it's blocked. So is
+        Shift+right-clicking a belt potion (feeding the mercenary).
+  - [ ] Ctrl+click the Horadric Scroll into the stash: its check doesn't send.
 - [ ] D2RLoader 1.3.1-beta logs inventory activations (container 4) for potions now: if a plain right click
       on an inventory potion is logged, the set-aside on pickup could go.
 - [ ] Potion Access gives the set-aside potions back (to the ground if the inventory is full).
