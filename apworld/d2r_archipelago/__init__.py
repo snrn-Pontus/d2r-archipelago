@@ -226,7 +226,7 @@ class D2RWorld(World):
         if self.options.set_checks:
             for name, _pieces in SETS:
                 add(acts[0], set_location_name(name), filler_only=True)
-        if self.options.special_item_checks and self.options.goal == self.options.goal.option_hell:
+        if self.options.special_item_checks and self.act_count == len(DIFFICULTIES) * len(ACTS):
             for name in SPECIAL_ITEMS:
                 add(acts[-1], find_location_name(name), filler_only=True)
         in_play = range(self.options.goal.value + 1)
@@ -581,7 +581,7 @@ class D2RWorld(World):
             "rune_checks": self.options.rune_checks.value,
             "gem_checks": bool(self.options.gem_checks),
             "set_checks": bool(self.options.set_checks),
-            "special_item_checks": bool(self.options.special_item_checks) and self.options.goal == self.options.goal.option_hell,
+            "special_item_checks": bool(self.options.special_item_checks) and self.act_count == len(DIFFICULTIES) * len(ACTS),
             "quest_item_checks": bool(self.options.quest_item_checks),
             "shop_checks": self.options.shop_checks.value,
             "uber_checks": bool(self.options.uber_checks) and self.act_count == len(DIFFICULTIES) * len(ACTS),
