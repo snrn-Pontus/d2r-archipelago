@@ -2,6 +2,13 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.9.2 - 2026-10-13
+
+- A character no longer needs a kill each game before its rewards, skills and locks work: the Archipelago
+  Ledger remembers its class. A new character can use **Claim Character** (F9) or `ap-claim` right away, and
+  a banner says when rewards are waiting (#105)
+- An Identify scroll or tome works outside shops while Merchant Access is locked (#105)
+
 ## 0.9.1 - 2026-10-13
 
 - The plugin keeps its own log, one file per launch in `d2rloader\archipelago\logs` (the last 10), with every
