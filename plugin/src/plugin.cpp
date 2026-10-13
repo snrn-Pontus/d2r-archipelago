@@ -2095,8 +2095,9 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 
 	std::lock_guard lock(gMutex);
 	// The session can't have changed (gDelivering), but a save for another one would be worse than
-	// a lost pass, so check anyway.
-	if (gBoundSession != snapshot.session) {
+	// a lost pass, so check anyway. An ap-connect mid-pass only unbinds (0): gSave is still this
+	// session's file, and the rewards just handed out must be recorded in it.
+	if (gBoundSession != 0 && gBoundSession != snapshot.session) {
 		return;
 	}
 	// The count only ever grows: a shorter list (a server restored from an older save) must not
