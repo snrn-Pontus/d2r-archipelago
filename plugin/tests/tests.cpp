@@ -438,6 +438,47 @@ void TestLootScalesToLevel() {
 	}
 }
 
+void TestSocketedBases() {
+	// The generated pool includes early two-socket weapons and armor, and
+	// respects item-type caps (orbs have gemsockets=4 but a type cap of 3).
+	for (const auto& base : ap::data::SocketBases) {
+		EXPECT(base.sockets >= 2 && base.sockets <= 6);
+	}
+	const auto find = [](uint32_t code) -> const ap::data::Base* {
+		for (const auto& base : ap::data::SocketBases) {
+			if (ap::loot::CodeFromText(base.code) == code) return &base;
+		}
+		return nullptr;
+	};
+	for (const char* code : { "hax", "ssd", "qui", "lea" }) {
+		const auto* base = find(ap::loot::CodeFromText(code));
+		EXPECT(base && base->sockets == 2 && base->reqLevel == 0);
+	}
+	const auto* orb = find(ap::loot::CodeFromText("ob1"));
+	EXPECT(orb && orb->sockets == 3);
+	std::mt19937 random(61);
+	bool sawTwoWeapon = false, sawTwoArmor = false, sawSixLate = false;
+	for (int playerClass = -1; playerClass < 8; ++playerClass) {
+		for (int level : { 1, 15, 30, 45, 60, 75, 90, 99 }) {
+			for (int i = 0; i < 500; ++i) {
+				const auto pick = ap::loot::Roll(ap::loot::Loot::SocketedBase, level, random, playerClass);
+				const auto* base = find(pick.code);
+				EXPECT(base != nullptr);
+				if (!base) continue;
+				EXPECT(pick.sockets >= 2 && pick.sockets <= base->sockets);
+				EXPECT(base->cls < 0 || playerClass < 0 || base->cls == playerClass);
+				EXPECT(base->reqLevel <= level + 2);
+				EXPECT(pick.quality == D2RL::Items::Quality::Normal && pick.itemLevel == 90);
+				if (base->sockets == 2) EXPECT(pick.sockets == 2);
+				sawTwoWeapon |= level == 1 && pick.sockets == 2 && base->kind == ap::data::Weapon;
+				sawTwoArmor |= level == 1 && pick.sockets == 2 && base->kind == ap::data::Armor;
+				sawSixLate |= level >= 60 && pick.sockets == 6;
+			}
+		}
+	}
+	EXPECT(sawTwoWeapon && sawTwoArmor && sawSixLate);
+}
+
 void TestLootFitsClass() {
 	std::mt19937 random(5);
 	const auto baseClass = [](uint32_t code) {
@@ -523,7 +564,7 @@ void TestOtherLoot() {
 		const int number = (static_cast<char>((rune.code >> 8) & 0xFF) - '0') * 10 + (static_cast<char>((rune.code >> 16) & 0xFF) - '0');
 		EXPECT(first == 'r' && number >= 21 && number <= 33);
 		const auto base = ap::loot::Roll(ap::loot::Loot::SocketedBase, 40, random);
-		EXPECT(base.sockets >= 3 && base.sockets <= 6 && base.quality == D2RL::Items::Quality::Normal);
+		EXPECT(base.sockets >= 2 && base.sockets <= 6 && base.quality == D2RL::Items::Quality::Normal);
 		EXPECT(ap::loot::Roll(ap::loot::Loot::JunkBackpack, 1, random).code != 0);
 	}
 	EXPECT(ap::loot::Roll(ap::loot::Loot::LowRune, 1, random).code != 0);
@@ -961,6 +1002,7 @@ int main() {
 	TestLootScalesToLevel();
 	TestOtherLoot();
 	TestLootFitsClass();
+	TestSocketedBases();
 	TestGoldExperienceCharms();
 	TestShrinesAndTraps();
 	TestClientParsesServerPackets();

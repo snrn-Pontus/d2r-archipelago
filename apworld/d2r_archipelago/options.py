@@ -401,7 +401,7 @@ class HighRuneWeight(Range):
 
 
 class SocketedBaseWeight(Range):
-    """Weight of Socketed Bases among the filler items: a white weapon or armor with three or more
+    """Weight of Socketed Bases among the filler items: a white weapon or armor with two or more
     sockets, ready for a runeword."""
     display_name = "Socketed Base Weight"
     range_start = 0

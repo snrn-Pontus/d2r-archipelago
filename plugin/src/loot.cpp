@@ -73,22 +73,23 @@ auto PickQualityItem(std::span<const data::QualityItem> items, Quality quality, 
 auto PickBase(int level, int playerClass, std::mt19937& random) -> Pick {
 	std::vector<const data::Base*> window;
 	for (const auto& base : data::SocketBases) {
-		if (Usable(base.cls, playerClass) && base.reqLevel <= level + LevelAbove && base.reqLevel + 20 >= level) {
+		if (base.sockets >= 2 && Usable(base.cls, playerClass) && base.reqLevel <= level + LevelAbove && base.reqLevel + 20 >= level) {
 			window.push_back(&base);
 		}
 	}
 	if (window.empty()) {
 		for (const auto& base : data::SocketBases) {
-			if (Usable(base.cls, playerClass) && base.reqLevel <= std::max(level, 1) + LevelAbove) {
+			if (base.sockets >= 2 && Usable(base.cls, playerClass) && base.reqLevel <= std::max(level, 1) + LevelAbove) {
 				window.push_back(&base);
 			}
 		}
 	}
 	if (window.empty()) {
-		window.push_back(&data::SocketBases[0]);
+		return {};
 	}
 	const auto* base = window[random() % window.size()];
-	const uint32_t sockets = 3 + random() % (base->sockets - 2);
+	// Each count from two through this base's legal maximum is equally likely.
+	const uint32_t sockets = std::uniform_int_distribution<uint32_t>(2, base->sockets)(random);
 	// A high item level lets the base hold its full socket count.
 	return { .code = CodeFromText(base->code), .itemLevel = 90, .sockets = sockets, .name = std::to_string(sockets) + "-socket " + base->name };
 }
