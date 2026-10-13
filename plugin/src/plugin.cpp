@@ -178,6 +178,13 @@ struct QueuedTrap {
 // Commands that aren't rewards (goto, ap-core, relearning). Reward commands wait in
 // gSave.commands instead, so they outlive a crash and only go once D2RCore takes them.
 std::vector<std::string> gCommandQueue;
+struct ScopedRelearnCommand {
+	std::string text;
+	ap::panel::SessionScope scope;
+};
+std::deque<ScopedRelearnCommand> gRelearnCommandQueue;
+// gMutex held; defined beside the Relearn request handler.
+auto RelearnScope() -> ap::panel::SessionScope;
 std::vector<QueuedTrap> gTrapQueue;
 
 // Queues a reward's console command; item is the received item it's for, or -1.
@@ -2859,6 +2866,7 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	gCommandsQueued = false;
 	const ap::SlotData::Traps settings = gClient->Slots().traps;
 	std::vector<std::string> commands;
+	std::vector<ScopedRelearnCommand> relearn;
 	std::vector<ap::PendingCommand> rewards;
 	std::filesystem::path rewardSave;
 	std::vector<QueuedTrap> traps;
@@ -2868,10 +2876,17 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 		if (!gInGame) {
 			return;
 		}
-		if (Clock::now() >= gNextCommandsAt && !gCommandQueue.empty()) {
+		if (Clock::now() >= gNextCommandsAt && (!gCommandQueue.empty() || !gRelearnCommandQueue.empty())) {
 			const auto take = static_cast<std::ptrdiff_t>(std::min(gCommandQueue.size(), CommandsPerRun));
 			commands.assign(gCommandQueue.begin(), gCommandQueue.begin() + take);
 			gCommandQueue.erase(gCommandQueue.begin(), gCommandQueue.begin() + take);
+			while (commands.size() + relearn.size() < CommandsPerRun && !gRelearnCommandQueue.empty()) {
+				auto command = std::move(gRelearnCommandQueue.front());
+				gRelearnCommandQueue.pop_front();
+				if (ap::panel::SameReadyScope(command.scope, RelearnScope())) {
+					relearn.push_back(std::move(command));
+				}
+			}
 			gNextCommandsAt = Clock::now() + CommandGap;
 		}
 		// Reward commands stay queued in the save until D2RCore takes them, and only
@@ -2897,6 +2912,18 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	for (const auto& command : commands) {
 		if (!ExecuteCommand(command)) {
 			Feed("Archipelago: D2RCore refused \"" + command + "\".");
+		}
+	}
+	for (const auto& command : relearn) {
+		{
+			std::lock_guard lock(gMutex);
+			// A later UI update (or an earlier batch) may have switched the slot.
+			if (!ap::panel::SameReadyScope(command.scope, RelearnScope())) {
+				continue;
+			}
+		}
+		if (!ExecuteCommand(command.text)) {
+			Feed("Archipelago: D2RCore refused \"" + command.text + "\".");
 		}
 	}
 	// In order: a refused one, and the ones after it, wait and try again.
@@ -3621,7 +3648,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		std::lock_guard lock(gMutex);
 		cows.swap(gCowQueue);
 		collections.swap(gCollectionQueue);
-		commands = (!gCommandQueue.empty() && Clock::now() >= gNextCommandsAt)
+		commands = ((!gCommandQueue.empty() || !gRelearnCommandQueue.empty()) && Clock::now() >= gNextCommandsAt)
 		        || (!gSave.commands.empty() && gBoundSession != 0 && gInGame && Clock::now() >= gNextRewardCommandsAt
 		            && CharacterVerdict(gSlots) == ap::character::Verdict::Match)
 		        || (!gTrapQueue.empty() && gInGame && Clock::now() >= gNextTrapAt && !TrapsHeld(gSlots.traps.waitForTown)
@@ -4346,9 +4373,9 @@ void __cdecl RelearnWork(const D2RL::PluginContext*, void* userData) noexcept {
 		return;
 	}
 	for (const uint32_t skill : refused) {
-		gCommandQueue.push_back("skadd " + SkillName(skill) + ",1");
+		gRelearnCommandQueue.push_back({ "skadd " + SkillName(skill) + ",1", request.scope });
 	}
-	QueueLine("Archipelago: unlocked again: " + names + ".");
+	QueueLine("Archipelago: Relearn queued for this character: " + names + ".");
 }
 
 auto CommandRelearn(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
@@ -4828,7 +4855,7 @@ void LogState() {
 		                + std::to_string(gUnbound.size()) + " found while unbound, goal " + (gSave.goalReached ? "reached" : "not reached")
 		                + (gGoalSent ? " and sent" : "") + ", level " + std::to_string(gSave.level) + ", class " + std::to_string(gSave.playerClass) + ".");
 		lines.push_back("rewards: " + std::to_string(gSave.fillersDelivered) + " items handed out, " + std::to_string(gSave.notifiedItems)
-		                + " announced, " + std::to_string(gSave.commands.size()) + " reward commands waiting, " + std::to_string(gCommandQueue.size())
+		                + " announced, " + std::to_string(gSave.commands.size()) + " reward commands waiting, " + std::to_string(gCommandQueue.size() + gRelearnCommandQueue.size())
 		                + " queued commands, " + std::to_string(gTrapQueue.size()) + " traps queued" + (gRewardRefused ? ", last reward refused" : "")
 		                + ", lost to a crash " + std::to_string(gSave.lostFrom) + "-" + std::to_string(gSave.lostTo) + (gSave.redeliver ? " (redelivering)" : "")
 		                + ", held potions " + std::to_string(gSave.heldPotions.size()) + ", skill points given " + std::to_string(gSave.skillPointsGiven)
