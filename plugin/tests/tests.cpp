@@ -16,6 +16,7 @@
 #include "table.h"
 #include "save_state.h"
 #include "session_log.h"
+#include "skill_table.h"
 #include "sounds.h"
 #include "starter_kit.h"
 #include "sprite.h"
@@ -587,6 +588,39 @@ void TestSessionLog() {
 	EXPECT(text.find("INFO crashed session") != std::string::npos && text.find("dropped") == std::string::npos);
 	first.close();
 	std::filesystem::remove_all(folder);
+}
+
+void TestSkillTablePrerequisite() {
+	namespace st = ap::skill_table;
+	constexpr size_t RowSize = 40, Rows = 300, IdAt = 0, ReqAt = 20;
+	std::vector<uint8_t> rows(RowSize * Rows, 0);
+	const auto put = [&](size_t row, size_t offset, uint16_t value) { std::memcpy(rows.data() + row * RowSize + offset, &value, 2); };
+	std::vector<uint16_t> classSkills;
+	for (uint16_t skill = 6; skill < 280; skill += 3) {
+		classSkills.push_back(skill);
+	}
+	for (size_t row = 0; row < Rows; ++row) {
+		put(row, IdAt, static_cast<uint16_t>(row)); // the id names its own row in every row
+		put(row, ReqAt, st::NoSkill);
+		put(row, ReqAt + 2, st::NoSkill);
+		put(row, ReqAt + 4, st::NoSkill);
+	}
+	for (const uint16_t skill : classSkills) {
+		put(skill, ReqAt, skill); // locked by d2r-ap-setup
+	}
+	EXPECT(st::FindSelfPrerequisite(rows.data(), Rows, RowSize, classSkills) == ReqAt);
+	EXPECT(st::IsSelfLocked(rows.data(), Rows, RowSize, ReqAt, 9) && !st::IsSelfLocked(rows.data(), Rows, RowSize, ReqAt, 10));
+	// Still found with a third of the skills unlocked already.
+	for (size_t i = 0; i < classSkills.size() / 3; ++i) {
+		put(classSkills[i], ReqAt, st::NoSkill);
+	}
+	EXPECT(st::FindSelfPrerequisite(rows.data(), Rows, RowSize, classSkills) == ReqAt);
+	EXPECT(!st::IsSelfLocked(rows.data(), Rows, RowSize, ReqAt, classSkills[0]));
+	// A mod without the lock: nothing to find.
+	for (const uint16_t skill : classSkills) {
+		put(skill, ReqAt, st::NoSkill);
+	}
+	EXPECT(!st::FindSelfPrerequisite(rows.data(), Rows, RowSize, classSkills));
 }
 
 void TestStarterKit() {
@@ -1594,6 +1628,7 @@ int main() {
 	TestUncleanExit();
 	TestSessionLog();
 	TestStarterKit();
+	TestSkillTablePrerequisite();
 	TestCharacterCheck();
 	TestIdsMatchApworld();
 	TestGameData();

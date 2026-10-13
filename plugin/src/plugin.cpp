@@ -20,6 +20,7 @@
 #include "repairs.h"
 #include "save_state.h"
 #include "session_log.h"
+#include "skill_table.h"
 #include "sounds.h"
 #include "starter_kit.h"
 
@@ -248,6 +249,9 @@ int                   gCodexClass   = -1;
 // Why this game has said rewards wait, so each reason is said once: 1 the class isn't
 // known yet, 2 another class.
 int                   gCharacterWarned = 0;
+// Tree mode: whether received skills are unlocked in the Skills table (UnlockInTable)
+// rather than with a free level. Then a respec takes nothing, so Relearn isn't needed.
+bool                  gTableUnlock = false;
 
 // The next game may be another character, or another seed's, so what the old
 // one said about the player and its area doesn't carry over. Call with gMutex held.
@@ -900,8 +904,14 @@ void CompleteQuest(uint32_t difficulty, uint32_t flag, QuestSource source) {
 				std::lock_guard lock(gMutex);
 				gHintQueue.push_back("Deckard Cain: \"Stay awhile and listen...\"");
 			}
-			// Den of Evil's reward is Akara's respec, which takes the received tree skills away.
-			if (flag == DenOfEvilFlag && IsNewCheck(location) && gClient->Slots().randomizer.treeMode) {
+			// Den of Evil's reward is Akara's respec, which takes free-level tree skills away
+			// (not ones unlocked in the Skills table).
+			bool inTable = false;
+			{
+				std::lock_guard lock(gMutex);
+				inTable = gTableUnlock;
+			}
+			if (flag == DenOfEvilFlag && IsNewCheck(location) && gClient->Slots().randomizer.treeMode && !inTable) {
 				Feed("Archipelago: Akara's respec takes your Archipelago skills away. After it, use Relearn Skills (F9) and type ap-relearn confirm. "
 				     "A Writ of Absolution from any potion seller respecs and unlocks them again by itself.");
 			}
@@ -2231,18 +2241,90 @@ void GiveLedger(D2RL::PlayerHandle player) {
 // Tree mode: unlocks each received skill in the tree with D2RCore's skadd (its
 // first point; the tree's self-prerequisite lock then lets you spend more), and
 // hands out extra copies and Skill Points as unspent skill points.
-void DeliverTreeSkills(const std::vector<ap::NetworkItem>& items) {
+auto SkillNames(const std::vector<uint32_t>& skills) -> std::string {
+	std::string names;
+	for (const uint32_t skill : skills) {
+		names += (names.empty() ? "" : ", ") + SkillName(skill);
+	}
+	return names;
+}
+
+// Where each bank's Skills rows keep the first prerequisite, once found (game thread).
+std::map<uint32_t, size_t> gPrerequisiteOffsets;
+
+// Tree mode: clears the received skills' self-prerequisite in the live Skills rows of
+// both banks. The tables reload with each game, so it runs on every pass. False if the
+// field couldn't be found in any bank (then skills get a free level instead).
+auto UnlockInTable(const std::set<uint32_t>& skills) -> bool {
+	if (gTables == nullptr) {
+		return false;
+	}
+	static const std::vector<uint16_t> classSkills = [] {
+		std::vector<uint16_t> ids;
+		for (const auto& skill : ap::data::Skills) {
+			ids.push_back(skill.id);
+		}
+		return ids;
+	}();
+	bool found = false;
+	for (const auto bank : { D2RL::DataTables::Bank::Rotw, D2RL::DataTables::Bank::Lod }) {
+		D2RL::DataTables::TableView view { .structSize = D2RL::DataTables::TableViewSize };
+		if (gTables->getTable(gContext, bank, D2RL::DataTables::TableId::Skills, &view) != D2RL::DataTables::Result::Success || view.rows == nullptr
+			|| view.rowCount == 0) {
+			continue;
+		}
+		const auto* rows = static_cast<const uint8_t*>(view.rows);
+		auto offset = gPrerequisiteOffsets.find(static_cast<uint32_t>(bank));
+		if (offset == gPrerequisiteOffsets.end()) {
+			const auto at = ap::skill_table::FindSelfPrerequisite(rows, view.rowCount, view.rowSize, classSkills);
+			Log("Archipelago: Skills bank " + std::to_string(static_cast<uint32_t>(bank)) + " (" + std::to_string(view.rowCount) + " rows of "
+			    + std::to_string(view.rowSize) + " bytes): "
+			    + (at ? "first prerequisite at +" + std::to_string(*at) + "." : std::string("no self-prerequisite field found.")));
+			if (!at) {
+				continue;
+			}
+			offset = gPrerequisiteOffsets.emplace(static_cast<uint32_t>(bank), *at).first;
+		}
+		found = true;
+		std::vector<uint32_t> unlocked;
+		for (const uint32_t skill : skills) {
+			if (skill > UINT16_MAX || !ap::skill_table::IsSelfLocked(rows, view.rowCount, view.rowSize, offset->second, static_cast<uint16_t>(skill))) {
+				continue;
+			}
+			// The rows are the game's live data: written through SafeCopy, so a page that
+			// isn't writable fails here instead of crashing.
+			const uint16_t none = ap::skill_table::NoSkill;
+			auto* field = const_cast<uint8_t*>(rows) + static_cast<size_t>(skill) * view.rowSize + offset->second;
+			if (SafeCopy(field, &none, sizeof(none))) {
+				unlocked.push_back(skill);
+			} else {
+				Log("Archipelago: couldn't write the Skills row of " + SkillName(skill) + "; skills get a free level instead.");
+				return false;
+			}
+		}
+		if (!unlocked.empty()) {
+			Log("Archipelago: unlocked " + SkillNames(unlocked) + " in Skills bank " + std::to_string(static_cast<uint32_t>(bank)) + ".");
+		}
+	}
+	return found;
+}
+
+void DeliverTreeSkills(const std::vector<ap::NetworkItem>& items, bool inTable) {
 	std::vector<std::string> news;
 	{
 		std::lock_guard lock(gMutex);
+		gTableUnlock = inTable;
 		const auto plan = ap::codex::PlanTreeDelivery(items, gSave.unlockedSkills, gSave.skillPointsGiven);
 		if (plan.unlock.empty() && plan.points == 0) {
 			return;
 		}
 		for (const uint32_t skill : plan.unlock) {
-			QueueReward(-1, "skadd " + SkillName(skill) + ",1");
+			// Without the table, the self-prerequisite is met with a free level.
+			if (!inTable) {
+				QueueReward(-1, "skadd " + SkillName(skill) + ",1");
+			}
 			gSave.unlockedSkills.insert(skill);
-			news.push_back("Archipelago: " + SkillName(skill) + " is unlocked in your skill tree.");
+			news.push_back("Archipelago: " + SkillName(skill) + (inTable ? " is unlocked in your skill tree; spend points on it." : " is unlocked in your skill tree."));
 		}
 		if (plan.points > 0) {
 			QueueReward(-1, "skillpoints " + std::to_string(plan.points));
@@ -2279,14 +2361,6 @@ auto RefusedSkills(D2RL::PlayerHandle player) -> std::optional<std::vector<uint3
 	return refused;
 }
 
-auto SkillNames(const std::vector<uint32_t>& skills) -> std::string {
-	std::string names;
-	for (const uint32_t skill : skills) {
-		names += (names.empty() ? "" : ", ") + SkillName(skill);
-	}
-	return names;
-}
-
 // Tree mode: after a Token or Writ of Absolution, unlocks the received skills again.
 // The token counts once it's gone (used, not just clicked); then a respec has
 // taken every received skill's level, so each one refuses a point. If any
@@ -2294,12 +2368,18 @@ auto SkillNames(const std::vector<uint32_t>& skills) -> std::string {
 void RelearnAfterToken(D2RL::PlayerHandle player) {
 	D2RL::ItemHandle  token = D2RL::InvalidItemHandle;
 	Clock::time_point usedAt;
+	bool inTable = false;
 	{
 		std::lock_guard lock(gMutex);
 		token = gRespecToken;
 		usedAt = gRespecTokenAt;
+		inTable = gTableUnlock;
+		if (inTable) {
+			// Unlocked in the table: a respec takes nothing.
+			gRespecToken = D2RL::InvalidItemHandle;
+		}
 	}
-	if (token == D2RL::InvalidItemHandle || gGameRules == nullptr) {
+	if (inTable || token == D2RL::InvalidItemHandle || gGameRules == nullptr) {
 		return;
 	}
 	D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
@@ -2541,7 +2621,13 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	// Tree mode unlocks skills in the tree instead of building a Codex.
 	const bool treeMode = slots.randomizer.treeMode;
 	if (treeMode) {
-		DeliverTreeSkills(items);
+		std::set<uint32_t> received;
+		for (const auto& item : items) {
+			if (ap::ids::IsSkillItem(item.item)) {
+				received.insert(ap::ids::SkillOf(item.item));
+			}
+		}
+		DeliverTreeSkills(items, UnlockInTable(received));
 	}
 	const bool codexOk = treeMode || SyncCodex(player, skills, playerClass, config, slots);
 
@@ -4177,6 +4263,13 @@ void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 		std::lock_guard lock(gMutex);
 		QueueLine(text);
 	};
+	{
+		std::lock_guard lock(gMutex);
+		if (gTableUnlock) {
+			QueueLine("Archipelago: nothing to relearn: your Archipelago skills stay unlocked through a respec, and it refunds only points you spent.");
+			return;
+		}
+	}
 	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
 	if (gInventory->getLocalPlayer(gContext, &player) != D2RL::Inventory::Result::Success) {
 		say("Archipelago: join a game first, then ap-relearn.");
