@@ -2,6 +2,18 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.8.0 - 2026-10-13
+
+- Superuniques you can't avoid keep their usual level on Normal, whatever Superunique Shuffle made them, and
+  the new Main-Path Superunique Strength option scales their HP and damage on every difficulty; Battlemaid
+  Sarina now counts as optional (#93)
+- A reshaped main-path superunique brings at most 5 minions by default (Main-Path Superunique Minions), and
+  Superunique Minions scales every field superunique's pack (#38)
+- New tuning options: Nightmare and Hell values for Monster Density and Experience Multiplier, Better Magic
+  Drops, Better Drops below 100, Monster Shuffle Tolerance, Superunique Shuffle Spread, Runeword Rune Spread
+  and Shuffle Cow Level (#38)
+- The Options editor can pick named settings that sit outside a range, like "same" and "off" (#38)
+
 ## 0.7.4 - 2026-10-13
 
 - Switching to another slot with `ap-connect` no longer delivers the previous slot's items, and the new
