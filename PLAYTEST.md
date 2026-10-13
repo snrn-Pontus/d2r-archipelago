@@ -243,12 +243,12 @@ Any seed, connected.
 
 Restart D2R after updating the plugin: the game caches panel layouts.
 
-- [ ] F9 opens the Archipelago panel with three headed columns: This Game (4 buttons), Server
+- [ ] F9 opens the Archipelago panel with three headed columns: This Game (5 buttons), Server
       (4 buttons), Maintenance (5 buttons), plus Close. Title, help and every button fit on screen
       at the usual resolution and UI scale. F9 again, Escape and Close each close it.
 - [ ] `ap-panel` opens and closes it too; Options, Controls lists "Archipelago Commands".
 - [ ] Status, Checks Left Here, Checks Left by Act and Hints Found close the panel and answer in chat.
-      Server Hints, Items Left and Multiworld Status show the server's reply. New Ledger and Rebuild
+      Claim Character retains its existing character-binding flow. Server Hints, Items Left and Multiworld Status show the server's reply. New Ledger and Rebuild
       Codex work as before; Reconnect restores the saved connection.
 - [ ] Collect, Disconnect and Relearn Skills first show a description and action button with **Cancel
       focused by default**. Cancel or Escape changes nothing. Reopen and explicitly confirm: Collect
@@ -258,7 +258,7 @@ Restart D2R after updating the plugin: the game caches panel layouts.
       returns to the main panel. Cancel then opening another action never runs the cancelled action.
 - [ ] Start reconnecting to another AP slot while a confirmation is open: the old confirmation refuses
       to run even before the handshake finishes (also test a refused/unreachable server).
-      Relearn cannot open while connecting/refused or before the current slot is bound to the game.
+      Relearn cannot open while connecting/refused, before the slot is bound, or on another character.
       Leaving the D2R game also cancels a pending dialog, including when joining another character.
 - [ ] Clicks on the panel don't move the character or hit anything behind it.
 - [ ] Controller: all three columns, Close, Confirm and Cancel can be reached and pressed; entering

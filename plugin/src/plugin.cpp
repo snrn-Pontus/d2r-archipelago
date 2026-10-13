@@ -5059,7 +5059,8 @@ auto PanelRelearnReady() -> bool {
 	}
 	const auto session = gClient->SessionGeneration();
 	std::lock_guard lock(gMutex);
-	return gInGame && gBoundSession != 0 && gBoundSession == session;
+	return gInGame && gBoundSession != 0 && gBoundSession == session
+		&& CharacterVerdict(gSlots) == ap::character::Verdict::Match;
 }
 
 // Confirmation is a separate panel. Escape/Cancel just close it.
@@ -5100,7 +5101,7 @@ void RunPanelButton(std::string_view id) {
 	}
 	if ((id == "relearn" || id == "confirm-relearn") && !PanelRelearnReady()) {
 		gPanels->closePanel(gContext, handle);
-		Reply("Relearn Skills needs an accepted Archipelago connection bound to this game. Try again after connecting.");
+		Reply("Relearn Skills needs an accepted connection and its claimed character. Connect and use Claim Character if needed.");
 		return;
 	}
 	if (button->confirm) {
