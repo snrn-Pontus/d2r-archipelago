@@ -39,6 +39,12 @@ Built, pushed and installed, still to check in game:
 - [ ] `ap-relearn` (tree mode): with all skills unlocked it says so; after a respec at Akara it lists the
       lost skills and asks for `ap-relearn confirm`, which gives each one level back; running `confirm`
       again changes nothing.
+- [ ] Respec with a Token of Absolution (tree mode, #8; cube the four essences for one): within about 5 seconds the chat says the Archipelago skills are
+      unlocked again and names them, and each has 1 point in the tree. Count the unspent points before and
+      after: does the respec refund the skadd levels too (then each skill comes back as an extra point)?
+- [ ] Right-clicking a Token of Absolution that doesn't get used (e.g. in the stash) changes nothing.
+- [ ] Finishing Den of Evil in tree mode shows the hint that Akara's respec needs Relearn Skills; only once
+      per difficulty.
 - [ ] Shuffled superuniques are visible now (they had no HD model): after rerunning setup, Rakanishu in
       Stony Field and his minions show their new monster's model (section 8).
 

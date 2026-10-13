@@ -199,6 +199,10 @@ auto ClassIndex(const std::string& name) -> int {
 Clock::time_point     gLastRoomWarning;
 // After a failed item update, wait before trying again instead of every frame.
 Clock::time_point     gRetryAt;
+// Tree mode: a Token of Absolution just used, waiting for its respec to finish
+// so the received skills can be unlocked again.
+D2RL::ItemHandle      gRespecToken = D2RL::InvalidItemHandle;
+Clock::time_point     gRespecTokenAt;
 
 void Log(const std::string& text) {
 	if (gContext != nullptr) {
@@ -531,6 +535,7 @@ auto IsNewCheck(int64_t location) -> bool {
 }
 
 constexpr uint32_t BossQuestFlags[] = { 6, 14, 22, 26, 40 };
+constexpr uint32_t DenOfEvilFlag    = 1;
 
 void CompleteQuest(uint32_t difficulty, uint32_t flag, QuestSource source) {
 	if (difficulty >= 3) {
@@ -553,6 +558,11 @@ void CompleteQuest(uint32_t difficulty, uint32_t flag, QuestSource source) {
 			if (std::ranges::find(BossQuestFlags, flag) != std::end(BossQuestFlags) && IsNewCheck(location) && gClient->Slots().cainHints) {
 				std::lock_guard lock(gMutex);
 				gHintQueue.push_back("Deckard Cain: \"Stay awhile and listen...\"");
+			}
+			// Den of Evil's reward is Akara's respec, which takes the received tree skills away.
+			if (flag == DenOfEvilFlag && IsNewCheck(location) && gClient->Slots().randomizer.treeMode) {
+				Feed("Archipelago: Akara's respec takes your Archipelago skills away. After it, use Relearn Skills (F9) and type ap-relearn confirm. "
+				     "A Token of Absolution unlocks them again by itself.");
 			}
 			AddChecks({ location });
 			const ap::SlotData slots = gClient->Slots();
@@ -1633,6 +1643,92 @@ void DeliverTreeSkills(const std::vector<ap::NetworkItem>& items) {
 	}
 }
 
+// Tree mode: the unlocked skills that won't take a point, or nothing if a
+// check failed. A respec takes away the level skadd gave, but canAllocateSkill
+// also says no with no unspent points, below a skill's level requirement or at
+// its cap, so on its own this doesn't prove a respec.
+auto RefusedSkills(D2RL::PlayerHandle player) -> std::optional<std::vector<uint32_t>> {
+	std::set<uint32_t> unlocked;
+	{
+		std::lock_guard lock(gMutex);
+		unlocked = gSave.unlockedSkills;
+	}
+	std::vector<uint32_t> refused;
+	for (const uint32_t skill : unlocked) {
+		bool allowed = false;
+		if (gGameRules->canAllocateSkill(gContext, player, skill, &allowed) != D2RL::GameRules::Result::Success) {
+			return std::nullopt;
+		}
+		if (!allowed) {
+			refused.push_back(skill);
+		}
+	}
+	return refused;
+}
+
+auto SkillNames(const std::vector<uint32_t>& skills) -> std::string {
+	std::string names;
+	for (const uint32_t skill : skills) {
+		names += (names.empty() ? "" : ", ") + SkillName(skill);
+	}
+	return names;
+}
+
+// Tree mode: after a Token of Absolution, unlocks the received skills again.
+// The token counts once it's gone (used, not just clicked); then a respec has
+// taken every received skill's level, so each one refuses a point. If any
+// still takes one, the token didn't respec and nothing changes.
+void RelearnAfterToken(D2RL::PlayerHandle player) {
+	D2RL::ItemHandle  token = D2RL::InvalidItemHandle;
+	Clock::time_point usedAt;
+	{
+		std::lock_guard lock(gMutex);
+		token = gRespecToken;
+		usedAt = gRespecTokenAt;
+	}
+	if (token == D2RL::InvalidItemHandle || gGameRules == nullptr) {
+		return;
+	}
+	D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
+	const auto result = gItems->getItemInfo(gContext, token, &info);
+	if (result != D2RL::Items::Result::NotFound && result != D2RL::Items::Result::StaleHandle) {
+		if (Clock::now() - usedAt > std::chrono::seconds(30)) {
+			Log("Archipelago: the Token of Absolution is still there, so it didn't respec.");
+			std::lock_guard lock(gMutex);
+			gRespecToken = D2RL::InvalidItemHandle;
+		}
+		return;
+	}
+	{
+		std::lock_guard lock(gMutex);
+		gRespecToken = D2RL::InvalidItemHandle;
+	}
+	const auto refused = RefusedSkills(player);
+	size_t unlocked = 0;
+	{
+		std::lock_guard lock(gMutex);
+		unlocked = gSave.unlockedSkills.size();
+	}
+	if (!refused) {
+		Feed("Archipelago: couldn't check your skills after the Token of Absolution; use Relearn Skills (F9) to unlock them again.");
+		return;
+	}
+	if (refused->empty()) {
+		return;
+	}
+	if (refused->size() != unlocked) {
+		Log("Archipelago: some Archipelago skills still take a point after the Token of Absolution, so they weren't unlocked again.");
+		return;
+	}
+	{
+		std::lock_guard lock(gMutex);
+		for (const uint32_t skill : *refused) {
+			gCommandQueue.push_back("skadd " + SkillName(skill) + ",1");
+		}
+	}
+	Feed("Archipelago: your respec took your Archipelago skills, so they're unlocked again: " + SkillNames(*refused) + ".");
+}
+
 void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	gWorkQueued = false;
 	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
@@ -1654,6 +1750,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 
 	ScanItems(player);
+	RelearnAfterToken(player);
 	ScanParcels(player);
 	EnforceTownPortalLock(player);
 	EnforcePotionLock(player);
@@ -2009,16 +2106,17 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 		|| event->action != D2RL::ItemInteractions::Action::Activate) {
 		return Decision::Continue;
 	}
-	bool townPortal = false, potions = false, questItems = false;
+	bool townPortal = false, potions = false, questItems = false, respecs = false;
 	int difficulty = 0;
 	{
 		std::lock_guard lock(gMutex);
 		townPortal = gLocks.townPortal;
 		potions = gLocks.potions;
 		questItems = gSlots.questItemChecks && gDifficultyKnown;
+		respecs = gSlots.randomizer.treeMode && gGameRules != nullptr && !gSave.unlockedSkills.empty();
 		difficulty = gDifficulty;
 	}
-	if (!townPortal && !potions && !questItems) {
+	if (!townPortal && !potions && !questItems && !respecs) {
 		return Decision::Continue;
 	}
 	D2RL::Items::ItemInfo info { .structSize = D2RL::Items::ItemInfoSize };
@@ -2040,6 +2138,11 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 			std::lock_guard lock(gMutex);
 			gCollectionQueue.push_back(*check);
 		}
+	}
+	if (respecs && info.code == ap::loot::CodeFromText("toa")) {
+		std::lock_guard lock(gMutex);
+		gRespecToken = event->item;
+		gRespecTokenAt = Clock::now();
 	}
 	if (townPortal && (info.code == ap::loot::CodeFromText("tsc") || info.code == ap::loot::CodeFromText("tbk"))) {
 		LockMessage("Town Portal is locked until you find Town Portal Access.");
@@ -2938,7 +3041,8 @@ auto CommandCore(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command,
 // below its level requirement or at its cap, while skadd adds a level each
 // time. So ap-relearn only lists the skills that won't take a point, and
 // ap-relearn confirm (you just respecced) gives each of them a level back. A
-// failed check changes nothing.
+// failed check changes nothing. A Token of Absolution does this on its own
+// (RelearnAfterToken); Akara's respec can't be seen, so it needs ap-relearn.
 bool gRelearnConfirmed = false;
 
 void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
@@ -2955,27 +3059,19 @@ void __cdecl RelearnWork(const D2RL::PluginContext*, void*) noexcept {
 		say("Archipelago: ap-relearn needs a newer D2RLoader (its game rule service) to tell which skills a respec took.");
 		return;
 	}
-	std::set<uint32_t> unlocked;
 	bool confirmed = false;
 	{
 		std::lock_guard lock(gMutex);
-		unlocked = gSave.unlockedSkills;
 		confirmed = gRelearnConfirmed;
 		gRelearnConfirmed = false;
 	}
-	std::vector<uint32_t> refused;
-	std::string names;
-	for (const uint32_t skill : unlocked) {
-		bool allowed = false;
-		if (gGameRules->canAllocateSkill(gContext, player, skill, &allowed) != D2RL::GameRules::Result::Success) {
-			say("Archipelago: couldn't check " + SkillName(skill) + ", so ap-relearn changed nothing.");
-			return;
-		}
-		if (!allowed) {
-			refused.push_back(skill);
-			names += (names.empty() ? "" : ", ") + SkillName(skill);
-		}
+	const auto checked = RefusedSkills(player);
+	if (!checked) {
+		say("Archipelago: couldn't check your skills, so ap-relearn changed nothing.");
+		return;
 	}
+	const std::vector<uint32_t>& refused = *checked;
+	const std::string names = SkillNames(refused);
 	if (refused.empty()) {
 		say("Archipelago: all your Archipelago skills are still unlocked.");
 		return;
