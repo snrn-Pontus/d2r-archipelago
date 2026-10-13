@@ -6,7 +6,7 @@ from worlds.AutoWorld import WebWorld, World
 from worlds.generic.Rules import add_item_rule, add_rule
 
 from . import client  # noqa: F401  (adds the Launcher button)
-from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SKILL_FORMS, SKILL_SLOTS, SKILL_USERS, SKILLS,
+from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SIDE_AREAS, SKILL_FORMS, SKILL_SLOTS, SKILL_USERS, SKILLS,
                    SPECIAL_ITEMS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
 from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, KILL_COUNTS, LEVEL_CAPS,
                   LEVEL_STEP, LOCKS, MERCHANT_ACCESS, SET_FINDS, SKILL_POINT, TRAPS, UNIQUE_FINDS, UNIQUE_LOOT, act_key_name, area_location_name,
@@ -140,6 +140,12 @@ class D2RWorld(World):
                                                     if value != self.options.character_class.option_warlock
                                                     or self.options.include_warlock])
         self.skill_tree = deal_skill_trees(self.random) if self.options.skill_tree_shuffle else {}
+        # Side Area Checks: each difficulty picks its own side areas, from the acts in play.
+        self.side_areas: dict[int, list[tuple[int, int, str]]] = {}
+        for difficulty in range(goal + 1):
+            open_areas = [area for area in SIDE_AREAS if difficulty * len(ACTS) + area[1] < self.act_count]
+            picked = self.random.sample(open_areas, min(self.options.side_area_checks.value, len(open_areas)))
+            self.side_areas[difficulty] = sorted(picked)
 
     def key_fits(self, item: Item, act_index: int) -> bool:
         """Act Key Window: whether a D2 act key may sit at a location in act `act_index` of this world, by the
@@ -250,6 +256,9 @@ class D2RWorld(World):
                 for _level_id, act, name in AREAS:
                     if difficulty * len(ACTS) + act < self.act_count:
                         add(acts[difficulty * len(ACTS) + act], area_location_name(difficulty, name))
+        for difficulty, areas in self.side_areas.items():
+            for _level_id, act, name in areas:
+                add(acts[difficulty * len(ACTS) + act], area_location_name(difficulty, name))
         if self.options.level_checks:
             cap = self.level_cap
             for level in range(LEVEL_STEP, cap + 1, LEVEL_STEP):
@@ -553,6 +562,9 @@ class D2RWorld(World):
             "skill_scaling_cap": self.options.skill_scaling_cap.value,
             "goal_quest": BOSS_QUESTS[self.options.goal_act.value - 1],
             "area_checks": bool(self.options.area_checks),
+            # The side areas this seed picked, as location ids; the plugin only sends these.
+            "side_areas": sorted(location_name_to_id[area_location_name(difficulty, name)]
+                                 for difficulty, areas in self.side_areas.items() for _level_id, _act, name in areas),
             "level_checks": bool(self.options.level_checks),
             "level_step": LEVEL_STEP,
             "level_cap": self.level_cap,

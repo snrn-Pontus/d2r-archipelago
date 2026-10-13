@@ -1,5 +1,6 @@
 from . import D2RTestBase
-from ..ids import ITEM_BASE, LOCATION_BASE
+from ..data import SIDE_AREAS
+from ..ids import ITEM_BASE, LOCATION_BASE, area_location_name
 
 
 class TestDefaults(D2RTestBase):
@@ -15,6 +16,8 @@ class TestDefaults(D2RTestBase):
         self.assertEqual(world.location_name_to_id["Normal: Enter Tristram"], LOCATION_BASE + 1038)
         self.assertEqual(world.location_name_to_id["Hell: Enter The Worldstone Chamber"], LOCATION_BASE + 1532)
         self.assertEqual(world.location_name_to_id["Reach Character Level 30"], LOCATION_BASE + 2030)
+        self.assertEqual(world.location_name_to_id["Normal: Enter Mausoleum"], LOCATION_BASE + 1019)
+        self.assertEqual(world.location_name_to_id["Nightmare: Enter Abaddon"], LOCATION_BASE + 1325)
         self.assertEqual(world.location_name_to_id["Normal: Kill Bishibosh (Cold Plains)"], LOCATION_BASE + 3000)
         self.assertEqual(world.location_name_to_id["Hell: Kill Frozenstein (Frozen River)"], LOCATION_BASE + 3259)
         self.assertEqual(world.location_name_to_id["Find Zod Rune"], LOCATION_BASE + 5033)
@@ -58,6 +61,47 @@ class TestDefaults(D2RTestBase):
         for key in ("Normal Act II Key", "Normal Act III Key", "Normal Act IV Key"):
             self.assertEqual(names.count(key), 1)
         self.assertNotIn("Normal Act V Key", names)
+
+
+class TestDefaultSideAreas(D2RTestBase):
+    def test_five_side_areas(self) -> None:
+        side = {name for _level_id, _act, name in SIDE_AREAS}
+        picked = [location for location in self.multiworld.get_locations(self.player)
+                  if location.name.removeprefix("Normal: Enter ") in side]
+        self.assertEqual(len(picked), 5)
+        self.assertEqual(sorted(location.address for location in picked), self.world.fill_slot_data()["side_areas"])
+        # Default goal is Normal Act IV: no Act V side areas.
+        self.assertTrue(all(location.act_index < 4 for location in picked))
+
+
+class TestSideAreasPerDifficulty(D2RTestBase):
+    options = {"goal": "hell", "goal_act": 5, "side_area_checks": 10}
+
+    def test_each_difficulty_picks_its_own(self) -> None:
+        picks = self.world.side_areas
+        self.assertEqual(sorted(picks), [0, 1, 2])
+        self.assertTrue(all(len(areas) == 10 for areas in picks.values()))
+        self.assertTrue(picks[0] != picks[1] or picks[1] != picks[2])
+        names = {location.name for location in self.multiworld.get_locations(self.player)}
+        for difficulty, areas in picks.items():
+            for _level_id, _act, name in areas:
+                self.assertIn(area_location_name(difficulty, name), names)
+
+
+class TestAllSideAreas(D2RTestBase):
+    options = {"goal": "nightmare", "goal_act": 2, "side_area_checks": 28}
+
+    def test_every_open_side_area(self) -> None:
+        self.assertEqual(len(self.world.side_areas[0]), len(SIDE_AREAS))
+        # Nightmare stops after Act II, so only Acts I and II side areas.
+        self.assertEqual(self.world.side_areas[1], [area for area in SIDE_AREAS if area[1] < 2])
+
+
+class TestNoSideAreas(D2RTestBase):
+    options = {"side_area_checks": 0}
+
+    def test_none(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["side_areas"], [])
 
 
 class TestHell(D2RTestBase):
@@ -224,7 +268,8 @@ class TestHellSuperUniques(D2RTestBase):
         names = {location.name for location in self.multiworld.get_locations(self.player)}
         # 31 superuniques per difficulty, plus The Cow King and the cows on Normal and Nightmare.
         self.assertEqual(sum(1 for name in names if ": Kill " in name), 3 * 31 + 2 * 2)
-        self.assertEqual(sum(1 for name in names if ": Enter " in name), 3 * 46 + 2)
+        # 46 areas and 5 side areas per difficulty, plus the cow level on Normal and Nightmare.
+        self.assertEqual(sum(1 for name in names if ": Enter " in name), 3 * (46 + 5) + 2)
 
     def test_missable_and_grind_checks_hold_filler(self) -> None:
         from BaseClasses import LocationProgressType

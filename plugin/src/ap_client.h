@@ -49,6 +49,8 @@ struct SlotData {
 	int  skillScalingCap = 0;
 	int  goalQuest   = 40;
 	bool areaChecks  = true;
+	// Side Area Checks: the location ids of the side areas this seed picked.
+	std::set<int64_t> sideAreas;
 	bool levelChecks = true;
 	int  levelStep   = 5;
 	int  levelCap    = 30;

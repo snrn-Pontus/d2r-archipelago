@@ -231,6 +231,10 @@ void Client::Handle(const std::string& text) {
 			slotData_.skillScalingCap = data.value("skill_scaling_cap", 0);
 			slotData_.goalQuest = data.value("goal_quest", 40);
 			slotData_.areaChecks = data.value("area_checks", true);
+			slotData_.sideAreas.clear();
+			for (const json& location : data.value("side_areas", json::array())) {
+				slotData_.sideAreas.insert(location.get<int64_t>());
+			}
 			slotData_.levelChecks = data.value("level_checks", true);
 			slotData_.levelStep = data.value("level_step", 5);
 			slotData_.levelCap = data.value("level_cap", 30);

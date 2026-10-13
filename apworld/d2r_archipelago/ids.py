@@ -1,5 +1,5 @@
 """Item and location ids. The plugin computes the same ids (plugin/src/ids.h)."""
-from .data import AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SKILLS, SPECIAL_ITEMS, SUPERUNIQUES, UBERS
+from .data import AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SIDE_AREAS, SKILLS, SPECIAL_ITEMS, SUPERUNIQUES, UBERS
 
 ITEM_BASE = 2_430_000
 LOCATION_BASE = 2_420_000
@@ -151,9 +151,9 @@ location_name_to_id: dict[str, int] = {}
 for difficulty in range(3):
     for flag, _act, name in QUESTS:
         location_name_to_id[quest_location_name(difficulty, name)] = LOCATION_BASE + difficulty * 100 + flag
-# Area entries: LOCATION_BASE + 1000 + difficulty * 200 + level id.
+# Area entries: LOCATION_BASE + 1000 + difficulty * 200 + level id. Side areas use the same scheme.
 for difficulty in range(3):
-    for level_id, _act, name in AREAS:
+    for level_id, _act, name in AREAS + SIDE_AREAS:
         location_name_to_id[area_location_name(difficulty, name)] = LOCATION_BASE + 1000 + difficulty * 200 + level_id
 for level in range(LEVEL_STEP, LEVEL_CAPS[-1] + 1, LEVEL_STEP):
     location_name_to_id[level_location_name(level)] = LOCATION_BASE + 2000 + level

@@ -198,6 +198,9 @@ Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: 
       fourth one is refunded.
 - [ ] 100 kills in Act I sends "Kill 100 monsters"; finding your first unique sends "Find 1 Unique".
 - [ ] Rewards don't count: a Random Unique from the server doesn't count toward "Find 1 Unique".
+- [ ] Side areas (#31): `ap-missing` (or the Ledger) lists five "Normal: Enter <side area>" checks. Walking
+      into one of them (e.g. the Mausoleum or Cave Level 2) sends its check; a side area the seed didn't
+      pick sends nothing and shows no banner.
 
 ## 2b. Quest items used at once
 
