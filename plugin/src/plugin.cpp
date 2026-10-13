@@ -138,8 +138,10 @@ std::vector<int64_t>  gCollectionQueue;
 // and traps, which wait until the player is out of town (unless the seed says
 // otherwise). A trap's commands are made when it goes off, for the area it hits.
 struct QueuedTrap {
-	ap::loot::Loot loot;
-	int            level = 1;
+	ap::loot::Loot    loot;
+	int               level = 1;
+	// When an area ambush first waited for its area's monsters.
+	Clock::time_point waiting {};
 };
 std::vector<std::string> gCommandQueue;
 std::vector<QueuedTrap> gTrapQueue;
@@ -835,7 +837,8 @@ auto FindLineups(D2RL::DataTables::Bank bank, const D2RL::DataTables::TableView&
 }
 
 // The MonStats ids of the monsters that live in an area on this difficulty
-// (after any monster shuffle), or none if that can't be read. UI thread.
+// (after any monster shuffle), or none if that can't be read. Game thread
+// (the tables are game-thread-only).
 auto AreaMonsters(int level, int difficulty, bool lod) -> std::vector<std::string> {
 	if (gTables == nullptr || level <= 0) {
 		return {};
@@ -862,6 +865,33 @@ auto AreaMonsters(int level, int difficulty, bool lod) -> std::vector<std::strin
 		monsters.push_back(layout.names[id]);
 	}
 	return monsters;
+}
+
+// The current area's monsters for area ambushes, read on the game thread for
+// RunCommands. level is -1 until read.
+struct AmbushArea {
+	int level = -1;
+	int difficulty = 0;
+	std::vector<std::string> monsters;
+};
+AmbushArea gAmbushArea;
+
+void ReadAmbushArea() {
+	int  level = -1, difficulty = 0;
+	bool lod = false, wanted = false;
+	{
+		std::lock_guard lock(gMutex);
+		wanted = gSlots.traps.areaAmbush && std::ranges::any_of(gTrapQueue, [](const QueuedTrap& trap) { return trap.loot == ap::loot::Loot::AmbushTrap; });
+		level = gCurrentLevel;
+		difficulty = gDifficulty;
+		lod = gLodCharacter;
+		if (!wanted || (gAmbushArea.level == level && gAmbushArea.difficulty == difficulty)) {
+			return;
+		}
+	}
+	auto monsters = AreaMonsters(level, difficulty, lod);
+	std::lock_guard lock(gMutex);
+	gAmbushArea = { level, difficulty, std::move(monsters) };
 }
 
 // Items the plugin hands out carry this marker in their seed's top byte, so
@@ -1838,6 +1868,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		return;
 	}
 	FindSuperUniqueMonsters();
+	ReadAmbushArea();
 	const uint64_t generation = gClient->ItemsGeneration();
 	const std::vector<ap::NetworkItem> items = gClient->Items();
 	ap::Config config;
@@ -2047,8 +2078,7 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	const ap::SlotData::Traps settings = gClient->Slots().traps;
 	std::vector<std::string> commands;
 	std::vector<QueuedTrap> traps;
-	int  area = -1, act = 0, difficulty = 0;
-	bool lod = false;
+	int area = -1, act = 0, difficulty = 0;
 	{
 		std::lock_guard lock(gMutex);
 		if (!gInGame) {
@@ -2061,7 +2091,6 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 		area = gCurrentLevel;
 		act = gAct;
 		difficulty = gDifficulty;
-		lod = gLodCharacter;
 	}
 	for (const auto& command : commands) {
 		if (!ExecuteCommand(command)) {
@@ -2071,8 +2100,32 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	if (traps.empty()) {
 		return;
 	}
+	// An area ambush waits (a few seconds at most) for the game thread to read
+	// this area's monsters; after that it uses the act's.
+	std::vector<std::string> monsters;
+	if (settings.areaAmbush) {
+		std::lock_guard lock(gMutex);
+		if (gAmbushArea.level == area && gAmbushArea.difficulty == difficulty) {
+			monsters = gAmbushArea.monsters;
+		} else {
+			const auto now = Clock::now();
+			std::erase_if(traps, [&](QueuedTrap& trap) {
+				if (trap.loot != ap::loot::Loot::AmbushTrap) {
+					return false;
+				}
+				if (trap.waiting == Clock::time_point {}) {
+					trap.waiting = now;
+				}
+				if (now - trap.waiting > std::chrono::seconds(10)) {
+					return false;
+				}
+				gTrapQueue.push_back(trap);
+				return true;
+			});
+			gNextQuestScan = now;
+		}
+	}
 	std::mt19937 random(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
-	const auto monsters = settings.areaAmbush ? AreaMonsters(area, difficulty, lod) : std::vector<std::string> {};
 	const ap::loot::TrapSettings tuning { .ambushSize = settings.ambushSize, .taxPerLevel = settings.taxPerLevel };
 	for (const auto& trap : traps) {
 		const auto fired = ap::loot::CommandsFor(trap.loot, trap.level, act, random, tuning, monsters);
