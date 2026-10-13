@@ -105,9 +105,10 @@ uint64_t              gCodexItems   = UINT64_MAX;
 // with the fallbacks in quest_triggers.h (issue #20).
 enum class QuestSource : uint8_t { Event, Kill, Item, Area, DenKills };
 constexpr const char* QuestSourceNames[] = { "the quest event", "a boss kill", "a quest item", "reaching its area", "Den of Evil kills" };
-// Quests completed by kills (server thread) or item scans (game thread), as
-// source * 1000 + difficulty * 100 + flag; the render thread sends them, off the game threads.
-std::set<int>         gQuestQueue;
+// Quests completed by kills (server thread), item scans (game thread) or the
+// quest event (UI thread), as source * 1000 + difficulty * 100 + flag, in the
+// order they happened; the render thread sends them, off the game threads.
+std::vector<int>      gQuestQueue;
 // Den of Evil kills per difficulty this session.
 uint32_t              gDenKills[3] = {};
 // Field superunique kills (server thread), as difficulty * 100 + superunique id.
@@ -1276,7 +1277,7 @@ void ScanItems(D2RL::PlayerHandle player) {
 	std::lock_guard lock(gMutex);
 	for (const uint8_t flag : scan.questFlags) {
 		if (gDifficultyKnown) {
-			gQuestQueue.insert(static_cast<int>(QuestSource::Item) * 1000 + std::clamp(gDifficulty, 0, 2) * 100 + flag);
+			gQuestQueue.push_back(static_cast<int>(QuestSource::Item) * 1000 + std::clamp(gDifficulty, 0, 2) * 100 + flag);
 		}
 	}
 	// Quest items, on the difficulty you're on.
@@ -2305,7 +2306,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		SendReady();
 	}
 
-	std::set<int> quests;
+	std::vector<int> quests;
 	{
 		std::lock_guard lock(gMutex);
 		quests.swap(gQuestQueue);
@@ -2477,8 +2478,12 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 		case Kind::QuestCompleted: {
 			// The row should be the quest flag in data::Quests (1 = Den of Evil);
 			// rows we don't check (act intros, act completions) log only here.
+			// It joins the fallbacks' queue so the log keeps the order they happened in.
 			Log("Archipelago: quest event for row " + std::to_string(event->questRecordId) + " on difficulty " + std::to_string(event->difficulty) + ".");
-			CompleteQuest(event->difficulty, event->questRecordId, QuestSource::Event);
+			if (event->difficulty < 3 && event->questRecordId < 100) {
+				std::lock_guard lock(gMutex);
+				gQuestQueue.push_back(static_cast<int>(QuestSource::Event) * 1000 + static_cast<int>(event->difficulty) * 100 + static_cast<int>(event->questRecordId));
+			}
 			break;
 		}
 		case Kind::LevelChanged: {
@@ -2705,10 +2710,10 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 	gDifficultyKnown = true;
 	const int difficulty = std::clamp(gDifficulty, 0, 2);
 	if (const auto flag = ap::quests::Find(ap::quests::Trigger::Kill, event->monster.classId)) {
-		gQuestQueue.insert(static_cast<int>(QuestSource::Kill) * 1000 + difficulty * 100 + *flag);
+		gQuestQueue.push_back(static_cast<int>(QuestSource::Kill) * 1000 + difficulty * 100 + *flag);
 	}
 	if (event->levelId == static_cast<int32_t>(ap::quests::DenLevel) && ++gDenKills[difficulty] == ap::quests::DenKills) {
-		gQuestQueue.insert(static_cast<int>(QuestSource::DenKills) * 1000 + difficulty * 100 + 1);
+		gQuestQueue.push_back(static_cast<int>(QuestSource::DenKills) * 1000 + difficulty * 100 + 1);
 	}
 	const int monster = static_cast<int>(event->monster.classId);
 	for (uint32_t index = 0; gSlots.uberChecks && difficulty == 2 && index < std::size(ap::data::Ubers); ++index) {
