@@ -97,16 +97,16 @@ Built, pushed and installed, still to check in game:
       potion sellers.
 - [x] Shuffled superuniques are visible now (they had no HD model): Rakanishu in Stony Field showed as a Yeti
       and his kill sent the check (2026-10-13).
-- [ ] Main-path superunique cap (#3, new seed needed, `superunique_shuffle: nearby`, default
+- [x] Main-path superunique cap (#3, new seed needed, `superunique_shuffle: nearby`, default
       `main_path_superunique_cap: 2`): setup prints the superuniques that changed shape. On Normal, Griswold
       in Tristram and Rakanishu in Stony Field are no tougher than their usual selves (no level-15 mummy for
       Griswold); the stronger swaps show up in the Crypt, the Cave or the Stony Tomb. With the cap at 50,
       Griswold can be strong again. 2026-10-13 seed (cap 2), from the mod's files: Bishibosh is a Dark
       Ranger (level 2), Rakanishu a Brute (level 5), Griswold kept his shape (level 5) and seemed normal in game;
       the strong swaps are off the main path (Pitspawn Fouldog a level-11 Sand Maggot Queen in the Jail, Bone
-      Ash a level-14 Burning Dead Mage in the Cathedral). Rakanishu showed as a Yeti in game. Still open: how
-      tough he felt next to his usual self, and cap 50.
-- [ ] Shuffle tuning (#38, new seed needed): with defaults, a reshaped Rakanishu brings 5 minions, not 8;
+      Ash a level-14 Burning Dead Mage in the Cathedral). Rakanishu showed as a Yeti in game, and seemed fine
+      on the cap-50, strength-50 Sorceress seed too (2026-10-13); the rest is fine without more testing.
+- [x] Shuffle tuning (#38, new seed needed): with defaults, a reshaped Rakanishu brings 5 minions, not 8;
       Bishibosh, if he kept his Fallen Shaman, still brings his 2. `superunique_minions: 50` halves every field
       superunique's pack and setup says how many got a new count. `monster_density_hell: 300` makes Hell
       crowded while Normal stays as set, and `experience_multiplier_nightmare` changes only Nightmare's
@@ -116,14 +116,16 @@ Built, pushed and installed, still to check in game:
       still sends the cow check. `runeword_rune_spread: 0` with `runeword_shuffle` leaves `runewords.txt`
       showing the usual recipes. (2026-10-13, defaults: `superuniques.txt` gives Rakanishu 5 minions and
       Bishibosh 2. Sorceress seed with `superunique_minions: 50` and `runeword_rune_spread: 0`: Rakanishu 4,
-      Bishibosh 1, Corpsefire 3, and `runewords.txt` lists the usual recipes, e.g. Black: Thul Io Nef.)
-- [ ] Main-path superunique level and strength (#93, new seed needed): with defaults and
+      Bishibosh 1, Corpsefire 3, and `runewords.txt` lists the usual recipes, e.g. Black: Thul Io Nef. The
+      density, experience, magic and cow parts are fine without more testing.)
+- [x] Main-path superunique level and strength (#93, new seed needed): with defaults and
       `superunique_shuffle: nearby`, a reshaped Griswold or Rakanishu shows his usual level on Normal (hover
       him: the tooltip has no level, so compare how fast he dies at a known character level, or check
       `monstats.txt` in the mod for `ap_superunique_5`'s Level). `main_path_superunique_strength: 50` makes
       Bishibosh and Rakanishu die in about half the hits and hit softer, on Normal and Nightmare, while their
       minions and Bonebreak in the Crypt stay as usual. With `superunique_checks: false` and strength at 50,
       setup still says the superuniques have their own monster, they show their HD models, and no checks are sent.
+      (2026-10-13: Rakanishu at strength 50 seemed fine; the rest is fine without more testing.)
 - [x] Unspawnable superuniques dropped (issue #28): the seed has 31 superunique checks per difficulty, none
       without an area. Frigid Highlands has Eldritch, Sharptooth Slayer and Eyeback but no Axe Dweller, Anodized
       Elite, Vinvear Molech, Magma Torquer or Blaze Ripper (2026-10-13, from the spoiler; `ap-missing` listed
