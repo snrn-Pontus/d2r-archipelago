@@ -440,6 +440,15 @@ void TestShrinesAndTraps() {
 	const auto tax = ap::loot::CommandsFor(ap::loot::Loot::TaxCollectorTrap, 30, 0, random);
 	EXPECT(tax.trap && tax.commands[0] == "gold -30000");
 	EXPECT(ap::loot::CommandsFor(ap::loot::Loot::Gold, 30, 0, random).commands.empty());
+	// The seed's trap options: ambush size, the area's own monsters, tax per level.
+	const ap::loot::TrapSettings tuning { .ambushSize = 12, .taxPerLevel = 250 };
+	const std::string area[] = { "zombie1", "quillrat1" };
+	for (int i = 0; i < 10; ++i) {
+		const auto big = ap::loot::CommandsFor(ap::loot::Loot::AmbushTrap, 30, 4, random, tuning, area);
+		EXPECT(big.commands.back() == "mspawn zombie1,12" || big.commands.back() == "mspawn quillrat1,12");
+	}
+	EXPECT(ap::loot::CommandsFor(ap::loot::Loot::AmbushTrap, 30, 4, random, tuning).commands.back().ends_with(",12"));
+	EXPECT(ap::loot::CommandsFor(ap::loot::Loot::TaxCollectorTrap, 30, 0, random, tuning).commands[0] == "gold -7500");
 	for (int i = 0; i < 50; ++i) {
 		const int id = ap::loot::ShrineId(random);
 		// Never a harmful or unused shrine.

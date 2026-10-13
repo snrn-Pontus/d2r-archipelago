@@ -445,7 +445,7 @@ class ShrineWeight(Range):
 
 class TrapPercentage(Range):
     """Percentage of filler items replaced by traps. The trap weights below pick which ones.
-    Traps wait until you leave town."""
+    Traps wait until you leave town, unless Traps Wait for Town is off."""
     display_name = "Trap Percentage"
     range_start = 0
     range_end = 50
@@ -461,7 +461,7 @@ class JunkBackpackWeight(Range):
 
 
 class AmbushWeight(Range):
-    """Weight of Ambush traps: a pack of the current act's monsters appears around you."""
+    """Weight of Ambush traps: a pack of monsters appears around you (see Ambush Size and Ambush Monsters)."""
     display_name = "Ambush Weight"
     range_start = 0
     range_end = 100
@@ -493,7 +493,7 @@ class ManaDrainWeight(Range):
 
 
 class TaxCollectorWeight(Range):
-    """Weight of Tax Collector traps: you lose 1,000 gold per character level (as much as you have)."""
+    """Weight of Tax Collector traps: you lose gold per character level (Tax Collector Gold, as much as you have)."""
     display_name = "Tax Collector Weight"
     range_start = 0
     range_end = 100
@@ -506,6 +506,46 @@ class MercenaryDownWeight(Range):
     range_start = 0
     range_end = 100
     default = 0
+
+class TrapsWaitForTown(DefaultOnToggle):
+    """Traps that arrive while you're in town wait until you leave it. Off: they go off wherever you are,
+    so an Ambush can land in town."""
+    display_name = "Traps Wait for Town"
+
+
+class AmbushSize(Range):
+    """Monsters in each Ambush."""
+    display_name = "Ambush Size"
+    range_start = 1
+    range_end = 30
+    default = 6
+
+
+class AmbushMonsters(Choice):
+    """Which monsters an Ambush brings.
+    Act: a common monster of the current act (Fallen, Sand Raiders, Fetishes...).
+    Area: one of the monsters that live in the area you're in (after Monster Shuffle, on the current
+    difficulty), so the ambush fits where you are. Falls back to the act's monsters where an area has none."""
+    display_name = "Ambush Monsters"
+    option_act = 0
+    option_area = 1
+    default = 0
+
+
+class TaxCollectorGold(Range):
+    """Gold a Tax Collector trap takes per character level (as much as you have)."""
+    display_name = "Tax Collector Gold"
+    range_start = 0
+    range_end = 10000
+    default = 1000
+
+
+class JunkBackpackSize(Range):
+    """The most pieces of junk a Junk Backpack puts in your inventory (fewer if it's fuller)."""
+    display_name = "Junk Backpack Size"
+    range_start = 1
+    range_end = 40
+    default = 40
 
 
 class MonsterShuffle(Choice):
@@ -650,6 +690,11 @@ class D2ROptions(PerGameCommonOptions):
     mana_drain_weight: ManaDrainWeight
     tax_collector_weight: TaxCollectorWeight
     mercenary_down_weight: MercenaryDownWeight
+    traps_wait_for_town: TrapsWaitForTown
+    ambush_size: AmbushSize
+    ambush_monsters: AmbushMonsters
+    tax_collector_gold: TaxCollectorGold
+    junk_backpack_size: JunkBackpackSize
     monster_shuffle: MonsterShuffle
     superunique_shuffle: SuperUniqueShuffle
     runeword_shuffle: RunewordShuffle
@@ -677,7 +722,8 @@ OPTION_GROUPS = [
                             SocketedBaseWeight, GoldWeight, ExperienceWeight, CharmWeight, ShrineWeight, ProphecyWeight],
                 start_collapsed=True),
     OptionGroup("Traps", [TrapPercentage, JunkBackpackWeight, AmbushWeight, PoisonCloudWeight, FirestormWeight, ManaDrainWeight,
-                          TaxCollectorWeight, MercenaryDownWeight], start_collapsed=True),
+                          TaxCollectorWeight, MercenaryDownWeight, TrapsWaitForTown, AmbushSize, AmbushMonsters, TaxCollectorGold,
+                          JunkBackpackSize], start_collapsed=True),
     OptionGroup("Game Changes", [MonsterShuffle, SuperUniqueShuffle, RunewordShuffle, MonsterDensity, ChampionPacks, BetterDrops,
                                  ExperienceMultiplier, ItemLevelRequirements, ItemStatRequirements]),
     OptionGroup("Multiworld", [DeathLink]),

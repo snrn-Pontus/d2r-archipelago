@@ -36,6 +36,10 @@ class TestDefaults(D2RTestBase):
         self.assertNotIn("Nightmare: Find Horadric Cube", world.location_name_to_id)
         self.assertEqual(world.item_name_to_id["Teleport (Sorceress)"], ITEM_BASE + 54)
 
+    def test_default_trap_tuning(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["traps"], {"wait_for_town": True, "ambush_size": 6, "ambush_monsters": "act",
+                                                                "tax_per_level": 1000, "junk_size": 40})
+
     def test_default_quest_items_and_shops(self) -> None:
         names = {location.name for location in self.multiworld.get_locations(self.player)}
         self.assertIn("Normal: Find Horadric Cube", names)
@@ -334,6 +338,15 @@ class TestNoTraps(D2RTestBase):
     def test_no_traps(self) -> None:
         names = [item.name for item in self.multiworld.itempool if item.player == self.player]
         self.assertFalse(any(name == "Junk Backpack" or name.endswith(" Trap") for name in names))
+
+
+class TestTrapTuning(D2RTestBase):
+    options = {"traps_wait_for_town": False, "ambush_size": 12, "ambush_monsters": "area", "tax_collector_gold": 250,
+               "junk_backpack_size": 10}
+
+    def test_slot_data(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["traps"], {"wait_for_town": False, "ambush_size": 12, "ambush_monsters": "area",
+                                                                "tax_per_level": 250, "junk_size": 10})
 
 
 class TestLocks(D2RTestBase):

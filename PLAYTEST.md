@@ -289,6 +289,12 @@ Any seed. Send each with `/send`, standing outside town for the traps.
       `Poison Cloud Trap`, `Firestorm Trap`, `Mana Drain Trap`, `Tax Collector Trap`,
       `Mercenary Down Trap` (with a hired mercenary). Ambush and Poison Cloud work.
 - [ ] `Codex Empowerment` raises every Codex skill by one.
+- [ ] Trap options (#34), with `ambush_monsters: area`, `ambush_size: 12`, `tax_collector_gold: 250`,
+      `junk_backpack_size: 10` and `traps_wait_for_town: false`:
+  - [ ] The plugin log has "Levels line-ups at +N and +M" (not "couldn't find the monster line-ups").
+  - [ ] An `Ambush Trap` in Cold Plains brings 12 of Cold Plains' own monsters; in Nightmare too.
+  - [ ] An `Ambush Trap` in town goes off right away (monsters in town), since waiting is off.
+  - [ ] `Tax Collector Trap` takes 250 per level; `Junk Backpack` places at most 10 pieces.
 
 ## 5b. Personalized rewards
 

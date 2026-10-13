@@ -271,6 +271,14 @@ void Client::Handle(const std::string& text) {
 				.merchants = locks.value("merchants", false),
 				.waypoints = locks.value("waypoints", false),
 			};
+			const json traps = data.value("traps", json::object());
+			slotData_.traps = {
+				.waitForTown = traps.value("wait_for_town", true),
+				.ambushSize = traps.value("ambush_size", 6),
+				.areaAmbush = traps.value("ambush_monsters", "act") == "area",
+				.taxPerLevel = traps.value("tax_per_level", 1000),
+				.junkSize = traps.value("junk_size", 40),
+			};
 			const json randomizer = data.value("randomizer", json::object());
 			slotData_.randomizer.seed = randomizer.value("seed", 0U);
 			slotData_.randomizer.monsters = static_cast<randomizer::Shuffle>(randomizer.value("monster_shuffle", 0));
