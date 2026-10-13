@@ -1959,6 +1959,22 @@ auto LockedPanel(std::string panel) -> std::string {
 	return {};
 }
 
+auto MouseButtonDown(int button) -> bool {
+	return (GetKeyState(button) & 0x8000) != 0;
+}
+
+// D2RLoader also reports Shift- and Ctrl-left-clicks, which move an item (to the
+// belt, stash or Cube) rather than use it. The event doesn't say which button was
+// pressed, so only a held left button counts; Shift- or Ctrl-right-click still
+// uses the item. Shift on a belt potion feeds the mercenary, which is a use too.
+auto IsItemMove(const D2RL::ItemInteractions::ItemInteractionEvent& event) -> bool {
+	using D2RL::ItemInteractions::Modifier;
+	const uint32_t move = D2RL::ItemInteractions::ModifierBit(Modifier::Control)
+		| (event.container == D2RL::Items::ItemContainer::Belt ? 0U : D2RL::ItemInteractions::ModifierBit(Modifier::Shift));
+	return event.inputSource == D2RL::ItemInteractions::InputSource::KeyboardMouse && (event.modifiers & move) != 0
+		&& MouseButtonDown(VK_LBUTTON) && !MouseButtonDown(VK_RBUTTON);
+}
+
 // Blocks reading Town Portal scrolls and tomes, and drinking potions, while locked.
 // Also records quest items used at once (the Book of Skill, Horadric Scroll, Potion
 // of Life and Scroll of Resistance), which are gone before the next item scan.
@@ -1988,7 +2004,12 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 	{
 		std::string code(4, ' ');
 		std::memcpy(code.data(), &info.code, 4);
-		Log("Archipelago: activated \"" + code + "\" (container " + std::to_string(static_cast<uint32_t>(event->container)) + ").");
+		Log("Archipelago: activated \"" + code + "\" (container " + std::to_string(static_cast<uint32_t>(event->container)) + ", input "
+			+ std::to_string(static_cast<uint32_t>(event->inputSource)) + ", modifiers " + std::to_string(event->modifiers) + ", buttons " + (MouseButtonDown(VK_LBUTTON) ? "L" : "")
+			+ (MouseButtonDown(VK_RBUTTON) ? "R" : "") + ").");
+	}
+	if (IsItemMove(*event)) {
+		return Decision::Continue;
 	}
 	if (questItems && !IsReward(info)) {
 		if (const auto check = QuestItemCheck(info.code, difficulty)) {

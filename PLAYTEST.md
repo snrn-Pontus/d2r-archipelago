@@ -210,6 +210,15 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 - [x] Potions stay locked from the belt hotkeys too.
 - [x] D2RLoader doesn't report drinking from the inventory (only the belt), so within 5 seconds potions
       in the inventory are set aside, with a chat message (confirmed 2026-10-12).
+- [ ] Locked items aren't blocked when moved with Ctrl+click (to the stash or Cube) or Shift+click (a
+      potion to the belt), and Ctrl+clicking the Horadric Scroll into the stash doesn't send its check (#17).
+      Right-clicking still blocks, with or without Shift or Ctrl, and so does Shift+right-clicking a belt potion (feeding the mercenary).
+      Each "activated" log line now lists the input (1 mouse, 2 controller), modifiers (1 Shift, 2 Ctrl,
+      4 Alt) and the mouse buttons held (L, R). A move only passes if the left button shows as held, so if
+      Ctrl+click moves are still blocked with an empty "buttons", the event fires on release; report it, as
+      well as any plain left click or controller pickup that gets logged.
+- [ ] D2RLoader 1.3.1-beta logs inventory activations (container 4) for potions now: if a plain right click
+      on an inventory potion is logged, the set-aside on pickup could go.
 - [ ] Potion Access gives the set-aside potions back (to the ground if the inventory is full).
 - [x] Town Portal: D2RLoader doesn't report scroll use, so within 5 seconds every scroll and tome on the
       character crumbles, with a chat message (the starting scroll too).
