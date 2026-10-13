@@ -108,7 +108,9 @@ constexpr const char* QuestSourceNames[] = { "the quest event", "a boss kill", "
 // Quests completed by kills (server thread), item scans (game thread) or the
 // quest event (UI thread), as source * 1000 + difficulty * 100 + flag, in the
 // order they happened; the render thread sends them, off the game threads.
+// Area triggers queue difficulty 3, the one you're on once it's known.
 std::vector<int>      gQuestQueue;
+constexpr int         CurrentDifficulty = 3;
 // Den of Evil kills per difficulty this session.
 uint32_t              gDenKills[3] = {};
 // Field superunique kills (server thread), as difficulty * 100 + superunique id.
@@ -2307,15 +2309,32 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	}
 
 	std::vector<int> quests;
+	int questDifficulty = -1;
 	{
 		std::lock_guard lock(gMutex);
 		quests.swap(gQuestQueue);
-	}
-	for (const int quest : quests) {
-		if (static_cast<QuestSource>(quest / 1000) == QuestSource::Event) {
-			Log("Archipelago: quest event for row " + std::to_string(quest % 100) + " on difficulty " + std::to_string(quest % 1000 / 100) + ".");
+		if (gDifficultyKnown) {
+			questDifficulty = std::clamp(gDifficulty, 0, 2);
 		}
-		CompleteQuest(static_cast<uint32_t>(quest % 1000 / 100), static_cast<uint32_t>(quest % 100), static_cast<QuestSource>(quest / 1000));
+	}
+	std::vector<int> waiting;
+	for (const int quest : quests) {
+		int difficulty = quest % 1000 / 100;
+		if (difficulty == CurrentDifficulty) {
+			if (questDifficulty < 0) {
+				waiting.push_back(quest);
+				continue;
+			}
+			difficulty = questDifficulty;
+		}
+		if (static_cast<QuestSource>(quest / 1000) == QuestSource::Event) {
+			Log("Archipelago: quest event for row " + std::to_string(quest % 100) + " on difficulty " + std::to_string(difficulty) + ".");
+		}
+		CompleteQuest(static_cast<uint32_t>(difficulty), static_cast<uint32_t>(quest % 100), static_cast<QuestSource>(quest / 1000));
+	}
+	if (!waiting.empty()) {
+		std::lock_guard lock(gMutex);
+		gQuestQueue.insert(gQuestQueue.begin(), waiting.begin(), waiting.end());
 	}
 	std::vector<int> areas;
 	int difficulty = 0;
@@ -2337,9 +2356,6 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 			if (area.id == level) {
 				AddChecks({ ap::ids::AreaLocation(static_cast<uint32_t>(difficulty), area.id) });
 			}
-		}
-		if (const auto flag = ap::quests::Find(ap::quests::Trigger::Area, static_cast<uint32_t>(level))) {
-			CompleteQuest(static_cast<uint32_t>(difficulty), *flag, QuestSource::Area);
 		}
 	}
 	std::set<int> cows;
@@ -2498,6 +2514,10 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 				gDifficultyKnown = true;
 			}
 			gPendingAreas.push_back(event->currentValue);
+			// Queued with the other quest sources, so the log keeps their order.
+			if (const auto flag = ap::quests::Find(ap::quests::Trigger::Area, static_cast<uint32_t>(event->currentValue))) {
+				gQuestQueue.push_back(static_cast<int>(QuestSource::Area) * 1000 + CurrentDifficulty * 100 + *flag);
+			}
 			gCurrentLevel = event->currentValue;
 			break;
 		}
