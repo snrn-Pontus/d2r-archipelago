@@ -249,15 +249,26 @@ SKILLS = [
 # Active skills with a vanilla level requirement of 1.
 STARTER_SKILLS = frozenset([6, 7, 8, 10, 36, 38, 39, 40, 66, 67, 68, 70, 96, 97, 98, 99, 100, 126, 130, 131, 221, 222, 223, 225, 251, 253, 254, 255, 373, 385, 395])
 
-# Skills only these classes can use (claws, two weapons, the S1-S4 animations, Druid forms).
+# Skills only these classes can use (claws, two weapons, animations, Druid forms, engine class skills).
 SKILL_USERS = {
+    10: ('ama',),
     13: ('ama', 'sor', 'nec', 'bar', 'dru', 'ass', 'war'),
     18: ('ama', 'sor', 'nec', 'bar', 'dru', 'ass', 'war'),
+    19: ('ama', 'sor', 'pal', 'bar', 'dru', 'ass', 'war'),
+    26: ('ama',),
     29: ('ama', 'sor', 'nec', 'bar', 'dru', 'ass', 'war'),
+    30: ('ama',),
+    41: ('sor',),
     97: ('sor', 'nec', 'pal', 'dru', 'ass', 'war'),
-    133: ('bar', 'ass'),
+    106: ('pal',),
+    107: ('ama', 'sor', 'pal', 'bar', 'dru', 'ass', 'war'),
+    132: ('bar',),
+    133: ('bar',),
     140: ('bar',),
-    147: ('bar', 'ass'),
+    143: ('bar',),
+    147: ('bar',),
+    151: ('bar',),
+    230: ('dru',),
     232: ('dru',),
     233: ('dru',),
     238: ('dru',),
@@ -267,6 +278,7 @@ SKILL_USERS = {
     248: ('dru',),
     251: ('ass',),
     252: ('ass',),
+    255: ('ass',),
     256: ('ass',),
     257: ('ass',),
     259: ('ass',),
@@ -274,10 +286,13 @@ SKILL_USERS = {
     261: ('ass',),
     262: ('ass',),
     263: ('ass',),
+    266: ('ama', 'sor', 'pal', 'bar', 'dru', 'ass', 'war'),
     269: ('ass',),
+    270: ('ass',),
     271: ('ass',),
     272: ('ass',),
     274: ('ass',),
+    275: ('ass',),
     276: ('ass',),
 }
 
