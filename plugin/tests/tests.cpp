@@ -708,6 +708,13 @@ void TestShopParcels() {
 	EXPECT(misc.Cell(1, 1) == "ap1" && misc.Cell(1, 2) == "2500" && misc.Cell(1, 3) == "1" && misc.Cell(1, 5).empty() && misc.Cell(1, 7) == "1");
 	EXPECT(misc.Cell(5, 1) == "ap5" && misc.Cell(5, 2) == "40000" && misc.Cell(5, 3).empty() && misc.Cell(5, 5) == "1");
 	EXPECT(ap::randomizer::AddProphecyScrolls(misc) == 8 && ap::randomizer::AddProphecyScrolls(misc) == 0);
+	// The Writ of Absolution: a Token of Absolution copy (same use), at every potion seller.
+	auto writ = ap::Table::Parse("name\tcode\ttype\tcost\tpSpell\tAkaraMin\tMalahMax\tspawnable\r\nToken of Absolution\ttoa\tques\t99999\t13\t\t\t0\r\n");
+	EXPECT(ap::randomizer::AddRespecWrit(writ) == 1 && ap::randomizer::AddRespecWrit(writ) == 0);
+	EXPECT(writ.Cell(1, 0) == "Writ of Absolution" && writ.Cell(1, 1) == "apr" && writ.Cell(1, 2) == ap::randomizer::ShopItemType && writ.Cell(1, 3) == "1000"
+	       && writ.Cell(1, 4) == "13" && writ.Cell(1, 5) == "1" && writ.Cell(1, 6) == "1" && writ.Cell(1, 7) == "1");
+	// The real token is untouched, so finding one stays a check.
+	EXPECT(writ.Cell(0, 2) == "ques" && writ.Cell(0, 3) == "99999" && writ.Cell(0, 7) == "0");
 	// Every tier at every potion seller, the price rising.
 	EXPECT(misc.Cell(6, 0) == "Scroll of Prophecy" && misc.Cell(6, 1) == "aq1" && misc.Cell(6, 2) == "1000" && misc.Cell(6, 3) == "1" && misc.Cell(6, 5) == "1");
 	EXPECT(misc.Cell(13, 1) == "aq8" && misc.Cell(13, 2) == "100000");

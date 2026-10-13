@@ -605,7 +605,7 @@ auto AddParcelGraphics(HANDLE storage, const fs::path& mpq) -> bool {
 		return false;
 	}
 	// Parcels borrow the Standard of Heroes' flag, Scrolls of Prophecy the Scroll of Inifuss,
-	// the Ledger the Token of Absolution.
+	// the Ledger and the Writ of Absolution the Token of Absolution.
 	nlohmann::json graphics, scroll, token;
 	for (const auto& entry : items) {
 		if (entry.contains(rnd::ParcelCodes[0])) {
@@ -631,6 +631,7 @@ auto AddParcelGraphics(HANDLE storage, const fs::path& mpq) -> bool {
 		items.push_back({ { code, scroll.is_null() ? graphics : scroll } });
 	}
 	items.push_back({ { rnd::LedgerCode, token.is_null() ? graphics : token } });
+	items.push_back({ { rnd::RespecCode, token.is_null() ? graphics : token } });
 	const fs::path target = mpq / "data" / "hd" / "items" / "items.json";
 	fs::create_directories(target.parent_path());
 	std::ofstream(target, std::ios::binary | std::ios::trunc) << (bom ? "\xEF\xBB\xBF" : "") << items.dump(2);
@@ -805,6 +806,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			}
 			parcels = rnd::AddShopParcels(t) + rnd::AddProphecyScrolls(t);
 			rnd::AddLedger(t);
+			rnd::AddRespecWrit(t);
 		});
 		std::printf("  %s: %s\n", label, parcels > 0 ? "each act's potion seller sells an Archipelago Parcel" : "couldn't add the shop parcels");
 		// UniqueItems gets the Codex charm, plus cleared requirements if asked.

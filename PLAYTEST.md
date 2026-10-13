@@ -44,6 +44,10 @@ Built, pushed and installed, still to check in game:
       after: does the respec refund the skadd levels too (then each skill comes back as an extra point)?
 - [ ] Right-clicking a Token of Absolution in the stash or Cube changes nothing, and leaving the game right
       after using one doesn't relearn in the next game.
+- [ ] Writ of Absolution (#6, rerun setup): every potion seller's Misc tab has one for 1,000 gold, with the
+      Token of Absolution's picture. Right-clicking it respecs like the token, and in tree mode the skills
+      come back on their own. Buying it doesn't count as the Token of Absolution check. Can't buy it
+      before Merchant Access.
 - [ ] Finishing Den of Evil in tree mode shows the hint that Akara's respec needs Relearn Skills; only once
       per difficulty.
 - [ ] Shuffled superuniques are visible now (they had no HD model): after rerunning setup, Rakanishu in
