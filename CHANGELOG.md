@@ -2,6 +2,14 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.7.4 - 2026-10-13
+
+- Switching to another slot with `ap-connect` no longer delivers the previous slot's items, and the new
+  slot's first items are no longer skipped (#66)
+- Superunique Shuffle no longer turns the superuniques you can't avoid (Rakanishu, Griswold...) into much
+  stronger monsters; the new Main-Path Superunique Cap option (default 2 levels) sends the tough swaps to
+  optional dungeons (#3)
+
 ## 0.7.3 - 2026-10-13
 
 - Added an opt-in repair experiment: run `ap-repairs on`, then choose Trade/Repair at a blacksmith
