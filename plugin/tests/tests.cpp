@@ -194,6 +194,21 @@ void TestScaleWav() {
 	std::string bits8 = wav;
 	bits8[34] = 8; // bits per sample
 	EXPECT(!ap::sounds::ScaleWav(bits8, 50));
+	// The same samples under a WAVE_FORMAT_EXTENSIBLE header, as Media Foundation may write.
+	std::string extensible = wav.substr(0, 16);
+	u32(extensible, 40);
+	u16(extensible, 0xFFFE);
+	extensible += wav.substr(22, 14); // channels through bits per sample
+	u16(extensible, 22);              // extra bytes
+	u16(extensible, 16);              // valid bits
+	u32(extensible, 4);               // channel mask
+	extensible += std::string("\x01\x00\x00\x00\x00\x00\x10\x00\x80\x00\x00\xAA\x00\x38\x9B\x71", 16); // PCM
+	extensible += wav.substr(36);
+	EXPECT(ap::sounds::ScaleWav(extensible, 50));
+	std::memcpy(out, extensible.data() + extensible.size() - sizeof(out), sizeof(out));
+	EXPECT(out[0] == 500 && out[1] == -500 && out[2] == 15000 && out[3] == -15000);
+	extensible[44] = 3; // IEEE float sub-format
+	EXPECT(!ap::sounds::ScaleWav(extensible, 50));
 }
 
 void TestSaveStateRoundTrip() {

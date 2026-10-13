@@ -35,7 +35,10 @@ auto ScaleWav(std::string& wav, int percent) -> bool {
 			break;
 		}
 		if (wav.compare(at, 4, "fmt ") == 0 && size >= 16) {
-			pcm16 = U16(wav, body) == 1 && U16(wav, body + 14) == 16;
+			// PCM, or WAVE_FORMAT_EXTENSIBLE whose sub-format GUID starts with PCM's tag.
+			const uint16_t tag = U16(wav, body);
+			const bool     pcm = tag == 1 || (tag == 0xFFFE && size >= 40 && U16(wav, body + 24) == 1);
+			pcm16 = pcm && U16(wav, body + 14) == 16;
 		} else if (wav.compare(at, 4, "data") == 0) {
 			data = body;
 			length = size;

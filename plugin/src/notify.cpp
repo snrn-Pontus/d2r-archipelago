@@ -369,8 +369,9 @@ void SetSounds(const std::wstring& folder, bool enabled, int volume) {
 		}
 		std::ifstream in(std::filesystem::path(folder) / ap::sounds::All[i].file, std::ios::binary);
 		gSounds[i].assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-		if (volume != 100) {
-			ap::sounds::ScaleWav(gSounds[i], volume);
+		// One we can't scale stays silent rather than play too loud.
+		if (volume != 100 && !ap::sounds::ScaleWav(gSounds[i], volume)) {
+			gSounds[i].clear();
 		}
 	}
 }
