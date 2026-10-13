@@ -104,6 +104,20 @@ Built, pushed and installed, still to check in game:
       launch), finish the goal quest, then start the server and connect. The goal is sent ("goal complete!") and the room shows
       the slot as finished; with `act_keys` and the goal act still locked, the chat says it counts once you
       hold the key, and it's sent when the key arrives. A goal-quest kill of the wrong difficulty sends nothing.
+- [ ] Client hardening (#75): `ap-connect` to another seed while in game: the log shows no "bound to seed"
+      line for the old seed after the command, only the new one once it connects; kill counts and rewards
+      land in the new seed's save file (`d2rloader\archipelago\<seed>_<slot>.txt`), the old file is untouched.
+      `ap-disconnect` and `ap-connect` back and forth a few times: no hang or crash, and the plugin log has
+      no "bad packet" lines. Exiting the game while connected still closes promptly. Freeze the server
+      (suspend its process in Resource Monitor) and `ap-connect` to another one: within about 3 seconds the
+      new connection starts.
+- [ ] Save failures (#75): make the seed's save file read-only (Properties, Read-only) and `/send` a few
+      rewards: the chat says once that progress couldn't be saved and rewards are paused, and none arrive.
+      Clear Read-only: within a few seconds it says saving works again and the rewards arrive, once each.
+- [ ] Data package (#75): `ap-reconnect` a few times: item and location names in chat still resolve, and
+      the server log shows a GetDataPackage only on the first connect (or none once names are held).
+- [ ] Runeword shuffle (#75, rerun setup): `runewords.txt` in the mod has no two complete runewords with the
+      same rune sequence; a shuffled runeword with a common base still makes the right word.
 
 Ideas, not started:
 

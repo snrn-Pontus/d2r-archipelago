@@ -10,6 +10,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -108,6 +109,11 @@ struct ItemSnapshot {
 	bool synced = false;
 };
 
+// The games (of those in the multiworld) whose data package to ask for: ones we hold no names for,
+// and ones whose checksum in RoomInfo differs from the one we hold.
+auto DataPackageGames(const std::set<std::string>& games, const std::map<std::string, std::string>& roomChecksums,
+	const std::map<std::string, std::string>& held) -> std::vector<std::string>;
+
 // Archipelago protocol client. Runs its own network thread; every public
 // method is thread-safe.
 class Client {
@@ -138,6 +144,9 @@ public:
 	auto StatusText() const -> std::string;
 	// Bumped on every successful Connected packet.
 	auto SessionGeneration() const -> uint64_t;
+	// The session generation while Connected, else 0: the session there is to bind to. Between an
+	// ap-connect and the new Connected there's none, so the old seed's save isn't loaded again.
+	auto ConnectedSession() const -> uint64_t;
 	auto Seed() const -> std::string;
 	auto Slot() const -> std::string;
 	auto Slots() const -> SlotData;
@@ -165,15 +174,17 @@ public:
 	auto Scouted() const -> std::map<int64_t, NetworkItem>;
 
 	// Processes one server message. The network thread calls it; tests feed it
-	// packets directly.
-	void Handle(const std::string& text);
+	// packets directly. The network thread passes the connection target the
+	// socket was opened for; a Connect or Disconnect since makes its RoomInfo and
+	// Connected stale, and they're dropped.
+	void Handle(const std::string& text, std::optional<uint64_t> target = std::nullopt);
 
 private:
 	void Run();
-	void Session();
+	void Session(uint64_t target);
 	// Sets Idle with the "Disconnected" status; mutex_ must be held.
 	void SetDisconnected();
-	void HandlePacket(const void* packet);
+	void HandlePacket(const void* packet, std::optional<uint64_t> target);
 	void Send(const std::string& text);
 	void Notify(const std::string& message);
 	auto Render(const void* printJson) const -> std::string;
@@ -209,6 +220,9 @@ private:
 	std::unordered_map<int, std::string> playerGames_;
 	std::unordered_map<std::string, std::unordered_map<int64_t, std::string>> itemNames_;
 	std::unordered_map<std::string, std::unordered_map<int64_t, std::string>> locationNames_;
+	// Data package checksums of the names we hold. The names are kept across reconnects, so an
+	// unchanged game isn't downloaded again.
+	std::map<std::string, std::string> dataChecksums_;
 };
 
 // One message registering hints found in game: a CreateHints per own hint (one

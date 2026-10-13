@@ -226,6 +226,20 @@ auto ReadSlotData(const json& data) -> SlotData {
 
 } // namespace
 
+auto DataPackageGames(const std::set<std::string>& games, const std::map<std::string, std::string>& roomChecksums,
+	const std::map<std::string, std::string>& held) -> std::vector<std::string> {
+	std::vector<std::string> fetch;
+	for (const std::string& game : games) {
+		const auto have = held.find(game);
+		const auto room = roomChecksums.find(game);
+		// A game the room gives no checksum for can't be checked, so what we hold stays.
+		if (have == held.end() || (room != roomChecksums.end() && room->second != have->second)) {
+			fetch.push_back(game);
+		}
+	}
+	return fetch;
+}
+
 Client::Client(LogFn log) : log_(std::move(log)) {
 	thread_ = std::thread([this] { Run(); });
 }
@@ -237,7 +251,8 @@ Client::~Client() {
 		wantConnection_ = false;
 	}
 	wake_.notify_all();
-	socket_.Close();
+	// Shutting down for good: don't wait for the server to answer a close.
+	socket_.Abort();
 	if (thread_.joinable()) {
 		thread_.join();
 	}
@@ -251,8 +266,13 @@ void Client::Connect(const std::string& server, const std::string& slot, const s
 		password_ = password;
 		wantConnection_ = true;
 		++targetGeneration_;
+		// The old session is over from here on: nothing may bind to it (or its seed) or send into
+		// it until the new target's Connected arrives.
+		state_ = ConnectionState::Connecting;
+		status_ = "Connecting to " + server + "...";
+		seed_.clear();
 	}
-	socket_.Close();
+	socket_.Interrupt();
 	wake_.notify_all();
 }
 
@@ -264,7 +284,7 @@ void Client::Disconnect() {
 		// Not Connected from here on, so nothing is sent into the closed socket and lost.
 		SetDisconnected();
 	}
-	socket_.Close();
+	socket_.Interrupt();
 	wake_.notify_all();
 }
 
@@ -301,10 +321,15 @@ void Client::Run() {
 					current = wantConnection_ && generation == targetGeneration_;
 				}
 				if (current) {
-					Session();
+					Session(generation);
 				} else {
 					socket_.Close();
 				}
+				break;
+			}
+			// The target changed during a failed attempt: no plain-ws try at the old one.
+			std::lock_guard lock(mutex_);
+			if (!wantConnection_ || generation != targetGeneration_) {
 				break;
 			}
 		}
@@ -330,11 +355,11 @@ void Client::Run() {
 	}
 }
 
-void Client::Session() {
+void Client::Session(uint64_t target) {
 	std::string message;
 	while (running_ && socket_.Receive(message)) {
 		try {
-			Handle(message);
+			Handle(message, target);
 		} catch (const std::exception& error) {
 			log_(std::string("Archipelago: bad packet: ") + error.what() + " in " + message.substr(0, 300));
 		}
@@ -356,7 +381,7 @@ void Client::Notify(const std::string& message) {
 	}
 }
 
-void Client::Handle(const std::string& text) {
+void Client::Handle(const std::string& text, std::optional<uint64_t> target) {
 	const json packets = json::parse(text);
 	if (!packets.is_array()) {
 		log_("Archipelago: bad message (not a packet list): " + text.substr(0, 300));
@@ -366,26 +391,59 @@ void Client::Handle(const std::string& text) {
 	// ReceivedItems) down with it.
 	for (const json& packet : packets) {
 		try {
-			HandlePacket(&packet);
+			HandlePacket(&packet, target);
 		} catch (const std::exception& error) {
 			log_(std::string("Archipelago: bad packet: ") + error.what() + " in " + packet.dump().substr(0, 300));
 		}
 	}
 }
 
-void Client::HandlePacket(const void* message) {
+void Client::HandlePacket(const void* message, std::optional<uint64_t> target) {
 	const json& packet = *static_cast<const json*>(message);
+	if (target) {
+		// From a socket an ap-connect or ap-disconnect has since let go. RoomInfo, Connected and
+		// ConnectionRefused check again under their own lock, as a switch can land in between.
+		std::lock_guard lock(mutex_);
+		if (*target != targetGeneration_) {
+			return;
+		}
+	}
 	const std::string cmd = Get(packet, "cmd", std::string());
 	if (cmd == "RoomInfo") {
 		std::string slot, password;
+		std::map<std::string, std::string> checksums;
+		const json roomChecksums = Object(packet, "datapackage_checksums");
+		for (const auto& [game, checksum] : roomChecksums.items()) {
+			if (checksum.is_string()) {
+				checksums[game] = checksum.get<std::string>();
+			}
+		}
+		// The multiworld's games ("games" lists them, the server's own "Archipelago" too).
+		std::set<std::string> games { GameName };
+		for (const json& game : Array(packet, "games")) {
+			if (game.is_string()) {
+				games.insert(game.get<std::string>());
+			}
+		}
+		std::vector<std::string> fetch;
 		{
 			std::lock_guard lock(mutex_);
+			// From a socket an ap-connect or ap-disconnect has since let go: not the seed we want.
+			if (target && *target != targetGeneration_) {
+				return;
+			}
 			seed_ = Get(packet, "seed_name", std::string());
 			slot = slot_;
 			password = password_;
+			// Names only for this multiworld's games, and only those not already held at the
+			// server's checksum, so a reconnect doesn't download (and parse) them all again.
+			fetch = DataPackageGames(games, checksums, dataChecksums_);
 		}
-		const json games = Array(packet, "games");
-		Send(json::array({ json { { "cmd", "GetDataPackage" }, { "games", games } } }).dump());
+		// Asked for before Connect, so the names are in before Connected and the first items
+		// (whose banners are only shown once).
+		if (!fetch.empty()) {
+			Send(json::array({ json { { "cmd", "GetDataPackage" }, { "games", fetch } } }).dump());
+		}
 		const json connect {
 			{ "cmd", "Connect" },
 			{ "game", GameName },
@@ -402,6 +460,11 @@ void Client::HandlePacket(const void* message) {
 		// Read before taking the lock; a field of the wrong type falls back to its default.
 		SlotData slots = ReadSlotData(Object(packet, "slot_data"));
 		std::lock_guard lock(mutex_);
+		// The old target's Connected, read just before an ap-connect: it must not make the client
+		// Connected again (the plugin would bind that session with the new slot or an empty seed).
+		if (target && *target != targetGeneration_) {
+			return;
+		}
 		team_ = Get(packet, "team", 0);
 		mySlot_ = Get(packet, "slot", 0);
 		// A new session: the previous slot's items and players must not carry over. The server
@@ -454,6 +517,10 @@ void Client::HandlePacket(const void* message) {
 			}
 		}
 		std::lock_guard lock(mutex_);
+		// An old target's refusal must not cancel the new one.
+		if (target && *target != targetGeneration_) {
+			return;
+		}
 		state_ = ConnectionState::Refused;
 		status_ = "Connection refused: " + reasons + ". Check the slot name and password.";
 		messages_.push_back("Archipelago: " + status_);
@@ -511,23 +578,36 @@ void Client::HandlePacket(const void* message) {
 		}
 		deaths_.push_back(!cause.empty() ? cause : (source.empty() ? "Someone" : source) + " died.");
 	} else if (cmd == "DataPackage") {
-		std::lock_guard lock(mutex_);
+		// Parsed outside the lock (a big multiworld's package takes a while), then swapped in.
+		struct GameNames {
+			std::unordered_map<int64_t, std::string> items, locations;
+			std::string checksum;
+		};
+		std::map<std::string, GameNames> parsed;
 		// Bind each sub-object before calling items(): Object() returns a
 		// temporary, and items() on it would iterate a destroyed object.
 		const json games = Object(Object(packet, "data"), "games");
 		for (const auto& [game, data] : games.items()) {
+			GameNames& names = parsed[game];
 			const json itemIds = Object(data, "item_name_to_id");
 			for (const auto& [name, id] : itemIds.items()) {
 				if (id.is_number_integer()) {
-					itemNames_[game][id.get<int64_t>()] = name;
+					names.items[id.get<int64_t>()] = name;
 				}
 			}
 			const json locationIds = Object(data, "location_name_to_id");
 			for (const auto& [name, id] : locationIds.items()) {
 				if (id.is_number_integer()) {
-					locationNames_[game][id.get<int64_t>()] = name;
+					names.locations[id.get<int64_t>()] = name;
 				}
 			}
+			names.checksum = Get(data, "checksum", std::string());
+		}
+		std::lock_guard lock(mutex_);
+		for (auto& [game, names] : parsed) {
+			itemNames_[game] = std::move(names.items);
+			locationNames_[game] = std::move(names.locations);
+			dataChecksums_[game] = std::move(names.checksum);
 		}
 	} else if (cmd == "PrintJSON") {
 		const std::string type = Get(packet, "type", std::string());
@@ -703,6 +783,11 @@ auto Client::StatusText() const -> std::string {
 auto Client::SessionGeneration() const -> uint64_t {
 	std::lock_guard lock(mutex_);
 	return sessionGeneration_;
+}
+
+auto Client::ConnectedSession() const -> uint64_t {
+	std::lock_guard lock(mutex_);
+	return state_ == ConnectionState::Connected ? sessionGeneration_ : 0;
 }
 
 auto Client::Seed() const -> std::string {

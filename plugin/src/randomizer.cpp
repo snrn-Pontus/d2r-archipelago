@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -48,9 +49,29 @@ auto ParseInt(const std::string& text, int fallback = 0) -> int {
 	}
 }
 
+// A number in [0, count), from the generator's raw output only. std::mt19937 gives the same
+// numbers everywhere, but std::shuffle and the std distributions may use them differently in
+// another standard library, so a setup tool built elsewhere would shuffle a seed differently.
+auto Below(std::mt19937& random, uint32_t count) -> uint32_t {
+	if (count <= 1) {
+		return 0;
+	}
+	// Rejection keeps every value equally likely: draws past the last whole multiple of count are retried.
+	const uint32_t limit = UINT32_MAX - UINT32_MAX % count;
+	for (;;) {
+		const uint32_t value = static_cast<uint32_t>(random());
+		if (value < limit) {
+			return value % count;
+		}
+	}
+}
+
+// Fisher-Yates, on Below, for the same reason.
 template <typename T>
 void Permute(std::vector<T>& values, std::mt19937& random) {
-	std::shuffle(values.begin(), values.end(), random);
+	for (size_t i = values.size(); i > 1; --i) {
+		std::swap(values[i - 1], values[Below(random, static_cast<uint32_t>(i))]);
+	}
 }
 
 } // namespace
@@ -395,7 +416,7 @@ auto AssignByLevel(const Table& levels, const std::vector<size_t>& rows, const s
 				lowest = i;
 			}
 		}
-		const size_t pick = fits.empty() ? lowest : fits[random() % fits.size()];
+		const size_t pick = fits.empty() ? lowest : fits[Below(random, static_cast<uint32_t>(fits.size()))];
 		used[pick] = true;
 		assigned[area] = lineups[pick];
 	}
@@ -595,24 +616,43 @@ auto ShuffleRunewords(Table& runes, std::mt19937& random, int spread) -> std::ve
 	if (complete < 0 || slots[0] < 0) {
 		return recipes;
 	}
+	// Every new sequence so far. Two runewords with one sequence (and a base type in common) would
+	// leave the game making only the first, so a word that rolls a taken sequence rolls again.
+	std::set<std::vector<int>> taken;
+	constexpr int MaxRolls = 100;
 	for (size_t row = 0; row < runes.Rows().size(); ++row) {
 		if (runes.Cell(row, complete) != "1" || runes.Cell(row, slots[0]).empty()) {
 			continue;
 		}
-		std::string recipe = (name >= 0 ? runes.Cell(row, name) : "Runeword") + ":";
+		std::vector<std::pair<int, int>> original; // slot column, tier
 		for (const int slot : slots) {
-			const std::string rune = runes.Cell(row, slot);
+			const std::string rune = slot >= 0 ? runes.Cell(row, slot) : std::string();
 			if (slot < 0 || rune.size() != 3 || rune[0] != 'r') {
 				continue;
 			}
-			const int tier = ParseInt(rune.substr(1));
-			std::uniform_int_distribution<int> pick(std::max(1, tier - spread), std::min(33, tier + spread));
-			const int replacement = pick(random);
+			original.emplace_back(slot, ParseInt(rune.substr(1)));
+		}
+		std::vector<int> rolled;
+		for (int roll = 0; roll < MaxRolls; ++roll) {
+			rolled.clear();
+			for (const auto& [slot, tier] : original) {
+				const int low = std::clamp(tier - spread, 1, 33);
+				const int high = std::clamp(tier + spread, low, 33);
+				rolled.push_back(low + static_cast<int>(Below(random, static_cast<uint32_t>(high - low + 1))));
+			}
+			if (!taken.contains(rolled)) {
+				break;
+			}
+		}
+		taken.insert(rolled);
+		std::string recipe = (name >= 0 ? runes.Cell(row, name) : "Runeword") + ":";
+		for (size_t i = 0; i < original.size(); ++i) {
+			const int replacement = rolled[i];
 			char code[4] {};
 			code[0] = 'r';
 			code[1] = static_cast<char>('0' + replacement / 10);
 			code[2] = static_cast<char>('0' + replacement % 10);
-			runes.Set(row, slot, code);
+			runes.Set(row, original[i].first, code);
 			recipe += std::string(" ") + RuneNames[replacement - 1];
 		}
 		recipes.push_back(recipe);
