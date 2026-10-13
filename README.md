@@ -67,7 +67,8 @@ python -m pytest worlds/d2r_archipelago/test
 `python -I tools/package_release.py <archipelago-checkout>` builds and tests the plugin, builds the
 apworld and options template (`tools/build_apworld.py`), and packs `dist/D2R-Archipelago-<version>.zip`
 with the setup tool and the plugin side by side, the apworld, the template and the setup guide. The
-plugin's version must match the world's.
+plugin's version must match the world's. Releases are cut with `tools/release.py` (see [RELEASING.md](RELEASING.md))
+and listed in [CHANGELOG.md](CHANGELOG.md).
 
 The `.apworld` and D2RLoader are all a player needs. It carries `d2r-ap-setup.exe` and the plugin in `bin/` and adds a
 **Diablo II Resurrected** button to the Archipelago Launcher (`client.py`), which also opens from the

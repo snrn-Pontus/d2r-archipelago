@@ -12,11 +12,9 @@ How issues on snrn-Pontus/d2r-archipelago are handled, especially when several a
    the apworld tests) and what still needs an in-game check (also added to `PLAYTEST.md`), then `@codex review`.
 4. **Fix until Codex is happy.** Fix each finding, push, comment `@codex review` again, and repeat until Codex finds
    no major issues. If Codex is out of credits, stop and ask. Squash-merge.
-5. **Release with a changelog** once the PRs are merged (one release can cover several issues):
-   - Bump the version in `apworld/d2r_archipelago/archipelago.json` (`world_version`) and `PluginVersion` in
-     `plugin/src/plugin.cpp`. They must match, or `tools/package_release.py` refuses.
-   - Add `## x.y.z - YYYY-MM-DD` to `CHANGELOG.md` (create it on the first release), with player-facing lines
-     each ending in `(#<N>)`.
-   - Commit "Release x.y.z", tag `vX.Y.Z`, push both.
-   - `python -I tools/package_release.py <archipelago-checkout>`, then
-     `gh release create vX.Y.Z dist/D2R-Archipelago-x.y.z.zip` with that version's changelog section as the notes.
+5. **Release with a changelog** once the PRs are merged (one release can cover several issues), following
+   [RELEASING.md](RELEASING.md): on an up-to-date master, `python -I tools/release.py bump x.y.z`, rewrite the
+   drafted `CHANGELOG.md` section for players (each line ending in `(#<N>)`, draft marker removed), commit
+   "Release x.y.z", then `python -I tools/release.py publish <archipelago-checkout>`, which builds, tags `vX.Y.Z`,
+   pushes and creates the GitHub release with the files. Publish from the checkout the Archipelago checkout's
+   `worlds/d2r_archipelago` links to (the main repo), not a worktree.
