@@ -420,6 +420,7 @@ int Extract(HANDLE storage, const Options& options) {
 struct Seed {
 	std::string name, slot;
 	rnd::Settings settings;
+	std::vector<std::pair<std::string, std::string>> loaderSettings;
 };
 
 // Connects to the server just long enough to read the slot's settings.
@@ -436,7 +437,7 @@ auto FetchSeed(const Options& options, Seed& seed) -> bool {
 		std::printf("%s\n", client.StatusText().c_str());
 		return false;
 	}
-	seed = { client.Seed(), client.Slot(), client.Slots().randomizer };
+	seed = { client.Seed(), client.Slot(), client.Slots().randomizer, client.Slots().loaderSettings };
 	client.Disconnect();
 	return true;
 }
@@ -864,6 +865,19 @@ void SaveConnection(const Options& options) {
 	std::ofstream(path, std::ios::binary | std::ios::trunc) << ap::FormatConfig(config);
 }
 
+// Writes the seed's D2RLoader settings (stash tabs, item labels...) as the
+// mod's overrides, replacing the last seed's. Without any, the file only has
+// its header, so the player's own D2RLoader settings apply.
+void WriteLoaderSettings(const Options& options, const Seed& seed) {
+	const fs::path path = ModRoot(options) / "d2rloader" / "config" / "d2rloader.toml";
+	std::error_code error;
+	fs::create_directories(path.parent_path(), error);
+	std::ofstream(path, std::ios::binary | std::ios::trunc) << ap::FormatLoaderSettings(seed.loaderSettings);
+	for (const auto& [setting, value] : seed.loaderSettings) {
+		std::printf("  D2RLoader setting %s = %s\n", setting.c_str(), value.c_str());
+	}
+}
+
 // Starts D2RLoader with the mod, the way its own menu would.
 auto Play(const Options& options) -> bool {
 	const fs::path game = options.game;
@@ -969,6 +983,9 @@ int Run(Options options) {
 		std::printf("No server given, so only the skill lock is written. Use --connect <server> <slot> for a seed's randomization.\n");
 	}
 	const int result = WriteMod(storage, options, haveSeed ? &seed : nullptr);
+	if (result == 0 && haveSeed) {
+		WriteLoaderSettings(options, seed);
+	}
 	WriteSounds(storage, options);
 	CascCloseStorage(storage);
 	return result;
