@@ -149,7 +149,7 @@ config turns them off.
 - [x] Sounds (converted from the game's own by d2r-ap-setup into `d2rloader\archipelago\sounds`; `--sounds`
       writes only those): gold banners play the quest-done chime, red the hostile warning, white the gem
       sound; checks are silent. `banner_sounds = false` turns them off.
-- [ ] `banner_volume` (percent, default 100, up to 200 for the game's own loudness, 0 silent) changes how
+- [ ] `banner_volume` (percent, default 10, up to 200 for the game's own loudness, 0 silent) changes how
       loud the banner sounds play, after a restart.
 - [x] Status line, top-left by default: "Archipelago done/total - <act> done/total", with "n held" when
       checks wait for a key; it updates within a second of a check. `status_line = false` hides it and

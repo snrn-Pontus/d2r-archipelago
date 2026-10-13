@@ -108,7 +108,7 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "notifications = " << (config.notifications ? "true" : "false") << "\n"
 	    << "# Game sounds with the gold, red and white banners.\n"
 	    << "banner_sounds = " << (config.bannerSounds ? "true" : "false") << "\n"
-	    << "# Their volume in percent: 100 is the default, 200 the game's own loudness.\n"
+	    << "# Their volume in percent, 0 to 200 (the game's own loudness). Low by default, since they ignore the game's volume and are jarring louder.\n"
 	    << "banner_volume = " << config.bannerVolume << "\n"
 	    << "# The always-on checks line; status_position is top-left, top, top-right, bottom-left or bottom-right.\n"
 	    << "status_line = " << (config.statusLine ? "true" : "false") << "\n"
