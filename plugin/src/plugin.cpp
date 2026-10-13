@@ -258,7 +258,7 @@ std::vector<int>      gPendingAreas;
 int                   gAct          = 0;
 // The player's class id seen in this game (from the killer of a monster), or -1.
 int                   gPlayerClass  = -1;
-// The class this game's Codex charm was made for, or -1: until a kill says, it
+// The class this game's Codex charm or Emblem was made for, or -1: until a kill says, it
 // stands in for gPlayerClass (a Codex only goes to a character of its class).
 int                   gCodexClass   = -1;
 // Why this game has said rewards wait, so each reason is said once: 1 the class isn't
@@ -1597,6 +1597,31 @@ auto CodexSeedOf(const D2RL::Items::ItemInfo& item) -> uint32_t {
 	return IsCodexSeed(item.itemSeed) ? item.itemSeed : IsCodexSeed(item.generationSeed) ? item.generationSeed : 0;
 }
 
+// The Archipelago Emblem's seed: its marker, the class of the character it was made
+// for (+1, so 0 is none), and random bits.
+constexpr uint32_t EmblemMarker = 0xB8000000U;
+
+auto EmblemSeed(int playerClass, uint32_t random) -> uint32_t {
+	return EmblemMarker | ((static_cast<uint32_t>(playerClass + 1) & 0xF) << 20) | (random & 0xFFFFF);
+}
+
+// The class an Emblem was made for, or -1 (or its seed isn't known, as on the UI thread).
+auto EmblemClass(const D2RL::Items::ItemInfo& item) -> int {
+	for (const uint32_t seed : { item.itemSeed, item.generationSeed }) {
+		if ((seed & CodexMarkerMask) == EmblemMarker) {
+			const int playerClass = static_cast<int>((seed >> 20) & 0xF) - 1;
+			return playerClass < static_cast<int>(std::size(ClassNames)) ? playerClass : -1;
+		}
+	}
+	return -1;
+}
+
+auto IsEmblemOnCharacter(const D2RL::Items::ItemInfo* item) -> bool {
+	// Not in the shared stash or on the ground: another character could have put it there.
+	return item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->code == ap::loot::CodeFromText(ap::randomizer::EmblemCode)
+	    && item->container != D2RL::Items::ItemContainer::SharedStash && item->container != D2RL::Items::ItemContainer::Ground;
+}
+
 auto DescribeItem(const D2RL::Items::ItemInfo& item) -> std::string {
 	char text[200] {};
 	std::snprintf(text, sizeof(text), "container=%u quality=%u itemSeed=%08X generationSeed=%08X prefix=%u suffix=%u", static_cast<uint32_t>(item.container),
@@ -2211,6 +2236,76 @@ void FindSuperUniqueMonsters() {
 	}
 }
 
+// Tree mode has no Codex to carry the class, so the seed's character gets an Archipelago
+// Emblem that does, and later games know it without a kill. A lost one is made again. If
+// it can't be made (no room, or a mod without it), retries later.
+Clock::time_point gEmblemRetryAt;
+
+// The Emblems on the character: whether one carries this class, and the ones that don't.
+struct EmblemScan {
+	int                           playerClass = -1;
+	bool                          found       = false;
+	std::vector<D2RL::ItemHandle> others;
+};
+
+auto __cdecl FindEmblem(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
+	if (IsEmblemOnCharacter(item)) {
+		auto* scan = static_cast<EmblemScan*>(userData);
+		if (EmblemClass(*item) == scan->playerClass) {
+			scan->found = true;
+		} else {
+			scan->others.push_back(item->handle);
+		}
+	}
+	return D2RL::Inventory::IterationAction::Continue;
+}
+
+void GiveEmblem(D2RL::PlayerHandle player) {
+	EmblemScan scan;
+	{
+		std::lock_guard lock(gMutex);
+		if (Clock::now() < gEmblemRetryAt) {
+			return;
+		}
+		scan.playerClass = GameClass();
+	}
+	if (scan.playerClass < 0) {
+		return;
+	}
+	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
+	if (gInventory->forEachInventoryItem(gContext, player, &filter, FindEmblem, &scan) != D2RL::Inventory::Result::Success) {
+		return;
+	}
+	if (scan.found && scan.others.empty()) {
+		return;
+	}
+	if (!scan.found) {
+		auto spec = MakeSpec(ap::loot::CodeFromText(ap::randomizer::EmblemCode), D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
+		static std::mt19937 seeds(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
+		spec.seedMode = D2RL::Items::SeedMode::Deterministic;
+		spec.generationSeed = EmblemSeed(scan.playerClass, seeds());
+		spec.itemSeed = spec.generationSeed;
+		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
+		const auto result = gItems->createItem(gContext, player, &spec, &item);
+		if (result != D2RL::Items::Result::Success) {
+			Log("Archipelago: couldn't make the Archipelago Emblem (result " + std::to_string(static_cast<uint32_t>(result))
+				+ "); make room in your inventory, or rerun d2r-ap-setup if the mod predates it.");
+			std::lock_guard lock(gMutex);
+			gEmblemRetryAt = Clock::now() + std::chrono::seconds(60);
+			return;
+		}
+		Feed("Archipelago: your Archipelago Emblem marks this character as the seed's " + ClassName(scan.playerClass)
+		     + ", so rewards arrive without a kill; keep it on this character.");
+	}
+	// Another class's Emblem would say the wrong class next game; it goes once this one is in.
+	for (const auto other : scan.others) {
+		gItems->destroyItem(gContext, player, other, D2RL::Items::SocketedItemPolicy::DestroyContents);
+	}
+	if (!scan.others.empty()) {
+		Log("Archipelago: removed " + std::to_string(scan.others.size()) + " Emblem(s) for another class from this " + ClassName(scan.playerClass) + ".");
+	}
+}
+
 // Tree mode: unlocks each received skill in the tree with D2RCore's skadd (its
 // first point; the tree's self-prerequisite lock then lets you spend more), and
 // hands out extra copies and Skill Points as unspent skill points.
@@ -2420,6 +2515,28 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 			}
 		}
 	}
+	// Tree mode has no Codex: the Emblem says the class, from anywhere on the character.
+	{
+		std::lock_guard lock(gMutex);
+		known = GameClass() >= 0;
+	}
+	if (!known) {
+		int emblemClass = -1;
+		const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
+		gInventory->forEachInventoryItem(gContext, player, &filter,
+			[](const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept {
+				if (IsEmblemOnCharacter(item) && EmblemClass(*item) >= 0) {
+					*static_cast<int*>(userData) = EmblemClass(*item);
+					return D2RL::Inventory::IterationAction::Stop;
+				}
+				return D2RL::Inventory::IterationAction::Continue;
+			},
+			&emblemClass);
+		if (emblemClass >= 0) {
+			std::lock_guard lock(gMutex);
+			gCodexClass = emblemClass;
+		}
+	}
 	std::string message;
 	bool banner = false;
 	bool ready = false;
@@ -2499,7 +2616,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 	// The slot settings from the same snapshot as the items, never re-read during the pass.
 	const ap::SlotData& slots = snapshot.slots;
-	// Nothing touches a character that isn't the seed's: no rewards, Codex or locks.
+	// Nothing touches a character that isn't the seed's: no rewards, Codex, Emblem or locks.
 	bool pending = false;
 	{
 		std::lock_guard lock(gMutex);
@@ -2526,6 +2643,9 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	ScanParcels(player);
 	EnforceTownPortalLock(player);
 	EnforcePotionLock(player);
+	if (slots.randomizer.treeMode) {
+		GiveEmblem(player);
+	}
 	{
 		auto records = UniqueRecords("Archipelago Codex");
 		std::lock_guard lock(gMutex);
@@ -3917,6 +4037,17 @@ void __cdecl OnItemTooltip(const D2RL::PluginContext*, D2RL::SharedEvents::ItemT
 	if (gItems->getItemInfo(gContext, event->item, &info) != D2RL::Items::Result::Success || event->capacity < 2) {
 		return;
 	}
+	// The Emblem names its class when the copy here kept its seed.
+	if (info.code == ap::loot::CodeFromText(ap::randomizer::EmblemCode)) {
+		const int emblemClass = EmblemClass(info);
+		const std::string text = emblemClass >= 0 ? "Archipelago: marks this character as the seed's " + ClassName(emblemClass) + "."
+		                                          : std::string("Archipelago: tells the plugin this character's class, so rewards arrive without a kill.");
+		const size_t length = std::min<size_t>(text.size(), event->capacity - 1);
+		std::memcpy(event->text, text.data(), length);
+		event->text[length] = '\0';
+		event->length = static_cast<uint32_t>(length);
+		return;
+	}
 	// The Codex is the Archipelago Codex unique; a fallback Magic Codex keeps its seed marker.
 	bool codex = CodexSeedOf(info) != 0;
 	if (info.quality == D2RL::Items::Quality::Unique && info.qualityRecordId >= 0) {
@@ -4486,7 +4617,7 @@ auto CommandClaim(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 	std::string reply;
 	{
 		std::lock_guard lock(gMutex);
-		// Not known yet (no kill this game, no Codex that says): your word that it's the seed's
+		// Not known yet (no kill this game, no Codex or Emblem that says): your word that it's the seed's
 		// class. A kill by another class still overrides it (OnMonsterDeath).
 		const bool vouched = gBoundSession != 0 && gInGame && GameClass() < 0 && SeedClass(gSlots) >= 0;
 		if (vouched) {
@@ -4503,6 +4634,8 @@ auto CommandClaim(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 		} else {
 			gSave.playerClass = gameClass;
 			SaveNow();
+			// In tree mode this character gets an Emblem of its own on the next pass.
+			gEmblemRetryAt = {};
 			gCharacterWarned = 0;
 			gCodexDirty = true;
 			gRetryAt = {};

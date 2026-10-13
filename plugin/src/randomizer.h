@@ -192,6 +192,11 @@ inline constexpr char        ProphecyName[] = "Scroll of Prophecy";
 // so the shop items get their own: the quest type on the Misc page.
 inline constexpr char        ShopItemType[] = "apsh";
 
+// The Archipelago Emblem: in tree mode (no Codex) the seed's character carries one,
+// and its seed says the character's class. It's never sold and never drops.
+inline constexpr char        EmblemCode[] = "ape";
+inline constexpr char        EmblemName[] = "Archipelago Emblem";
+
 // Appends the parcels to misc.txt as copies of the Standard of Heroes (an inert
 // 1x1 item), each always in stock at its act's vendor, unless the table
 // already has them. Returns how many it added.
@@ -208,6 +213,9 @@ auto PadMiscRows(Table& misc, const std::vector<std::string>& codes) -> int;
 
 // Appends the Scrolls of Prophecy the same way, every tier at every potion seller.
 auto AddProphecyScrolls(Table& misc) -> int;
+
+// Appends the Emblem the same way, sold nowhere. Returns 1 if it added it.
+auto AddEmblem(Table& misc) -> int;
 
 // A cheap respec, always in stock at every potion seller: a copy of the Token
 // of Absolution (same use, picture and size) under its own code, so finding a

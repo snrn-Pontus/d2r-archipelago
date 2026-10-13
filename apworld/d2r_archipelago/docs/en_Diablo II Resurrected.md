@@ -19,7 +19,9 @@ With `skill_mode: tree`, there's no Codex. Your skills are the 30 in your class'
 locked until its item arrives. When it does, the skill gets its first point in the tree and from then on
 you spend skill points on it as usual, prerequisites aside (there are none). Extra copies of a skill and
 **Skill Point** items (`skill_points`) give unspent skill points. With `character_class: any`, the seed
-picks your class; the client tells you which.
+picks your class; the client tells you which. After your first kill (or `ap-claim`) you get an
+**Archipelago Emblem**, a one-cell item that tells the plugin your class, so later games need no kill
+before your rewards arrive. Keep it on your character (not the shared stash); a lost one is made again.
 
 `skill_tree_shuffle` deals every class's tree out of skills from all classes, each in a row of its own
 level, with icons and synergies to match: a synergy names a skill in the same tree. The Druid keeps its

@@ -1711,6 +1711,10 @@ void TestShopParcels() {
 	auto lod = ap::Table::Parse("name\tcode\tspawnable\r\nStandard of Heroes\tstd\t1\r\nScroll of Identify\tisc\t1\r\n");
 	EXPECT(ap::randomizer::PadMiscRows(lod, { "std", "isc", "cs2" }) == 1 && ap::randomizer::PadMiscRows(lod, { "std", "isc", "cs2" }) == 0);
 	EXPECT(lod.Rows().size() == 3 && lod.Cell(2, 1) == "cs2" && lod.Cell(2, 2) == "0");
+	// The Emblem is sold nowhere and worth nothing.
+	EXPECT(ap::randomizer::AddEmblem(misc) == 1 && ap::randomizer::AddEmblem(misc) == 0);
+	EXPECT(misc.Cell(14, 0) == "Archipelago Emblem" && misc.Cell(14, 1) == "ape" && misc.Cell(14, 2) == "0" && misc.Cell(14, 3).empty()
+	       && misc.Cell(14, 7) == "0");
 }
 
 void TestTableEdits() {

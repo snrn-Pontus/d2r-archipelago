@@ -56,12 +56,16 @@ Built, pushed and installed, still to check in game:
       Blade Fury. Still to see: Impale and Blade Fury on another non-Necromancer class (only Charge's
       Necromancer failure was tested elsewhere); Lightning and Chain Lightning off the Sorceress fire without
       a cast animation (known, #119).
-- [ ] No more Archipelago Ledger (#54, rerun setup): a new character gets no Ledger, and none arrives after
-      **Claim Character** (F9) or `ap-claim`. F9's Maintenance column has no New Ledger button and `ap-ledger`
-      is an unknown command. The status line still shows the total, the act you're in and "n held", and
-      **Checks Left by Act** (`ap-missing all`) still counts every act, with an "Any act" line. In
-      tree mode (no Codex), Save and Exit and join again: rewards and locks wait for a kill or `ap-claim`
-      again, as before #105; a Codex character still works at once.
+- [ ] No more Archipelago Ledger (#54, rerun setup): a new character gets no Ledger. F9's Maintenance column
+      has no New Ledger button and `ap-ledger` is an unknown command. The status line still shows the total,
+      the act you're in and "n held", and **Checks Left by Act** (`ap-missing all`) still counts every act,
+      with an "Any act" line.
+- [ ] Archipelago Emblem (#54, rerun setup), tree mode: a new character gets one after its first kill or
+      **Claim Character** / `ap-claim`, with a chat line naming its class. It shows the Token of Absolution
+      picture in one cell (LoD too), and its tooltip says "marks this character as the seed's <class>" (or
+      "tells the plugin this character's class" if the tooltip's copy has no seed; note which). Save and Exit, join again: rewards and locks work at once, no kill or
+      claim needed. Put it in the shared stash: it doesn't count, and a new one arrives; drop or sell it: a
+      new one arrives too. Codex mode: no Emblem, and a rejoin still works at once from the Codex.
 - [x] Class without a kill: a new character in town gets a banner and chat line saying rewards and locks wait
       (kill a monster or ap-claim). **Claim Character** (F9) or `ap-claim`: the skills unlock and the locks
       apply (Town Portal scroll crumbled) (2026-10-13). (Belt potions aren't set aside by design: only
