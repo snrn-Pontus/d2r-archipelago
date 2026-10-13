@@ -2,6 +2,22 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.10.0 - 2026-10-13
+
+Rerun `d2r-ap-setup` for this version: the runeword recipes and the Writ's name are in the mod.
+
+- Fixed a crash when a reward, the Tome of Town Portal or returned potions didn't fit in your bags: nothing
+  is dropped on the ground any more. Rewards wait until you make room (they arrive within 30 seconds), and
+  a reward that only lacked room no longer turns into a smaller item or a rune (#109)
+- Shuffled runewords now have the same recipes for Lord of Destruction and Reign of the Warlock characters,
+  so `runewords.txt` is right for everyone; the few words only Reign of the Warlock has are marked (#110)
+- The Writ of Absolution shows its name instead of "An Evil Force" (#113)
+- F9 now groups commands into This Game, Server and Maintenance. Collect, Disconnect and Relearn Skills
+  ask for confirmation with Cancel selected first; Relearn cancels safely if the connection or character
+  changes before its queued skill commands finish (#47)
+- F10 testing tools now include kill and cow counters near a check, reconnect controls, simulated save
+  failures, healing potions and a guarded crash test for checking recovery (#107)
+
 ## 0.9.3 - 2026-10-13
 
 - Tree mode: a received skill opens up in your skill tree for your own points instead of coming with a free
