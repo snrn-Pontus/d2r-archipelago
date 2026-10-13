@@ -340,7 +340,7 @@ class SetChecks(Toggle):
 
 
 class SpecialItemChecks(Toggle):
-    """With a Hell goal: finding each Pandemonium key, each uber organ, each essence, the Token of
+    """With a Hell goal through Baal: finding each Pandemonium key, each uber organ, each essence, the Token of
     Absolution, the Hellfire Torch and Annihilus is a check (13). Only filler goes on these."""
     display_name = "Special Item Checks"
 
