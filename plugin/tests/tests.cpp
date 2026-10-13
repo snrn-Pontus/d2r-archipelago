@@ -8,6 +8,7 @@
 #include "game_data.h"
 #include "ids.h"
 #include "loot.h"
+#include "milestones.h"
 #include "personalize.h"
 #include "quest_triggers.h"
 #include "randomizer.h"
@@ -300,6 +301,54 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12);
 	EXPECT(loaded.heldPotions == state.heldPotions);
+	std::filesystem::remove_all(path.parent_path());
+}
+
+// A save whose kill or cow counter reached a threshold without the check (the
+// game stopped before the check was saved) gets it back when the seed binds.
+void TestMilestoneRecovery() {
+	using ap::ids::CowLocation;
+	using ap::ids::KillLocation;
+	auto sorted = [](std::vector<int64_t> checks) {
+		std::ranges::sort(checks);
+		return checks;
+	};
+	// Exactly at each threshold, and one below it.
+	for (uint32_t index = 0; index < std::size(ap::ids::KillCounts); ++index) {
+		const int threshold = static_cast<int>(ap::ids::KillCounts[index]);
+		EXPECT(std::ranges::count(ap::milestones::KillChecks(0, 0, threshold), KillLocation(0, 0, index)) == 1);
+		EXPECT(std::ranges::count(ap::milestones::KillChecks(0, 0, threshold - 1), KillLocation(0, 0, index)) == 0);
+	}
+	EXPECT(ap::milestones::CowChecks(1, static_cast<int>(ap::ids::CowKills)) == std::vector<int64_t> { CowLocation(1, 2) });
+	EXPECT(ap::milestones::CowChecks(1, static_cast<int>(ap::ids::CowKills) - 1).empty());
+	// Out-of-range keys from a damaged save give nothing.
+	EXPECT(ap::milestones::KillChecks(3, 0, 1000).empty() && ap::milestones::KillChecks(0, 5, 1000).empty() && ap::milestones::CowChecks(-1, 1000).empty());
+
+	ap::SaveState save;
+	save.kills = {
+		{ 0, 100 },  // Normal Act I at 100: the 100-kill check is missing.
+		{ 12, 600 }, // Nightmare Act III past every threshold: 250 and 500 missing, 100 found.
+		{ 24, 99 },  // Hell Act V below the first threshold.
+		{ 3, 250 },  // Normal Act IV: both on the server already.
+	};
+	save.cowKills = { { 0, 100 }, { 2, 140 }, { 1, 99 } };
+	save.checks = { KillLocation(1, 2, 0), KillLocation(0, 3, 0), KillLocation(0, 3, 1), CowLocation(2, 2) };
+	const std::vector<int64_t> both = sorted(ap::milestones::Missing(save, true, true));
+	EXPECT(both == sorted({ KillLocation(0, 0, 0), KillLocation(1, 2, 1), KillLocation(1, 2, 2), CowLocation(0, 2) }));
+	// Disabled categories recover nothing.
+	EXPECT(sorted(ap::milestones::Missing(save, true, false)) == sorted({ KillLocation(0, 0, 0), KillLocation(1, 2, 1), KillLocation(1, 2, 2) }));
+	EXPECT(ap::milestones::Missing(save, false, true) == std::vector<int64_t> { CowLocation(0, 2) });
+	EXPECT(ap::milestones::Missing(save, false, false).empty());
+	// The same through a save file, as BindSession loads it; once the checks are
+	// in the save nothing is missing, so they aren't sent or announced again.
+	const auto path = std::filesystem::temp_directory_path() / "d2rl-ap-test-milestones" / "seed_slot.txt";
+	EXPECT(save.Save(path));
+	ap::SaveState loaded;
+	EXPECT(loaded.Load(path));
+	const std::vector<int64_t> recovered = ap::milestones::Missing(loaded, true, true);
+	EXPECT(sorted(recovered) == both);
+	loaded.checks.insert(recovered.begin(), recovered.end());
+	EXPECT(ap::milestones::Missing(loaded, true, true).empty());
 	std::filesystem::remove_all(path.parent_path());
 }
 
@@ -1227,6 +1276,7 @@ int main() {
 	TestLoaderSettings();
 	TestScaleWav();
 	TestSaveStateRoundTrip();
+	TestMilestoneRecovery();
 	TestIdsMatchApworld();
 	TestGameData();
 	TestPersonalization();
