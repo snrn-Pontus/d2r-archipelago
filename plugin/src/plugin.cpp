@@ -2506,6 +2506,9 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			// It joins the fallbacks' queue, and logs from there, so the log keeps the order they happened in.
 			if (event->difficulty < 3 && event->questRecordId < 100) {
 				std::lock_guard lock(gMutex);
+				// Unlike LevelChanged, the quest event's difficulty is always set (0 is Normal).
+				gDifficulty = static_cast<int>(event->difficulty);
+				gDifficultyKnown = true;
 				gQuestQueue.push_back(static_cast<int>(QuestSource::Event) * 1000 + static_cast<int>(event->difficulty) * 100 + static_cast<int>(event->questRecordId));
 			} else {
 				Log("Archipelago: quest event for row " + std::to_string(event->questRecordId) + " on difficulty " + std::to_string(event->difficulty) + ".");
