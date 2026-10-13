@@ -604,58 +604,117 @@ auto ScaleSuperUniqueMinions(Table& superUniques, const Table& before, int perce
 }
 
 auto ShuffleRunewords(Table& runes, std::mt19937& random, int spread) -> std::vector<std::string> {
+	std::vector<std::string> recipes;
+	for (auto& recipe : ShuffleRunewords(std::vector<Table*> { &runes }, random, spread)) {
+		recipes.push_back(std::move(recipe.text));
+	}
+	return recipes;
+}
+
+auto ShuffleRunewords(const std::vector<Table*>& banks, std::mt19937& random, int spread) -> std::vector<RunewordRecipe> {
 	static constexpr const char* RuneNames[] = { "El", "Eld", "Tir", "Nef", "Eth", "Ith", "Tal", "Ral", "Ort", "Thul", "Amn", "Sol", "Shael", "Dol", "Hel",
 		"Io", "Lum", "Ko", "Fal", "Lem", "Pul", "Um", "Mal", "Ist", "Gul", "Vex", "Ohm", "Lo", "Sur", "Ber", "Jah", "Cham", "Zod" };
-	const int name = runes.Column("*Rune Name");
-	const int complete = runes.Column("complete");
-	std::vector<int> slots;
-	for (int i = 1; i <= 6; ++i) {
-		slots.push_back(runes.Column("Rune" + std::to_string(i)));
-	}
-	std::vector<std::string> recipes;
-	if (complete < 0 || slots[0] < 0) {
-		return recipes;
-	}
-	// Every new sequence so far. Two runewords with one sequence (and a base type in common) would
-	// leave the game making only the first, so a word that rolls a taken sequence rolls again.
-	std::set<std::vector<int>> taken;
-	constexpr int MaxRolls = 100;
-	for (size_t row = 0; row < runes.Rows().size(); ++row) {
-		if (runes.Cell(row, complete) != "1" || runes.Cell(row, slots[0]).empty()) {
+	// A complete runeword in one bank: its row, the key it's matched by across
+	// banks, the name it's listed by, and its runes (slot column, tier).
+	struct Word {
+		size_t                           row;
+		std::string                      key;
+		std::string                      label;
+		std::vector<std::pair<int, int>> original;
+		bool                             done = false;
+	};
+	std::vector<std::vector<Word>> words(banks.size());
+	// Each bank's words by key, the first of each key only (an empty key is never shared).
+	std::vector<std::unordered_map<std::string, size_t>> byKey(banks.size());
+	for (size_t bank = 0; bank < banks.size(); ++bank) {
+		const Table& runes = *banks[bank];
+		const int name = runes.Column("*Rune Name");
+		const int key = runes.Column("Name") >= 0 ? runes.Column("Name") : name;
+		const int complete = runes.Column("complete");
+		std::vector<int> slots;
+		for (int i = 1; i <= 6; ++i) {
+			slots.push_back(runes.Column("Rune" + std::to_string(i)));
+		}
+		if (complete < 0 || slots[0] < 0) {
 			continue;
 		}
-		std::vector<std::pair<int, int>> original; // slot column, tier
-		for (const int slot : slots) {
-			const std::string rune = slot >= 0 ? runes.Cell(row, slot) : std::string();
-			if (slot < 0 || rune.size() != 3 || rune[0] != 'r') {
+		for (size_t row = 0; row < runes.Rows().size(); ++row) {
+			if (runes.Cell(row, complete) != "1" || runes.Cell(row, slots[0]).empty()) {
 				continue;
 			}
-			original.emplace_back(slot, ParseInt(rune.substr(1)));
-		}
-		std::vector<int> rolled;
-		for (int roll = 0; roll < MaxRolls; ++roll) {
-			rolled.clear();
-			for (const auto& [slot, tier] : original) {
-				const int low = std::clamp(tier - spread, 1, 33);
-				const int high = std::clamp(tier + spread, low, 33);
-				rolled.push_back(low + static_cast<int>(Below(random, static_cast<uint32_t>(high - low + 1))));
+			Word word { .row = row, .key = key >= 0 ? runes.Cell(row, key) : "", .label = name >= 0 ? runes.Cell(row, name) : "Runeword" };
+			for (const int slot : slots) {
+				const std::string rune = slot >= 0 ? runes.Cell(row, slot) : std::string();
+				if (slot < 0 || rune.size() != 3 || rune[0] != 'r') {
+					continue;
+				}
+				word.original.emplace_back(slot, ParseInt(rune.substr(1)));
 			}
-			if (!taken.contains(rolled)) {
-				break;
+			if (!word.key.empty()) {
+				byKey[bank].emplace(word.key, words[bank].size());
 			}
+			words[bank].push_back(std::move(word));
 		}
-		taken.insert(rolled);
-		std::string recipe = (name >= 0 ? runes.Cell(row, name) : "Runeword") + ":";
-		for (size_t i = 0; i < original.size(); ++i) {
-			const int replacement = rolled[i];
-			char code[4] {};
-			code[0] = 'r';
-			code[1] = static_cast<char>('0' + replacement / 10);
-			code[2] = static_cast<char>('0' + replacement % 10);
-			runes.Set(row, original[i].first, code);
-			recipe += std::string(" ") + RuneNames[replacement - 1];
+	}
+	const auto tiers = [](const Word& word) {
+		std::vector<int> list;
+		for (const auto& [slot, tier] : word.original) {
+			list.push_back(tier);
 		}
-		recipes.push_back(recipe);
+		return list;
+	};
+	// Every new sequence so far, per bank. Two runewords with one sequence (and a base type in common)
+	// would leave the game making only the first, so a word that rolls a taken sequence rolls again.
+	std::vector<std::set<std::vector<int>>> taken(banks.size());
+	constexpr int MaxRolls = 100;
+	std::vector<RunewordRecipe> recipes;
+	for (size_t bank = 0; bank < banks.size(); ++bank) {
+		for (Word& word : words[bank]) {
+			if (word.done) {
+				continue;
+			}
+			// The same word in the later banks, with the same runes, takes the same recipe.
+			std::vector<std::pair<size_t, Word*>> alike { { bank, &word } };
+			for (size_t other = bank + 1; other < banks.size() && !word.key.empty(); ++other) {
+				const auto found = byKey[other].find(word.key);
+				if (found != byKey[other].end()) {
+					Word& twin = words[other][found->second];
+					if (!twin.done && tiers(twin) == tiers(word)) {
+						alike.emplace_back(other, &twin);
+					}
+				}
+			}
+			std::vector<int> rolled;
+			for (int roll = 0; roll < MaxRolls; ++roll) {
+				rolled.clear();
+				for (const auto& [slot, tier] : word.original) {
+					const int low = std::clamp(tier - spread, 1, 33);
+					const int high = std::clamp(tier + spread, low, 33);
+					rolled.push_back(low + static_cast<int>(Below(random, static_cast<uint32_t>(high - low + 1))));
+				}
+				if (std::ranges::none_of(alike, [&](const auto& entry) { return taken[entry.first].contains(rolled); })) {
+					break;
+				}
+			}
+			RunewordRecipe recipe { .text = word.label + ":" };
+			for (const int replacement : rolled) {
+				recipe.text += std::string(" ") + RuneNames[replacement - 1];
+			}
+			for (auto& [index, same] : alike) {
+				taken[index].insert(rolled);
+				same->done = true;
+				recipe.banks.push_back(index);
+				for (size_t i = 0; i < same->original.size(); ++i) {
+					const int replacement = rolled[i];
+					char code[4] {};
+					code[0] = 'r';
+					code[1] = static_cast<char>('0' + replacement / 10);
+					code[2] = static_cast<char>('0' + replacement % 10);
+					banks[index]->Set(same->row, same->original[i].first, code);
+				}
+			}
+			recipes.push_back(std::move(recipe));
+		}
 	}
 	return recipes;
 }

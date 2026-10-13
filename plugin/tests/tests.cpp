@@ -1314,6 +1314,69 @@ void TestRunewordShuffle() {
 		}
 		EXPECT(distinct.size() == 5);
 	}
+	// Two banks with different rows (RotW has words Classic/LoD lacks, and the rows sit elsewhere)
+	// give every word they share one recipe. Four shared one-rune words around Ral and one only
+	// Classic/LoD has fill the five runes in reach, so that one must dodge the shared ones too.
+	const std::string header = "Name\t*Rune Name\tcomplete\tRune1\tRune2\tRune3\tRune4\tRune5\tRune6\r\n";
+	std::string rotwText = header + "Runeword1\tSpirit\t1\tr07\tr10\tr11\tr09\t\t\r\nRuneword2\tSteel\t1\tr03\tr01\t\t\t\t\r\n"
+	                     + "Runeword3\tCoven\t1\tr12\tr04\tr05\t\t\t\r\nRuneword4\tChanged\t1\tr15\tr16\t\t\t\t\r\n";
+	std::string baseText = header + "Runeword2\tSteel\t1\tr03\tr01\t\t\t\t\r\nRuneword9\tOld\t1\tr08\t\t\t\t\t\r\n"
+	                     + "Runeword4\tChanged\t1\tr20\tr21\t\t\t\t\r\nRuneword1\tSpirit\t1\tr07\tr10\tr11\tr09\t\t\r\n";
+	for (int i = 0; i < 4; ++i) {
+		const std::string row = "Word" + std::to_string(i) + "\tWord" + std::to_string(i) + "\t1\tr08\t\t\t\t\t\r\n";
+		rotwText += row;
+		baseText = header + row + baseText.substr(header.size());
+	}
+	const auto sequence = [](const ap::Table& table, const std::string& name) {
+		for (size_t row = 0; row < table.Rows().size(); ++row) {
+			if (table.Cell(row, 0) == name) {
+				std::string runes;
+				for (int slot = 3; slot < 9; ++slot) {
+					runes += table.Cell(row, slot);
+				}
+				return runes;
+			}
+		}
+		return std::string();
+	};
+	std::vector<std::string> pinned;
+	for (uint32_t seed = 0; seed < 20; ++seed) {
+		auto rotw = ap::Table::Parse(rotwText);
+		auto base = ap::Table::Parse(baseText);
+		std::mt19937 rolls(seed);
+		const auto dealt = ap::randomizer::ShuffleRunewords(std::vector<ap::Table*> { &rotw, &base }, rolls);
+		for (const char* name : { "Runeword1", "Runeword2", "Word0", "Word1", "Word2", "Word3" }) {
+			EXPECT(!sequence(rotw, name).empty() && sequence(rotw, name) == sequence(base, name));
+		}
+		for (const ap::Table* table : { &rotw, &base }) {
+			std::set<std::string> distinct;
+			for (size_t row = 0; row < table->Rows().size(); ++row) {
+				distinct.insert(sequence(*table, table->Cell(row, 0)));
+			}
+			EXPECT(distinct.size() == table->Rows().size());
+		}
+		// Shared words list once for both banks; Coven (RotW only), Old (Classic/LoD only) and
+		// Changed (other runes in each bank) list per bank.
+		std::map<std::string, std::vector<std::vector<size_t>>> banks;
+		for (const auto& recipe : dealt) {
+			banks[recipe.text.substr(0, recipe.text.find(':'))].push_back(recipe.banks);
+		}
+		EXPECT(dealt.size() == 10);
+		EXPECT((banks["Spirit"] == std::vector<std::vector<size_t>> { { 0, 1 } } && banks["Word3"] == std::vector<std::vector<size_t>> { { 0, 1 } }));
+		EXPECT((banks["Coven"] == std::vector<std::vector<size_t>> { { 0 } } && banks["Old"] == std::vector<std::vector<size_t>> { { 1 } }));
+		EXPECT((banks["Changed"] == std::vector<std::vector<size_t>> { { 0 }, { 1 } }));
+		EXPECT(std::stoi(sequence(base, "Runeword4").substr(1, 2)) >= 18);
+		// The same seed deals the same recipes.
+		auto rotwAgain = ap::Table::Parse(rotwText);
+		auto baseAgain = ap::Table::Parse(baseText);
+		std::mt19937 again(seed);
+		const auto repeat = ap::randomizer::ShuffleRunewords(std::vector<ap::Table*> { &rotwAgain, &baseAgain }, again);
+		EXPECT(rotwAgain.Format() == rotw.Format() && baseAgain.Format() == base.Format());
+		EXPECT(repeat.size() == dealt.size() && std::ranges::equal(repeat, dealt, {}, &ap::randomizer::RunewordRecipe::text, &ap::randomizer::RunewordRecipe::text));
+		pinned.push_back(rotw.Format() + base.Format());
+	}
+	// Different seeds deal differently.
+	EXPECT(std::set<std::string>(pinned.begin(), pinned.end()).size() > 1);
 }
 
 void TestSuperUniqueMonsters() {

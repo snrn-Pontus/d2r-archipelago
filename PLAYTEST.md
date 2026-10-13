@@ -181,6 +181,11 @@ Built, pushed and installed, still to check in game:
       set-aside potions is back". A few rewards `/send` with full bags and a locked cube and stash drop one a
       second, with "rewards drop at your feet one at a time". Nothing drops right after joining a game: it
       waits until you're in an area for a couple of seconds.
+- [ ] Runeword banks agree (#110, rerun setup): `excel\runes.txt` and `excel\base\runes.txt` in the mod give
+      every runeword both have the same runes, and `runewords.txt` marks the five Reign of the Warlock words
+      (Authority, Coven, Ritual, Vigilance, Void) "(Reign of the Warlock only)". On a Lord of Destruction
+      character, `runewords.txt`'s recipe for Steel (or another cheap word) in a normal sword of the right
+      socket count makes the runeword.
 
 Ideas, not started:
 
