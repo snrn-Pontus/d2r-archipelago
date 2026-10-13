@@ -372,6 +372,12 @@ on `death_link: true` in both.
       with their new monster's model, and their minions are too.
 - [ ] `mods\Archipelago\runewords.txt` lists new recipes, and one made from low runes works in game.
 - [ ] More monsters, and faster levelling than usual.
+- [ ] After rerunning setup with `monster_shuffle: nearby` and again with `anywhere`, Talic, Madawc
+      and Korlic stay on Arreat Summit and spawn only when the altar is activated; their defeat completes
+      Rite of Passage. No Ancients appear as ordinary monsters in other areas (#74).
+- [ ] With either monster shuffle mode, areas with zero monster density on every difficulty keep their
+      original line-ups. Swampy Pit 3, Flayer Dungeon 3 and Bloody Foothills still have monsters on
+      Nightmare/Hell when their density is positive there (#74).
 
 ## 9. Later: long runs
 

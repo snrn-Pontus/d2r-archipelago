@@ -560,6 +560,38 @@ void TestMonsterShuffle() {
 	EXPECT(a.Format() == b.Format());
 }
 
+void TestMonsterShuffleProtectedAreas() {
+	const auto original = ap::Table::Parse(
+		"Name\tId\tAct\tMonLvlEx\tMonDen\tMonDen(N)\tMonDen(H)\tmon1\tmon2\tmon3\tnmon1\tumon1\r\n"
+		"Summit\t120\t4\t30\t0\t100\t100\tancientbarb1\tancientbarb2\tancientbarb3\tancientbarb1\tancientbarb1\r\n"
+		"Scripted\t121\t4\t30\t0\t0\t0\tscripted\t\t\tscripted\tscripted\r\n"
+		"Empty\t122\t4\t30\t\t\t\tempty\t\t\tempty\tempty\r\n"
+		"Normal\t123\t4\t30\t100\t0\t0\tnormal\t\t\tnormal\tnormal\r\n"
+		"Nightmare\t90\t4\t30\t0\t100\t0\tnightmare\t\t\tnightmare\tnightmare\r\n"
+		"Hell\t91\t4\t30\t0\t0\t100\thell\t\t\thell\thell\r\n");
+	const auto noFamilies = ap::Table::Parse("Id\tBaseId\tLevel\r\n");
+	for (const auto mode : { ap::randomizer::Shuffle::Nearby, ap::randomizer::Shuffle::Anywhere }) {
+		std::set<std::string> seen;
+		for (uint32_t seed = 0; seed < 20; ++seed) {
+			auto levels = original;
+			std::mt19937 random(seed);
+			ap::randomizer::ShuffleMonsters(levels, noFamilies, mode, random);
+			for (size_t row = 0; row < 3; ++row) {
+				EXPECT(levels.Rows()[row] == original.Rows()[row]);
+			}
+			std::multiset<std::string> lineups;
+			seen.insert(levels.Cell(3, 7));
+			for (size_t row = 3; row < 6; ++row) {
+				lineups.insert(levels.Cell(row, 7));
+				EXPECT(levels.Cell(row, 7) == levels.Cell(row, 10));
+				EXPECT(levels.Cell(row, 7) == levels.Cell(row, 11));
+			}
+			EXPECT((lineups == std::multiset<std::string> { "normal", "nightmare", "hell" }));
+		}
+		EXPECT(seen.size() == 3);
+	}
+}
+
 void TestBalancedAnywhere() {
 	// A level 2 area and a level 30 area trade line-ups; each monster becomes
 	// its family's variant nearest the new area's level.
@@ -882,6 +914,7 @@ int main() {
 	TestCodexLevels();
 	TestTableRoundTrip();
 	TestMonsterShuffle();
+	TestMonsterShuffleProtectedAreas();
 	TestBalancedAnywhere();
 	TestDensityAndDrops();
 	TestSuperUniqueShuffle();
