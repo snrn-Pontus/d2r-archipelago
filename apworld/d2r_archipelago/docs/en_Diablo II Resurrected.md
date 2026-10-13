@@ -31,7 +31,7 @@ shapeshifts. It works in both modes; in tree mode, the shuffled tree is the one 
 - Entering each waypoint area, plus a few landmarks (Den of Evil, Tristram, the Chaos Sanctuary and more),
   for the first time, on every difficulty up to your goal.
 - Reaching every fifth character level. Past level 70 these only hold filler.
-- Killing each of the 41 superuniques that roam the field (Bishibosh, Rakanishu, Pindleskin and the rest), on
+- Killing each of the 31 superuniques that roam the field (Bishibosh, Rakanishu, Pindleskin and the rest), on
   every difficulty up to your goal (`superunique_checks`). Quest bosses and the Chaos Sanctuary seal bosses
   don't count.
 - The Secret Cow Level, on each difficulty you finish before the goal (`cow_level_checks`): entering it,

@@ -45,11 +45,12 @@ GOAL_QUEST = 40
 # d2r-ap-setup may shuffle their monsters. Quest bosses (Radament, the
 # Summoner, the Council, the Countess, Shenk, Nihlathak, the Ancients), the
 # Chaos Sanctuary seal bosses and Baal's minion waves are scripted, so they're
-# left alone.
+# left alone. Rows Lord of Destruction never places (Flamespike, Winged Death,
+# The Tormentor, Taintbreeder, Riftwraith, Axe Dweller, Anodized Elite, Vinvear
+# Molech, Magma Torquer, Blaze Ripper) would be checks nobody can reach.
 FIELD_SUPERUNIQUES = {
     # superuniques.txt name: (name the game shows, area it spawns in). The
-    # area goes into the check's name so hints say where to look; None for
-    # the ones Lord of Destruction never places.
+    # area goes into the check's name so hints say where to look.
     "Bishibosh": ("Bishibosh", "Cold Plains"),
     "Bonebreak": ("Bonebreaker", "Crypt"),
     "Coldcrow": ("Coldcrow", "Cave Level 1"),
@@ -57,7 +58,6 @@ FIELD_SUPERUNIQUES = {
     "Treehead WoodFist": ("Treehead Woodfist", "Dark Wood"),
     "Griswold": ("Griswold", "Tristram"),
     "Pitspawn Fouldog": ("Pitspawn Fouldog", "Jail Level 2"),
-    "Flamespike the Crawler": ("Flamespike the Crawler", None),
     "Boneash": ("Bone Ash", "Cathedral"),
     "Corpsefire": ("Corpsefire", "Den of Evil"),
     "Bloodwitch the Wild": ("Bloodwitch the Wild", "Halls of the Dead Level 3"),
@@ -73,11 +73,6 @@ FIELD_SUPERUNIQUES = {
     "Stormtree": ("Stormtree", "Flayer Jungle"),
     "Sarina the Battlemaid": ("Battlemaid Sarina", "Ruined Temple"),
     "Icehawk Riftwing": ("Icehawk Riftwing", "Sewers Level 1"),
-    "Winged Death": ("Winged Death", None),
-    "The Tormentor": ("The Tormentor", None),
-    "Taintbreeder": ("Taintbreeder", None),
-    "Riftwraith the Cannibal": ("Riftwraith the Cannibal", None),
-    "Axe Dweller": ("Axe Dweller", None),
     "Bonesaw Breaker": ("Bonesaw Breaker", "Glacial Trail"),
     "Dac Farren": ("Dac Farren", "Bloody Foothills"),
     "Megaflow Rectifier": ("Eldritch the Rectifier", "Frigid Highlands"),
@@ -85,11 +80,7 @@ FIELD_SUPERUNIQUES = {
     "Threash Socket": ("Thresh Socket", "Arreat Plateau"),
     "Pindleskin": ("Pindleskin", "Nihlathak's Temple"),
     "Snapchip Shatter": ("Snapchip Shatter", "Icy Cellar"),
-    "Anodized Elite": ("Anodized Elite", None),
-    "Vinvear Molech": ("Vinvear Molech", None),
     "Sharp Tooth Sayer": ("Sharptooth Slayer", "Frigid Highlands"),
-    "Magma Torquer": ("Magma Torquer", None),
-    "Blaze Ripper": ("Blaze Ripper", None),
     "Frozenstein": ("Frozenstein", "Frozen River"),
 }
 
@@ -213,7 +204,7 @@ def main() -> None:
             tc = row.get("TC", "")
             act = int(tc.split()[1]) - 1 if tc.startswith("Act ") else 0
             shown, area = FIELD_SUPERUNIQUES[name]
-            superuniques.append((int(row["hcIdx"]), act, name, f"{shown} ({area})" if area else shown))
+            superuniques.append((int(row["hcIdx"]), act, name, f"{shown} ({area})"))
     assert len(superuniques) == len(FIELD_SUPERUNIQUES), "a field superunique is missing from superuniques.txt"
     superuniques.sort()
 

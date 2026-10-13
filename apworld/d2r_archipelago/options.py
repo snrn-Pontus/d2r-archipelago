@@ -168,7 +168,7 @@ class LevelChecks(DefaultOnToggle):
 
 
 class SuperUniqueChecks(DefaultOnToggle):
-    """Killing each of the 41 superuniques that roam the field (Bishibosh, Rakanishu, Pindleskin...) is
+    """Killing each of the 31 superuniques that roam the field (Bishibosh, Rakanishu, Pindleskin...) is
     a check on every difficulty in play. Quest bosses and the Chaos Sanctuary seal bosses aren't included.
     Needs the seed's mod from d2r-ap-setup, which gives each of them a monster of its own."""
     display_name = "Superunique Checks"

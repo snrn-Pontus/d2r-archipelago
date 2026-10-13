@@ -222,8 +222,8 @@ class TestHellSuperUniques(D2RTestBase):
 
     def test_every_difficulty(self) -> None:
         names = {location.name for location in self.multiworld.get_locations(self.player)}
-        # 41 superuniques per difficulty, plus The Cow King and the cows on Normal and Nightmare.
-        self.assertEqual(sum(1 for name in names if ": Kill " in name), 3 * 41 + 2 * 2)
+        # 31 superuniques per difficulty, plus The Cow King and the cows on Normal and Nightmare.
+        self.assertEqual(sum(1 for name in names if ": Kill " in name), 3 * 31 + 2 * 2)
         self.assertEqual(sum(1 for name in names if ": Enter " in name), 3 * 46 + 2)
 
     def test_missable_and_grind_checks_hold_filler(self) -> None:
