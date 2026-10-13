@@ -97,15 +97,17 @@ classes') must stay in your inventory; if you lose one, `ap-codex` rebuilds it.
 
 Rewards only go to a character of the seed's class (with `character_class: any`, the first one that plays
 the seed claims it), so a mule of another class gets nothing. The game doesn't tell the plugin your class
-until you kill a monster or carry your Codex, so rewards may wait for your first kill. To move the seed to
+until you kill a monster or carry your Codex, so rewards may wait for your first kill. In tree mode, which
+has no Codex, your character gets an **Archipelago Emblem** after that first kill instead; keep it on your
+character (not the shared stash), and later games know your class at once. To move the seed to
 another class, kill something with that character and type `ap-claim`. If the game crashes before it saved
 your character, the next connect offers `ap-redeliver` to hand out that game's rewards again.
 
-Your character also gets an **Archipelago Ledger**. Hover over it to see how many checks you've done in
-each act, and outside any act, out of the total. `ap-missing` lists the checks left in the act you're in,
-and `ap-missing all` counts them for every act. If you lose the Ledger, `ap-ledger` makes another.
+The status line at the top left shows how many checks you've done out of the total, and in the act you're
+in. `ap-missing` lists the checks left in the act you're in, and `ap-missing all` counts them for every act
+and outside any act.
 
 **F9** (or `ap-panel`) opens the Archipelago command panel, so you don't need the console for everyday
 commands: status, checks left here or by act, hints found in game, the server's hints (`!hint`), items
-left (`!remaining`), the multiworld's status (`!status`), `!collect`, a new Ledger or Codex, and reconnect
+left (`!remaining`), the multiworld's status (`!status`), `!collect`, a new Codex, and reconnect
 or disconnect. Answers show in the chat. The key can be changed in Options, Controls.

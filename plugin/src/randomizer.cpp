@@ -1007,14 +1007,14 @@ auto AddProphecyScrolls(Table& misc) -> int {
 	return static_cast<int>(std::size(ProphecyCodes));
 }
 
-auto AddLedger(Table& misc) -> int {
+auto AddEmblem(Table& misc) -> int {
 	const int code = misc.Column("code");
 	if (code < 0) {
 		return 0;
 	}
 	std::optional<size_t> templateRow;
 	for (size_t row = 0; row < misc.Rows().size(); ++row) {
-		if (misc.Cell(row, code) == LedgerCode) {
+		if (misc.Cell(row, code) == EmblemCode) {
 			return 0;
 		}
 		if (misc.Cell(row, code) == "std") {
@@ -1027,7 +1027,7 @@ auto AddLedger(Table& misc) -> int {
 	misc.Rows().push_back(misc.Rows()[*templateRow]);
 	const size_t row = misc.Rows().size() - 1;
 	const std::pair<std::string, std::string> values[] = {
-		{ "name", LedgerName }, { "code", LedgerCode }, { "namestr", LedgerName }, { "cost", "0" }, { "gamble cost", "0" }, { "level", "0" },
+		{ "name", EmblemName }, { "code", EmblemCode }, { "namestr", EmblemName }, { "cost", "0" }, { "gamble cost", "0" }, { "level", "0" },
 		{ "levelreq", "0" }, { "unique", "0" }, { "spawnable", "0" }, { "PermStoreItem", "0" }, { "invfile", "invtoa" },
 	};
 	for (const auto& [name, value] : values) {

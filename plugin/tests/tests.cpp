@@ -298,7 +298,6 @@ void TestSaveStateRoundTrip() {
 	state.ownHints = { 0, 3 };
 	state.otherHints = { 2425500 };
 	state.prophecies = 2;
-	state.ledgerGiven = true;
 	state.unlockedSkills = { 126, 54 };
 	state.skillPointsGiven = 3;
 	state.portalTomeGiven = true;
@@ -313,7 +312,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.goalReached);
 	EXPECT(loaded.playerClass == 4);
 	EXPECT(loaded.kills == state.kills && loaded.cowKills == state.cowKills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
-	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2 && loaded.ledgerGiven
+	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12);
 	EXPECT(loaded.heldPotions == state.heldPotions);
 	EXPECT(loaded.rewardCopies == state.rewardCopies);
@@ -1712,9 +1711,9 @@ void TestShopParcels() {
 	auto lod = ap::Table::Parse("name\tcode\tspawnable\r\nStandard of Heroes\tstd\t1\r\nScroll of Identify\tisc\t1\r\n");
 	EXPECT(ap::randomizer::PadMiscRows(lod, { "std", "isc", "cs2" }) == 1 && ap::randomizer::PadMiscRows(lod, { "std", "isc", "cs2" }) == 0);
 	EXPECT(lod.Rows().size() == 3 && lod.Cell(2, 1) == "cs2" && lod.Cell(2, 2) == "0");
-	// The Ledger is sold nowhere and worth nothing.
-	EXPECT(ap::randomizer::AddLedger(misc) == 1 && ap::randomizer::AddLedger(misc) == 0);
-	EXPECT(misc.Cell(14, 0) == "Archipelago Ledger" && misc.Cell(14, 1) == "apl" && misc.Cell(14, 2) == "0" && misc.Cell(14, 3).empty()
+	// The Emblem is sold nowhere and worth nothing.
+	EXPECT(ap::randomizer::AddEmblem(misc) == 1 && ap::randomizer::AddEmblem(misc) == 0);
+	EXPECT(misc.Cell(14, 0) == "Archipelago Emblem" && misc.Cell(14, 1) == "ape" && misc.Cell(14, 2) == "0" && misc.Cell(14, 3).empty()
 	       && misc.Cell(14, 7) == "0");
 }
 

@@ -56,13 +56,20 @@ Built, pushed and installed, still to check in game:
       Blade Fury. Still to see: Impale and Blade Fury on another non-Necromancer class (only Charge's
       Necromancer failure was tested elsewhere); Lightning and Chain Lightning off the Sorceress fire without
       a cast animation (known, #119).
+- [ ] No more Archipelago Ledger (#54, rerun setup): a new character gets no Ledger. F9's Maintenance column
+      has no New Ledger button and `ap-ledger` is an unknown command. The status line still shows the total,
+      the act you're in and "n held", and **Checks Left by Act** (`ap-missing all`) still counts every act,
+      with an "Any act" line.
+- [ ] Archipelago Emblem (#54, rerun setup), tree mode: a new character gets one after its first kill or
+      **Claim Character** / `ap-claim`, with a chat line naming its class. It shows the Token of Absolution
+      picture in one cell (LoD too), and its tooltip says "marks this character as the seed's <class>" (or
+      "tells the plugin this character's class" if the tooltip's copy has no seed; note which). Save and Exit, join again: rewards and locks work at once, no kill or
+      claim needed. Put it in the shared stash: it doesn't count, and a new one arrives; drop or sell it: a
+      new one arrives too. Codex mode: no Emblem, and a rejoin still works at once from the Codex.
 - [x] Class without a kill: a new character in town gets a banner and chat line saying rewards and locks wait
-      (kill a monster or ap-claim). **Claim Character** (F9) or `ap-claim`: the skills unlock, the locks apply
-      (Town Portal scroll crumbled), and an Archipelago Ledger arrives. Save and Exit, join again: everything
-      works at once, no kill or claim needed (2026-10-13).
-- [ ] Still open from the item above: with the Ledger in the shared stash it doesn't count; a character with a
-      Ledger from before this gets it swapped for a new one (log: "swapped"). (Belt potions aren't set aside by
-      design: only inventory potions are, and the belt hotkeys are blocked instead.)
+      (kill a monster or ap-claim). **Claim Character** (F9) or `ap-claim`: the skills unlock and the locks
+      apply (Town Portal scroll crumbled) (2026-10-13). (Belt potions aren't set aside by design: only
+      inventory potions are, and the belt hotkeys are blocked instead.)
 - [x] With Merchant Access locked, an Identify scroll works outside a shop; buying stays blocked (2026-10-13).
 - [ ] Reward runes after a rejoin (#108), seed with `rune_checks` on: `ap-debug give r08` (or `/send` a Low
       Rune reward), "Find Ral Rune" isn't sent. Save and Exit, join again: still not sent, and the seed's save
@@ -273,20 +280,14 @@ Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fana
 - [ ] A Reign of the Warlock character: the other classes' trees are dealt the same way, and the Warlock's
       tree is unchanged.
 
-## 1. Tracking: Ledger and ap-missing
+## 1. Tracking: status line and ap-missing
 
 Any seed with the defaults.
 
-- [x] A new character gets an **Archipelago Ledger** next to the Codex, and the chat says to hover over it.
-- [x] The Ledger shows the Token of Absolution picture in one cell, in Lord of Destruction too (fixed
-      2026-10-12: LoD showed the previous item's 2x2 bark scroll).
-- [ ] Its tooltip shows the total (`Archipelago: n/m checks`), one line per act in the seed with
-      `done/total`, `> ` before the act you're in, and a "Not tied to an act" line.
-- [ ] Entering Cold Plains raises Normal Act I's count by one; the tooltip updates without reopening anything.
-- [ ] Stashing the Ledger doesn't make a second one. Dropping it and selling it doesn't make a new one
-      either; `ap-ledger` does.
-- [ ] `ap-missing` lists the checks left in your act by name; `ap-missing all` gives a count per act.
-- [ ] With `ap-disconnect`, the tooltip says "not connected" and `ap-missing` says it needs the server.
+- [ ] Entering Cold Plains raises the status line's Normal Act I count by one.
+- [ ] `ap-missing` lists the checks left in your act by name; `ap-missing all` gives a count per act, and an
+      "Any act" line for the ones not tied to an act.
+- [ ] With `ap-disconnect`, the status line says "not connected" and `ap-missing` says it needs the server.
 
 ## 1b. Command panel
 
@@ -295,12 +296,12 @@ Any seed, connected.
 Restart D2R after updating the plugin: the game caches panel layouts.
 
 - [ ] F9 opens the Archipelago panel with three headed columns: This Game (5 buttons), Server
-      (4 buttons), Maintenance (5 buttons), plus Close. Title, help and every button fit on screen
+      (4 buttons), Maintenance (4 buttons), plus Close. Title, help and every button fit on screen
       at the usual resolution and UI scale. F9 again, Escape and Close each close it.
 - [ ] `ap-panel` opens and closes it too; Options, Controls lists "Archipelago Commands".
 - [ ] Status, Checks Left Here, Checks Left by Act and Hints Found close the panel and answer in chat.
-      Claim Character retains its existing character-binding flow. Server Hints, Items Left and Multiworld Status show the server's reply. New Ledger and Rebuild
-      Codex work as before; Reconnect restores the saved connection.
+      Claim Character retains its existing character-binding flow. Server Hints, Items Left and Multiworld Status show the server's reply. Rebuild
+      Codex works as before; Reconnect restores the saved connection.
 - [ ] Collect, Disconnect and Relearn Skills first show a description and action button with **Cancel
       focused by default**. Cancel or Escape changes nothing. Reopen and explicitly confirm: Collect
       asks the server to collect the slot (use a disposable seed), Disconnect drops the connection,
@@ -388,7 +389,7 @@ Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: 
       press the button in Act II) on a seed where Act II is still locked: the checks show "(held)" and go out
       with the Act II Key.
 - [ ] Rewards don't count: a Random Unique from the server doesn't count toward "Find 1 Unique".
-- [ ] Side areas (#31): `ap-missing` (or the Ledger) lists five "Normal: Enter <side area>" checks. Walking
+- [ ] Side areas (#31): `ap-missing` lists five "Normal: Enter <side area>" checks. Walking
       into one of them (e.g. the Mausoleum or Cave Level 2) sends its check; a side area the seed didn't
       pick sends nothing and shows no banner.
 
@@ -425,8 +426,8 @@ Quest checks use fallbacks (boss kill, quest item, reaching an area, 20 Den kill
 Defaults (`act_keys` and `enforce_act_keys` on).
 
 - [ ] Walking into Act II without its key warps you back to the Rogue Encampment.
-- [ ] With `enforce_act_keys: false`, Act II's checks are recorded but held: the chat says so, the Ledger
-      line shows "held until their act's key arrives", and they're sent all at once after
+- [ ] With `enforce_act_keys: false`, Act II's checks are recorded but held: the chat says so, the status
+      line shows "n held", and they're sent all at once after
       `/send Snrn Normal Act II Key`.
 - [ ] In a multiworld with another D2 slot (default `act_key_window: 1`), the spoiler log has no Normal
       Act II Key in the other D2 world past its Act II, and the Options Creator lists Act Key Window
@@ -492,7 +493,7 @@ Any seed. Send each with `/send`, standing outside town for the traps.
       a second, traps 3 seconds apart), chat shows a few lines at a time and says when the rest went to the
       log, and every reward arrives in the end.
 - [ ] Rewards only go to the seed's character (#70). With a fixed-class seed (say Sorceress), load a
-      Barbarian mule while connected and `/send` a `Gold`: nothing arrives, no Codex or Ledger appears, and
+      Barbarian mule while connected and `/send` a `Gold`: nothing arrives, no Codex appears, and
       after the Barbarian's first kill the chat says it isn't this seed's Sorceress and mentions `ap-claim`.
       From then on the seed's locks (stash, cube, merchants, waypoints, potions, act keys) don't hold it.
       Leave, load the Sorceress: if she carries a Codex, the gold arrives right away; otherwise after her
@@ -542,8 +543,7 @@ a guess checked against the item before writing, so test the command first.
   Swords had already gone to the stash) crashed D2R right after "Potion Access! Your 8 set-aside potions are
   back.". The loader log has `BC_ASSERT: hRoom` and `DungeonTestRoomGame(hRoom, nX, nY)` (UnitRoom.cpp), then
   an access violation (crash report and `CrashDumps\D2RLoader.exe.39564.dmp`). Likely the ground fallback:
-  the Tome of Town Portal and 8 potions created on the ground in one go. The Ledger was in the stash at the
-  time, but neither GiveLedger nor CharacterReady makes anything in that case.
+  the Tome of Town Portal and 8 potions created on the ground in one go.
 - **Bug (2026-10-13, #110):** `runewords.txt` lists the Reign of the Warlock bank's recipes, but the two banks are
   shuffled separately (same random stream, different rows), so 91 of the 94 complete runewords differ for a
   Lord of Destruction character. Steel is Tir Tir in the list and in `excel/runes.txt`, but El Eld in
@@ -573,7 +573,7 @@ a guess checked against the item before writing, so test the command first.
 - [ ] `ap-hints` lists them; the hints show on the server (`!hint` in the text client) without costing
       hint points.
 - [ ] `/send Snrn Prophecy` gives a hint too.
-- [ ] Hints and the Ledger name superunique checks with the game's name and area, e.g. "Normal: Kill
+- [ ] Hints and `ap-missing` name superunique checks with the game's name and area, e.g. "Normal: Kill
       Bonebreaker (Crypt)"; Bonebreaker's torn page says "A torn page falls from Bonebreaker:" (#26).
 
 ## 7. DeathLink

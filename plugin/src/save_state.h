@@ -47,8 +47,6 @@ struct SaveState {
 	std::set<int> ownHints;
 	std::set<int64_t> otherHints;
 	int prophecies = 0;
-	// Whether the character got its Archipelago Ledger (ap-ledger makes another).
-	bool ledgerGiven = false;
 	// Tree mode: skills unlocked in the tree (skadd sets a level, so each only
 	// once), and skill points handed out for extra copies and Skill Points.
 	std::set<uint32_t> unlockedSkills;
