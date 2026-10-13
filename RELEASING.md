@@ -22,7 +22,7 @@ checkout you release from (publish checks this), Visual Studio Build Tools for t
 1. **Start from master.** All the release's PRs are merged; `git switch master` and `git pull`, tree clean.
 2. **Bump.** `python -I tools/release.py bump x.y.z` sets both versions and adds a `## x.y.z - YYYY-MM-DD`
    section to `CHANGELOG.md`, drafted from the commits since the last tag, each ending in the issues its PR
-   closed.
+   closed. It stages `CHANGELOG.md`, so a new one gets committed too.
 3. **Write the changelog.** Rewrite the draft for players: what they'll notice, in plain words, one line each,
    ending in `(#<issue>)`. Drop internal work (docs, tests, refactors). Delete the `<!-- draft ... -->` line;
    publish won't go on while it's there. `python -I tools/release.py notes` shows the section as it will

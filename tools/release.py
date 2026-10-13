@@ -111,6 +111,7 @@ def bump(version: str) -> None:
         text = "# Changelog\n\nWhat changed for players in each release. The numbers are GitHub issues.\n\n" + body + "\n"
     CHANGELOG.write_text(text, encoding="utf-8")
     print(f"{old} -> {version}; drafted {len(lines)} changelog lines in CHANGELOG.md since {tag or 'the first commit'}.")
+    git("add", str(CHANGELOG))
     print(f'Edit them, then: git commit -am "Release {version}" and tools/release.py publish <archipelago-folder>.')
 
 
@@ -160,7 +161,9 @@ def publish(archipelago: Path) -> None:
             sys.exit(f"{file} wasn't built.")
 
     git("tag", "-a", tag, "-m", f"Release {version}")
-    subprocess.run(["git", "push", "--atomic", "origin", "master", tag], cwd=ROOT, check=True)
+    if subprocess.run(["git", "push", "--atomic", "origin", "master", tag], cwd=ROOT).returncode != 0:
+        git("tag", "-d", tag)
+        sys.exit(f"The push failed, so {tag} was removed again. Rebase the release commit onto origin/master and rerun publish.")
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as notes_file:
         notes_file.write(text + "\n")
     try:
