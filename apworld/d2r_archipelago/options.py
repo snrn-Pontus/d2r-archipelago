@@ -211,6 +211,19 @@ class EnforceActKeys(DefaultOnToggle):
     display_name = "Enforce Act Keys"
 
 
+class ActKeyWindow(Range):
+    """How far into a Diablo II world (another player's or yours) each of your act keys can land, counted
+    from the act it unlocks. The key for your Act N may only be at their Act N - 1 + this or earlier, so
+    with 1 your Normal Act II Key is somewhere in their Normal Act I or II, and a Nightmare key can sit
+    in their Normal Act V. 0 keeps every key in an act before the one it opens. 4 (anywhere) turns the
+    limit off. Keys going to other games can still be anywhere."""
+    display_name = "Act Key Window"
+    range_start = 0
+    range_end = 4
+    default = 1
+    special_range_names = {"anywhere": 4}
+
+
 class CubeLock(Toggle):
     """The Horadric Cube won't open until you find Horadric Cube Access. You need it for the Horadric
     Staff and Khalim's Will, so logic expects it before Duriel."""
@@ -585,6 +598,7 @@ class D2ROptions(PerGameCommonOptions):
     kill_count_checks: KillCountChecks
     find_count_checks: FindCountChecks
     enforce_act_keys: EnforceActKeys
+    act_key_window: ActKeyWindow
     cube_lock: CubeLock
     town_portal_lock: TownPortalLock
     potion_lock: PotionLock
@@ -635,7 +649,7 @@ class D2ROptions(PerGameCommonOptions):
 
 # Sections for the Options Creator, the options web page and the template YAML.
 OPTION_GROUPS = [
-    OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, SkillsPerAct]),
+    OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, ActKeyWindow, SkillsPerAct]),
     OptionGroup("Skills and Codex", [CharacterClass, SkillMode, SkillTreeShuffle, SkillPoints, SkillPoolSize, SkillCopies, SkillFocus, ScaleWithLength, StartingSkills,
                                      SkillClasses, IncludeWarlock, SkillLevelScaling, SkillScalingCap, CodexEmpowerments]),
     OptionGroup("Checks", [AreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, CowLevelChecks]),

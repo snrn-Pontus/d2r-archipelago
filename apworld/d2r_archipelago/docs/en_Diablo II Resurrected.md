@@ -78,6 +78,12 @@ you complete there (and the superuniques you kill) are only recorded; they're se
 count toward the act they're spread over (level 30 toward Act IV on a Normal goal), and are held the same way. The defaults (Normal to Diablo, with a little more experience and loot) aim at a 4 to 6 hour
 game.
 
+When several players play Diablo II, `act_key_window` (1 by default) keeps your keys from sitting deep in
+their games: the key for your Act N only lands in their Act N - 1 + the window or earlier, counting
+difficulties too (a Nightmare Act I key can be in their Normal Act V). With 1, your Normal Act II Key is in
+their Act I or II, so nobody waits on someone else's Act V. 0 keeps every key in an earlier act, and
+`anywhere` turns the limit off. Keys in other games can still be anywhere.
+
 ## Hints you find in the game
 
 Besides the hints you buy with hint points, the game hands some out:

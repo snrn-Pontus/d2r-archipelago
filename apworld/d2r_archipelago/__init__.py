@@ -3,7 +3,7 @@ from typing import Any, ClassVar
 from BaseClasses import Item, ItemClassification, Location, LocationProgressType, Region, Tutorial
 from settings import Group, OptionalUserFolderPath
 from worlds.AutoWorld import WebWorld, World
-from worlds.generic.Rules import add_rule
+from worlds.generic.Rules import add_item_rule, add_rule
 
 from . import client  # noqa: F401  (adds the Launcher button)
 from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SKILL_SLOTS, SKILLS, SPECIAL_ITEMS,
@@ -22,6 +22,8 @@ BOSS_UNIQUE = "Random Unique"
 # Quest flags of the act boss kills: Andariel, Duriel, Mephisto, Diablo, Baal.
 BOSS_QUESTS = (6, 14, 22, 26, 40)
 BOSS_NAMES = ("Andariel", "Duriel", "Mephisto", "Diablo", "Baal")
+# Act key name -> index of the act it unlocks (difficulty * 5 + act).
+KEY_ACTS = {name: index for index, name in enumerate(KEY_NAMES, 1)}
 USEFUL_LOOT = {BOSS_UNIQUE, *UNIQUE_LOOT, "Random Set Item", "High Rune", EMPOWERMENT, SKILL_POINT}
 # With the Cube Lock, these need the Horadric Cube (the Horadric Staff and Khalim's Will), on every difficulty.
 CUBE_QUESTS = ("The Horadric Staff", "The Seven Tombs", "Khalim's Will", "The Blackened Temple", "The Guardian")
@@ -53,6 +55,7 @@ class D2RItem(Item):
 
 class D2RLocation(Location):
     game = GAME
+    act_index = 0
 
 
 class D2RWeb(WebWorld):
@@ -114,6 +117,18 @@ class D2RWorld(World):
                                                     or self.options.include_warlock])
         self.skill_tree = deal_skill_trees(self.random) if self.options.skill_tree_shuffle else {}
 
+    def key_fits(self, item: Item, act_index: int) -> bool:
+        """Act Key Window: whether a D2 act key may sit at a location in act `act_index` of this world, by the
+        window of the player whose key it is. An item-linked key goes to every linked player, so the
+        tightest of their windows counts."""
+        if item.game != GAME or item.name not in KEY_ACTS:
+            return True
+        group = self.multiworld.groups.get(item.player)
+        owners = group["players"] if group else (item.player,)
+        windows = [self.multiworld.worlds[owner].options.act_key_window for owner in owners]
+        window = min(option.value for option in windows)
+        return window == windows[0].range_end or act_index <= KEY_ACTS[item.name] - 1 + window
+
     def act_region_name(self, index: int) -> str:
         return f"{DIFFICULTIES[index // len(ACTS)]} {ACTS[index % len(ACTS)]}"
 
@@ -145,6 +160,8 @@ class D2RWorld(World):
 
         def add(region: Region, name: str, filler_only: bool = False) -> None:
             location = D2RLocation(self.player, name, location_name_to_id[name], region)
+            location.act_index = acts.index(region)
+            add_item_rule(location, lambda item, act_index=location.act_index: self.key_fits(item, act_index))
             if filler_only:
                 location.progress_type = LocationProgressType.EXCLUDED
             region.locations.append(location)
