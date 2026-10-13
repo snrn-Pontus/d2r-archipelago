@@ -462,3 +462,20 @@ class TestTreeShuffleUsable(D2RTestBase):
             dealt = deal_skill_trees(random.Random(seed))
             for skill, slot in dealt.items():
                 self.assertTrue(can_use(skill, slot_class[slot]), f"seed {seed}: {skill} in {slot_class[slot]}'s tree")
+
+
+class TestDruidFullStart(D2RTestBase):
+    options = {"character_class": "druid", "skill_classes": ["Druid"], "skill_focus": "any_skills", "skill_pool_size": 30,
+               "skill_copies": 1, "starting_skills": 10}
+
+    def test_starting_attacks_swap_instead_of_vanishing(self) -> None:
+        from ..data import SKILL_FORMS, SKILLS
+        from ..ids import skill_item_name
+        id_of = {skill_item_name(sid, name, cls): sid for sid, name, cls in SKILLS}
+        for seed in range(20):
+            self.world_setup(seed)
+            self.assertEqual(len(self.world.starting), 10, f"seed {seed}")
+            starting = {id_of[name] for name in self.world.starting}
+            for skill in starting:
+                if skill in SKILL_FORMS:
+                    self.assertTrue(starting & set(SKILL_FORMS[skill]), f"seed {seed}: starting {skill} without a starting form")

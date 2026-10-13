@@ -390,20 +390,37 @@ class D2RWorld(World):
 
     def drop_formless_attacks(self, candidates: list[str]) -> None:
         """Wolf and bear attacks (Feral Rage, Maul...) only work in their form, so they only go in when the
-        skills hold a form they can use, and a starting attack only with a starting form. Otherwise another
+        skills hold a form they can use, and a starting attack only with a starting form. A starting attack
+        without one trades places with its form or another pool skill; otherwise, and in the pool, another
         skill takes the attack's place."""
         id_of = {skill_item_name(sid, name, cls): sid for sid, name, cls in SKILLS}
         held = self.starting + self.skill_pool
         spare = [name for name in candidates if name not in held and id_of[name] not in SKILL_FORMS]
         self.random.shuffle(spare)
-        for skills, forms_from in ((self.starting, self.starting), (self.skill_pool, self.starting + self.skill_pool)):
-            for name in list(skills):
-                need = SKILL_FORMS.get(id_of[name])
-                if need and not {id_of[form] for form in forms_from} & set(need):
-                    if spare:
-                        skills[skills.index(name)] = spare.pop()
-                    else:
-                        skills.remove(name)
+
+        def formless(name: str, forms_from: list[str]) -> bool:
+            need = SKILL_FORMS.get(id_of[name])
+            return bool(need) and not {id_of[form] for form in forms_from} & set(need)
+
+        for name in list(self.starting):
+            if not formless(name, self.starting):
+                continue
+            index = self.starting.index(name)
+            forms = [held for held in self.skill_pool if id_of[held] in SKILL_FORMS[id_of[name]]]
+            others = [held for held in self.skill_pool if id_of[held] not in SKILL_FORMS]
+            swap = forms[0] if forms else None if spare else self.random.choice(others) if others else None
+            if swap:
+                self.starting[index], self.skill_pool[self.skill_pool.index(swap)] = swap, name
+            elif spare:
+                self.starting[index] = spare.pop()
+            else:
+                self.starting.remove(name)
+        for name in list(self.skill_pool):
+            if formless(name, self.starting + self.skill_pool):
+                if spare:
+                    self.skill_pool[self.skill_pool.index(name)] = spare.pop()
+                else:
+                    self.skill_pool.remove(name)
 
     def tree_skills(self) -> list[str]:
         """The skills in the class's tree (after the tree shuffle), as item names."""
