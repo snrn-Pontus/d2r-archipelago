@@ -383,7 +383,17 @@ on `death_link: true` in both.
 
 These need a character that has beaten Baal, so test them during a real run.
 
-### Experimental repairs with Merchant Lock (#5)
+- [ ] Secret Cow Level (on difficulties before the goal): entering it, The Cow King, and 100 cows each send
+      a check.
+- [ ] With `merchant_lock`: the cow portal needs a Tome of Town Portal, so logic now waits for Merchant
+      Access. Check whether a tome ever drops or can be had without a merchant (new characters only have
+      a scroll); if it can't, the rule is right.
+- [ ] Quest checks that only use fallbacks: Radament (Book of Skill), the Golden Bird, Lam Esen's Tome,
+      rescuing Anya, Prison of Ice, Siege on Harrogath.
+- [ ] Hell goal: Pandemonium keys, organs, essences, the Torch and Annihilus; the uber kills.
+- [ ] The goal: killing the goal boss sends it, and only once its act's key is in.
+
+## 10. Experimental repairs with Merchant Lock (#5)
 
 This prototype keeps the stock vendor panel blocked and routes only D2R's native
 `VendorPanelMessage:RepairAll` from a separate modal. Whether the native handler
@@ -418,13 +428,3 @@ log lines. If gear stays damaged, record `native RepairAll dispatch result` and
 the UI messages around the NPC interaction. Keep the feature off until this
 closed-panel route is proven; opening the shop as a fallback would defeat the
 lock. A loader API for native NPC repair/context would be the next approach.
-
-- [ ] Secret Cow Level (on difficulties before the goal): entering it, The Cow King, and 100 cows each send
-      a check.
-- [ ] With `merchant_lock`: the cow portal needs a Tome of Town Portal, so logic now waits for Merchant
-      Access. Check whether a tome ever drops or can be had without a merchant (new characters only have
-      a scroll); if it can't, the rule is right.
-- [ ] Quest checks that only use fallbacks: Radament (Book of Skill), the Golden Bird, Lam Esen's Tome,
-      rescuing Anya, Prison of Ice, Siege on Harrogath.
-- [ ] Hell goal: Pandemonium keys, organs, essences, the Torch and Annihilus; the uber kills.
-- [ ] The goal: killing the goal boss sends it, and only once its act's key is in.

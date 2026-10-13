@@ -2321,7 +2321,8 @@ auto LockedPanel(std::string panel) -> std::string {
 auto RepairEligible() -> bool {
 	// gMutex is held by the caller.
 	return gConfig.repairOnly && gInGame && !gPlayerDead && IsTown(gCurrentLevel)
-		&& gBoundSession != 0 && gLocks.merchants && gWidgets != nullptr && gPanels != nullptr
+		&& gBoundSession != 0 && gClient != nullptr && gClient->State() == ap::ConnectionState::Connected
+		&& gClient->SessionGeneration() == gBoundSession && gLocks.merchants && gWidgets != nullptr && gPanels != nullptr
 		&& gRepairPanel != D2RL::Panels::InvalidHandle;
 }
 
