@@ -140,7 +140,8 @@ Everything else arrives in your inventory, rolled when you receive it and scaled
 - **Random Unique** (weapon, armor or jewelry) and **Random Set Item**: one your level can use, so you won't
   find a Windforce at level 3. The act boss quests always give a Random Unique (`boss_quests_give_uniques`).
 - **Runes** in three tiers. High runes run from Pul to Zod, and the higher the rune, the rarer it is.
-- **Socketed Base**: a white weapon or armor with three or more sockets, ready for a runeword.
+- **Socketed Base**: a white weapon or armor with two or more sockets, ready for a runeword.
+  Each socket count from two through that base's legal maximum is equally likely.
 - **Codex Empowerment**: +1 to every skill in your Codex.
 - Potions and perfect gems.
 - **Gold** (1,000 per character level), **Experience** (15% of your current level) and **Random Charms**
