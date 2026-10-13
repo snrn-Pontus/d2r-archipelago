@@ -162,6 +162,39 @@ void TestConfigDefaults() {
 	EXPECT(parsed.codexPrefix == ap::data::CodexPrefix);
 }
 
+void TestConfigNumericIds() {
+	const ap::Config defaults;
+	const std::vector<std::pair<std::string, uint32_t ap::Config::*>> settings {
+		{ "codex_unique", &ap::Config::codexUnique },
+		{ "codex_prefix", &ap::Config::codexPrefix },
+		{ "oskill_property", &ap::Config::oskillProperty },
+	};
+	for (const auto& [key, field] : settings) {
+		for (const std::string value : { "abc", "-1", "", "\"\"", "4294967296", "99999999999999999999", "12oops", "1.5", "0x10" }) {
+			std::vector<std::string> warnings;
+			const auto parsed = ap::ParseConfig("# header\n[archipelago]\n" + key + " = " + value + "\nslot = \"Still parsed\"\n", &warnings);
+			EXPECT(parsed.*field == defaults.*field);
+			EXPECT(parsed.slot == "Still parsed");
+			EXPECT(warnings.size() == 1);
+			if (!warnings.empty()) {
+				EXPECT(warnings[0].find(key) != std::string::npos);
+				EXPECT(warnings[0].find("line 3") != std::string::npos);
+				EXPECT(warnings[0].find("keeping " + std::to_string(defaults.*field)) != std::string::npos);
+			}
+			// Callers that don't request diagnostics must also be safe.
+			EXPECT(ap::ParseConfig(key + " = " + value).*field == defaults.*field);
+		}
+		for (const auto& [value, expected] : std::vector<std::pair<std::string, uint32_t>> {
+			{ "0", 0 }, { "123", 123 }, { "4294967295", UINT32_MAX }, { " 265 # oskill", 265 }, { "\"500\"", 500 },
+		}) {
+			std::vector<std::string> warnings;
+			EXPECT(ap::ParseConfig(key + " = " + value, &warnings).*field == expected);
+			EXPECT(warnings.empty());
+		}
+		EXPECT(ap::ParseConfig(key + " = 123\n" + key + " = bad\n").*field == 123);
+	}
+}
+
 void TestLoaderSettings() {
 	const std::string text = ap::FormatLoaderSettings({
 		{ "d2rcore.items.show_ground_sockets", "true" },
@@ -900,6 +933,7 @@ int main() {
 	TestClientDeathLink();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
+	TestConfigNumericIds();
 	TestLoaderSettings();
 	TestScaleWav();
 	TestSaveStateRoundTrip();

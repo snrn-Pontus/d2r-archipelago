@@ -3871,7 +3871,11 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		context->LogWarn("Archipelago: no item interaction service; the Town Portal and Potion locks won't work, and quest items used at once may be missed.");
 	}
 	RegisterPanels(context);
-	gConfig = ap::ParseConfig(ConfigText());
+	std::vector<std::string> configWarnings;
+	gConfig = ap::ParseConfig(ConfigText(), &configWarnings);
+	for (const auto& warning : configWarnings) {
+		context->LogWarn(warning.c_str());
+	}
 	ap::notify::SetSounds((GameDirectory() / ap::sounds::Folder).wstring(), gConfig.bannerSounds, gConfig.bannerVolume);
 	gClient = std::make_unique<ap::Client>(Log);
 

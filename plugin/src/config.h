@@ -42,8 +42,9 @@ struct Config {
 };
 
 // Reads the flat `key = value` lines of the plugin's TOML file. Tables are
-// ignored, so every key must be unique.
-auto ParseConfig(const std::string& text) -> Config;
+// ignored, so every key must be unique. Invalid numeric IDs keep their default
+// (or previous valid value); optional warnings identify the setting and line.
+auto ParseConfig(const std::string& text, std::vector<std::string>* warnings = nullptr) -> Config;
 auto FormatConfig(const Config& config) -> std::string;
 
 // The mod's d2rloader.toml: D2RLoader settings the mod overrides, from

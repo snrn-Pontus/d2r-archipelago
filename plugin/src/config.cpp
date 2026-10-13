@@ -45,11 +45,13 @@ auto Quote(const std::string& text) -> std::string {
 
 } // namespace
 
-auto ParseConfig(const std::string& text) -> Config {
+auto ParseConfig(const std::string& text, std::vector<std::string>* warnings) -> Config {
 	Config config;
 	std::istringstream lines(text);
 	std::string line;
+	size_t lineNumber = 0;
 	while (std::getline(lines, line)) {
+		++lineNumber;
 		const std::string trimmed = Trim(line);
 		const auto equals = trimmed.find('=');
 		if (trimmed.empty() || trimmed.front() == '#' || trimmed.front() == '[' || equals == std::string::npos) {
@@ -84,12 +86,20 @@ auto ParseConfig(const std::string& text) -> Config {
 			config.statusPosition = value;
 		} else if (key == "codex_item" && !value.empty()) {
 			config.codexItem = value;
-		} else if (key == "codex_unique" && !value.empty()) {
-			config.codexUnique = static_cast<uint32_t>(std::stoul(value));
-		} else if (key == "codex_prefix" && !value.empty()) {
-			config.codexPrefix = static_cast<uint32_t>(std::stoul(value));
-		} else if (key == "oskill_property" && !value.empty()) {
-			config.oskillProperty = static_cast<uint32_t>(std::stoul(value));
+		} else if (key == "codex_unique" || key == "codex_prefix" || key == "oskill_property") {
+			// Parse directly into the destination type to reject overflow as well
+			// as negative IDs and trailing junk, without throwing at plugin load.
+			uint32_t id = 0;
+			const char* last = value.data() + value.size();
+			const auto [end, error] = std::from_chars(value.data(), last, id);
+			uint32_t& setting = key == "codex_unique" ? config.codexUnique
+			    : key == "codex_prefix" ? config.codexPrefix : config.oskillProperty;
+			if (error == std::errc {} && end == last) {
+				setting = id;
+			} else if (warnings != nullptr) {
+				warnings->push_back("Archipelago: invalid " + key + " on config line " + std::to_string(lineNumber)
+				    + "; expected an unsigned 32-bit integer, keeping " + std::to_string(setting) + ".");
+			}
 		}
 	}
 	return config;
