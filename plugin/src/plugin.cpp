@@ -855,23 +855,51 @@ auto CreateIn(D2RL::PlayerHandle player, const ap::loot::Pick& pick, uint32_t re
 }
 
 // Puts a loot item in the inventory, falling back to the cube, stash and
-// ground. If D2R rejects a forced unique or set record, it retries with any
-// record that fits the base. Returns false only when nothing could be placed.
-// owner, when set, is the sender's name for a unique or set item.
+// ground. A locked cube or stash is skipped, so the item can't be stored where
+// the player can't reach it. If D2R rejects a forced unique or set record, it
+// retries with any record that fits the base. Returns false only when nothing
+// could be placed. owner, when set, is the sender's name for a unique or set item.
 bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::string& owner = {}) {
+	bool cubeLocked = false, stashLocked = false;
+	{
+		std::lock_guard lock(gMutex);
+		cubeLocked = gLocks.cube;
+		stashLocked = gLocks.stash;
+	}
 	std::vector<uint32_t> records;
 	if (pick.quality == D2RL::Items::Quality::Unique) {
 		records = UniqueRecords(pick.name);
 	} else if (pick.quality == D2RL::Items::Quality::Set) {
 		records = SetRecords(pick.name);
 	}
+	// Logged with each placement, so the log shows a locked cube or stash was passed over.
+	std::string skipped;
+	if (cubeLocked) {
+		skipped += ", cube locked";
+	}
+	if (stashLocked) {
+		skipped += ", stash locked";
+	}
+	const auto placedIn = [&](D2RL::Items::ItemContainer container) {
+		using enum D2RL::Items::ItemContainer;
+		const char* name = container == Inventory ? "inventory"
+		                   : container == Cube    ? "cube"
+		                   : container == PersonalStash ? "stash"
+		                   : container == Ground  ? "ground"
+		                                          : "cursor";
+		Log("Archipelago: placed " + pick.name + " in the " + name + (skipped.empty() ? std::string {} : " (" + skipped.substr(2) + ")") + ".");
+	};
 	std::string results;
 	for (const auto container : { D2RL::Items::ItemContainer::Inventory, D2RL::Items::ItemContainer::Cube, D2RL::Items::ItemContainer::PersonalStash,
 		     D2RL::Items::ItemContainer::Ground, D2RL::Items::ItemContainer::Cursor }) {
+		if ((container == D2RL::Items::ItemContainer::Cube && cubeLocked) || (container == D2RL::Items::ItemContainer::PersonalStash && stashLocked)) {
+			continue;
+		}
 		auto result = D2RL::Items::Result::NotFound;
 		for (const uint32_t record : records) {
 			result = CreateIn(player, pick, record, container, owner);
 			if (result == D2RL::Items::Result::Success) {
+				placedIn(container);
 				return true;
 			}
 		}
@@ -881,6 +909,7 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 			result = CreateIn(player, pick, D2RL::Items::RandomQualityRecord, container, owner);
 		}
 		if (result == D2RL::Items::Result::Success) {
+			placedIn(container);
 			if (container == D2RL::Items::ItemContainer::Ground || container == D2RL::Items::ItemContainer::Cursor) {
 				Feed("Archipelago: your bags are full, so " + pick.name + (container == D2RL::Items::ItemContainer::Ground ? " dropped at your feet." : " is in your hand."));
 			}
@@ -888,7 +917,7 @@ bool GiveLoot(D2RL::PlayerHandle player, const ap::loot::Pick& pick, const std::
 		}
 		results += " " + std::to_string(static_cast<uint32_t>(container)) + "=" + std::to_string(static_cast<uint32_t>(result));
 	}
-	Log("Archipelago: no room for " + pick.name + " (container=result:" + results + ").");
+	Log("Archipelago: no room for " + pick.name + " (container=result:" + results + skipped + ").");
 	return false;
 }
 
@@ -1752,7 +1781,12 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 	if (roomFull && Clock::now() - gLastRoomWarning > std::chrono::seconds(30)) {
 		gLastRoomWarning = Clock::now();
-		gConsoleQueue.push_back("Archipelago: rewards are waiting; make room in your inventory, cube or stash.");
+		// Only the containers rewards can go to: a locked cube or stash is skipped.
+		const std::string rooms = gLocks.cube && gLocks.stash ? "inventory"
+		                          : gLocks.cube               ? "inventory or stash"
+		                          : gLocks.stash              ? "inventory or cube"
+		                                                      : "inventory, cube or stash";
+		gConsoleQueue.push_back("Archipelago: rewards are waiting; make room in your " + rooms + ".");
 	}
 }
 
@@ -1927,6 +1961,22 @@ auto LockedPanel(std::string panel) -> std::string {
 	return {};
 }
 
+auto MouseButtonDown(int button) -> bool {
+	return (GetKeyState(button) & 0x8000) != 0;
+}
+
+// D2RLoader also reports Shift- and Ctrl-left-clicks, which move an item (to the
+// belt, stash or Cube) rather than use it. The event doesn't say which button was
+// pressed, so only a held left button counts; Shift- or Ctrl-right-click still
+// uses the item. Shift on a belt potion feeds the mercenary, which is a use too.
+auto IsItemMove(const D2RL::ItemInteractions::ItemInteractionEvent& event) -> bool {
+	using D2RL::ItemInteractions::Modifier;
+	const uint32_t move = D2RL::ItemInteractions::ModifierBit(Modifier::Control)
+		| (event.container == D2RL::Items::ItemContainer::Belt ? 0U : D2RL::ItemInteractions::ModifierBit(Modifier::Shift));
+	return event.inputSource == D2RL::ItemInteractions::InputSource::KeyboardMouse && (event.modifiers & move) != 0
+		&& MouseButtonDown(VK_LBUTTON) && !MouseButtonDown(VK_RBUTTON);
+}
+
 // Blocks reading Town Portal scrolls and tomes, and drinking potions, while locked.
 // Also records quest items used at once (the Book of Skill, Horadric Scroll, Potion
 // of Life and Scroll of Resistance), which are gone before the next item scan.
@@ -1956,7 +2006,12 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 	{
 		std::string code(4, ' ');
 		std::memcpy(code.data(), &info.code, 4);
-		Log("Archipelago: activated \"" + code + "\" (container " + std::to_string(static_cast<uint32_t>(event->container)) + ").");
+		Log("Archipelago: activated \"" + code + "\" (container " + std::to_string(static_cast<uint32_t>(event->container)) + ", input "
+			+ std::to_string(static_cast<uint32_t>(event->inputSource)) + ", modifiers " + std::to_string(event->modifiers) + ", buttons " + (MouseButtonDown(VK_LBUTTON) ? "L" : "")
+			+ (MouseButtonDown(VK_RBUTTON) ? "R" : "") + ").");
+	}
+	if (IsItemMove(*event)) {
+		return Decision::Continue;
 	}
 	if (questItems && !IsReward(info)) {
 		if (const auto check = QuestItemCheck(info.code, difficulty)) {
@@ -2321,7 +2376,9 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		if (chance > 0 && IsNewCheck(location) && static_cast<int>(HintRandom()() % 100) < chance) {
 			std::string name = "the superunique";
 			for (const auto& entry : ap::data::SuperUniques) {
-				name = entry.id == kill % 100 ? entry.name : name;
+				// The label is the name the game shows, then the area in brackets.
+				const std::string_view label = entry.label;
+				name = entry.id == kill % 100 ? std::string(label.substr(0, label.find(" ("))) : name;
 			}
 			std::lock_guard lock(gMutex);
 			gHintQueue.push_back("A torn page falls from " + name + ":");
@@ -3424,7 +3481,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	}
 	RegisterPanels(context);
 	gConfig = ap::ParseConfig(ConfigText());
-	ap::notify::SetSounds((GameDirectory() / ap::sounds::Folder).wstring(), gConfig.bannerSounds);
+	ap::notify::SetSounds((GameDirectory() / ap::sounds::Folder).wstring(), gConfig.bannerSounds, gConfig.bannerVolume);
 	gClient = std::make_unique<ap::Client>(Log);
 
 	using Kind = D2RL::Lifecycle::GameplayEventKind;
@@ -3490,5 +3547,6 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 }
 
 D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
+	ap::notify::StopSounds();
 	gClient.reset();
 }

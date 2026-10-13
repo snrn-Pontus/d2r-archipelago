@@ -39,6 +39,8 @@ Built, pushed and installed, still to check in game:
 - [ ] `ap-relearn` (tree mode): with all skills unlocked it says so; after a respec at Akara it lists the
       lost skills and asks for `ap-relearn confirm`, which gives each one level back; running `confirm`
       again changes nothing.
+- [ ] Shuffled superuniques are visible now (they had no HD model): after rerunning setup, Rakanishu in
+      Stony Field and his minions show their new monster's model (section 8).
 
 Ideas, not started:
 
@@ -158,6 +160,8 @@ config turns them off.
 - [x] Sounds (converted from the game's own by d2r-ap-setup into `d2rloader\archipelago\sounds`; `--sounds`
       writes only those): gold banners play the quest-done chime, red the hostile warning, white the gem
       sound; checks are silent. `banner_sounds = false` turns them off.
+- [ ] `banner_volume` (percent, default 10, up to 200 for the game's own loudness, 0 silent) changes how
+      loud the banner sounds play, after a restart.
 - [x] Status line, top-left by default: "Archipelago done/total - <act> done/total", with "n held" when
       checks wait for a key; it updates within a second of a check. `status_line = false` hides it and
       `status_position` moves it (top-left, top, top-right, bottom-left, bottom-right).
@@ -200,6 +204,9 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 - [ ] With `enforce_act_keys: false`, Act II's checks are recorded but held: the chat says so, the Ledger
       line shows "held until their act's key arrives", and they're sent all at once after
       `/send Snrn Normal Act II Key`.
+- [ ] In a multiworld with another D2 slot (default `act_key_window: 1`), the spoiler log has no Normal
+      Act II Key in the other D2 world past its Act II, and the Options Creator lists Act Key Window
+      under Goal and Length.
 
 ## 4. Locks
 
@@ -212,6 +219,15 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 - [x] Potions stay locked from the belt hotkeys too.
 - [x] D2RLoader doesn't report drinking from the inventory (only the belt), so within 5 seconds potions
       in the inventory are set aside, with a chat message (confirmed 2026-10-12).
+- [ ] Locked items aren't blocked when moved with Ctrl+click (to the stash or Cube) or Shift+click (a
+      potion to the belt), and Ctrl+clicking the Horadric Scroll into the stash doesn't send its check (#17).
+      Right-clicking still blocks, with or without Shift or Ctrl, and so does Shift+right-clicking a belt potion (feeding the mercenary).
+      Each "activated" log line now lists the input (1 mouse, 2 controller), modifiers (1 Shift, 2 Ctrl,
+      4 Alt) and the mouse buttons held (L, R). A move only passes if the left button shows as held, so if
+      Ctrl+click moves are still blocked with an empty "buttons", the event fires on release; report it, as
+      well as any plain left click or controller pickup that gets logged.
+- [ ] D2RLoader 1.3.1-beta logs inventory activations (container 4) for potions now: if a plain right click
+      on an inventory potion is logged, the set-aside on pickup could go.
 - [ ] Potion Access gives the set-aside potions back (to the ground if the inventory is full).
 - [x] Town Portal: D2RLoader doesn't report scroll use, so within 5 seconds every scroll and tome on the
       character crumbles, with a chat message (the starting scroll too).
@@ -272,6 +288,8 @@ a guess checked against the item before writing, so test the command first.
 - [ ] `ap-hints` lists them; the hints show on the server (`!hint` in the text client) without costing
       hint points.
 - [ ] `/send Snrn Prophecy` gives a hint too.
+- [ ] Hints and the Ledger name superunique checks with the game's name and area, e.g. "Normal: Kill
+      Bonebreaker (Crypt)"; Bonebreaker's torn page says "A torn page falls from Bonebreaker:" (#26).
 
 ## 7. DeathLink
 
@@ -293,6 +311,8 @@ on `death_link: true` in both.
       Normal).
 - [ ] Bishibosh is a different monster but still sends his check. (2026-10-12: he was a Flayer shaman, as
       the seed said; the check is still to confirm.)
+- [ ] With `superunique_checks` on too, the shuffled superuniques (Rakanishu in Stony Field) are visible,
+      with their new monster's model, and their minions are too.
 - [ ] `mods\Archipelago\runewords.txt` lists new recipes, and one made from low runes works in game.
 - [ ] More monsters, and faster levelling than usual.
 

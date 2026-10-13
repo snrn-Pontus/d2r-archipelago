@@ -12,6 +12,7 @@
 #include "randomizer.h"
 #include "table.h"
 #include "save_state.h"
+#include "sounds.h"
 #include "sprite.h"
 
 #include <nlohmann/json.hpp>
@@ -130,6 +131,17 @@ void TestConfigRoundTrip() {
 	EXPECT(ap::ParseConfig("").bannerSounds);
 	config.bannerSounds = false;
 	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).bannerSounds);
+	EXPECT(ap::ParseConfig("").bannerVolume == 10);
+	config.bannerVolume = 40;
+	EXPECT(ap::ParseConfig(ap::FormatConfig(config)).bannerVolume == 40);
+	EXPECT(ap::ParseConfig("banner_volume = 500").bannerVolume == 200);
+	EXPECT(ap::ParseConfig("banner_volume = -5").bannerVolume == 0);
+	EXPECT(ap::ParseConfig("banner_volume = 999999999999").bannerVolume == 200);
+	EXPECT(ap::ParseConfig("banner_volume = 99999999999999999999").bannerVolume == 10);
+	EXPECT(ap::ParseConfig("banner_volume = loud").bannerVolume == 10);
+	EXPECT(ap::ParseConfig("banner_volume = 50oops").bannerVolume == 10);
+	EXPECT(ap::ParseConfig("banner_volume = 0.5").bannerVolume == 10);
+	EXPECT(ap::ParseConfig("banner_volume = 60 # quieter").bannerVolume == 60);
 	config.notifications = false;
 	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).notifications);
 	EXPECT(parsed.server == config.server);
@@ -148,6 +160,55 @@ void TestConfigDefaults() {
 	EXPECT(parsed.oskillProperty == 265);
 	EXPECT(parsed.codexUnique == ap::data::CodexUnique);
 	EXPECT(parsed.codexPrefix == ap::data::CodexPrefix);
+}
+
+void TestScaleWav() {
+	// A 16-bit mono WAV with an odd-sized chunk before the samples.
+	const auto u16 = [](std::string& out, uint16_t value) { out.append(reinterpret_cast<const char*>(&value), 2); };
+	const auto u32 = [](std::string& out, uint32_t value) { out.append(reinterpret_cast<const char*>(&value), 4); };
+	const int16_t samples[] = { 1000, -1000, 30000, -30000 };
+	std::string wav = "RIFF";
+	u32(wav, 0);
+	wav += "WAVEfmt ";
+	u32(wav, 16);
+	u16(wav, 1);
+	u16(wav, 1);
+	u32(wav, 44100);
+	u32(wav, 88200);
+	u16(wav, 2);
+	u16(wav, 16);
+	wav += "LIST";
+	u32(wav, 3);
+	wav += std::string("abc\0", 4);
+	wav += "data";
+	u32(wav, sizeof(samples));
+	wav.append(reinterpret_cast<const char*>(samples), sizeof(samples));
+	std::string scaled = wav;
+	EXPECT(ap::sounds::ScaleWav(scaled, 150));
+	int16_t out[4] = {};
+	std::memcpy(out, scaled.data() + scaled.size() - sizeof(out), sizeof(out));
+	EXPECT(out[0] == 1500 && out[1] == -1500 && out[2] == 32767 && out[3] == -32768);
+	EXPECT(scaled.compare(0, scaled.size() - sizeof(out), wav, 0, wav.size() - sizeof(out)) == 0);
+	std::string notWav = "not a wav file";
+	EXPECT(!ap::sounds::ScaleWav(notWav, 50) && notWav == "not a wav file");
+	std::string bits8 = wav;
+	bits8[34] = 8; // bits per sample
+	EXPECT(!ap::sounds::ScaleWav(bits8, 50));
+	// The same samples under a WAVE_FORMAT_EXTENSIBLE header, as Media Foundation may write.
+	std::string extensible = wav.substr(0, 16);
+	u32(extensible, 40);
+	u16(extensible, 0xFFFE);
+	extensible += wav.substr(22, 14); // channels through bits per sample
+	u16(extensible, 22);              // extra bytes
+	u16(extensible, 16);              // valid bits
+	u32(extensible, 4);               // channel mask
+	extensible += std::string("\x01\x00\x00\x00\x00\x00\x10\x00\x80\x00\x00\xAA\x00\x38\x9B\x71", 16); // PCM
+	extensible += wav.substr(36);
+	EXPECT(ap::sounds::ScaleWav(extensible, 50));
+	std::memcpy(out, extensible.data() + extensible.size() - sizeof(out), sizeof(out));
+	EXPECT(out[0] == 500 && out[1] == -500 && out[2] == 15000 && out[3] == -15000);
+	extensible[44] = 3; // IEEE float sub-format
+	EXPECT(!ap::sounds::ScaleWav(extensible, 50));
 }
 
 void TestSaveStateRoundTrip() {
@@ -226,6 +287,8 @@ void TestGameData() {
 	for (const auto& superUnique : ap::data::SuperUniques) {
 		EXPECT(superUnique.id < 100 && superUnique.act < 5);
 	}
+	EXPECT(std::string_view(ap::data::SuperUniques[1].name) == "Bonebreak"
+	       && std::string_view(ap::data::SuperUniques[1].label) == "Bonebreaker (Crypt)");
 	bool teleport = false;
 	for (const auto& skill : ap::data::Skills) {
 		teleport |= skill.id == 54 && std::string_view(skill.name) == "Teleport";
@@ -528,7 +591,11 @@ void TestSuperUniqueMonsters() {
 	auto superUniques = ap::Table::Parse("Superunique\tName\tClass\r\nBishibosh\tBishibosh\tfallenshaman1\r\nRadament\tRadament\tradament\r\n"
 	                                     "Corpsefire\tCorpsefire\tzombie1\r\n");
 	const size_t before = monstats.Rows().size();
-	EXPECT(ap::randomizer::AddSuperUniqueMonsters(monstats, superUniques) == 2);
+	std::vector<std::pair<std::string, std::string>> copies;
+	EXPECT(ap::randomizer::AddSuperUniqueMonsters(monstats, superUniques, &copies) == 2);
+	// The linked copies and the monsters they copy, for their HD models.
+	EXPECT(copies.size() == 2 && copies[0].first == "ap_superunique_0" && copies[0].second == "fallenshaman1");
+	EXPECT(copies.size() == 2 && copies[1].first == "ap_superunique_40" && copies[1].second == "zombie1");
 	// One row per field superunique, in data::SuperUniques order, at the end.
 	EXPECT(monstats.Rows().size() == before + std::size(ap::data::SuperUniques));
 	auto rowOf = [&](std::string_view name) {
@@ -792,6 +859,7 @@ int main() {
 	TestClientDeathLink();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
+	TestScaleWav();
 	TestSaveStateRoundTrip();
 	TestIdsMatchApworld();
 	TestGameData();

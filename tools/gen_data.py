@@ -46,15 +46,52 @@ GOAL_QUEST = 40
 # Summoner, the Council, the Countess, Shenk, Nihlathak, the Ancients), the
 # Chaos Sanctuary seal bosses and Baal's minion waves are scripted, so they're
 # left alone.
-FIELD_SUPERUNIQUES = [
-    "Bishibosh", "Bonebreak", "Coldcrow", "Rakanishu", "Treehead WoodFist", "Griswold", "Pitspawn Fouldog",
-    "Flamespike the Crawler", "Boneash", "Corpsefire", "Bloodwitch the Wild", "Fangskin", "Beetleburst", "Leatherarm",
-    "Coldworm the Burrower", "Fire Eye", "Dark Elder", "Ancient Kaa the Soulless", "Web Mage the Burning",
-    "Witch Doctor Endugu", "Stormtree", "Sarina the Battlemaid", "Icehawk Riftwing", "Winged Death", "The Tormentor",
-    "Taintbreeder", "Riftwraith the Cannibal", "Axe Dweller", "Bonesaw Breaker", "Dac Farren", "Megaflow Rectifier",
-    "Eyeback Unleashed", "Threash Socket", "Pindleskin", "Snapchip Shatter", "Anodized Elite", "Vinvear Molech",
-    "Sharp Tooth Sayer", "Magma Torquer", "Blaze Ripper", "Frozenstein",
-]
+FIELD_SUPERUNIQUES = {
+    # superuniques.txt name: (name the game shows, area it spawns in). The
+    # area goes into the check's name so hints say where to look; None for
+    # the ones Lord of Destruction never places.
+    "Bishibosh": ("Bishibosh", "Cold Plains"),
+    "Bonebreak": ("Bonebreaker", "Crypt"),
+    "Coldcrow": ("Coldcrow", "Cave Level 1"),
+    "Rakanishu": ("Rakanishu", "Stony Field"),
+    "Treehead WoodFist": ("Treehead Woodfist", "Dark Wood"),
+    "Griswold": ("Griswold", "Tristram"),
+    "Pitspawn Fouldog": ("Pitspawn Fouldog", "Jail Level 2"),
+    "Flamespike the Crawler": ("Flamespike the Crawler", None),
+    "Boneash": ("Bone Ash", "Cathedral"),
+    "Corpsefire": ("Corpsefire", "Den of Evil"),
+    "Bloodwitch the Wild": ("Bloodwitch the Wild", "Halls of the Dead Level 3"),
+    "Fangskin": ("Fangskin", "Claw Viper Temple Level 2"),
+    "Beetleburst": ("Beetleburst", "Far Oasis"),
+    "Leatherarm": ("Creeping Feature", "Stony Tomb Level 2"),
+    "Coldworm the Burrower": ("Coldworm the Burrower", "Maggot Lair Level 3"),
+    "Fire Eye": ("Fire Eye", "Palace Cellar Level 3"),
+    "Dark Elder": ("Dark Elder", "Lost City"),
+    "Ancient Kaa the Soulless": ("Ancient Kaa the Soulless", "Tal Rasha's Tomb"),
+    "Web Mage the Burning": ("Sszark the Burning", "Spider Cavern"),
+    "Witch Doctor Endugu": ("Witch Doctor Endugu", "Flayer Dungeon Level 3"),
+    "Stormtree": ("Stormtree", "Flayer Jungle"),
+    "Sarina the Battlemaid": ("Battlemaid Sarina", "Ruined Temple"),
+    "Icehawk Riftwing": ("Icehawk Riftwing", "Sewers Level 1"),
+    "Winged Death": ("Winged Death", None),
+    "The Tormentor": ("The Tormentor", None),
+    "Taintbreeder": ("Taintbreeder", None),
+    "Riftwraith the Cannibal": ("Riftwraith the Cannibal", None),
+    "Axe Dweller": ("Axe Dweller", None),
+    "Bonesaw Breaker": ("Bonesaw Breaker", "Glacial Trail"),
+    "Dac Farren": ("Dac Farren", "Bloody Foothills"),
+    "Megaflow Rectifier": ("Eldritch the Rectifier", "Frigid Highlands"),
+    "Eyeback Unleashed": ("Eyeback the Unleashed", "Frigid Highlands"),
+    "Threash Socket": ("Thresh Socket", "Arreat Plateau"),
+    "Pindleskin": ("Pindleskin", "Nihlathak's Temple"),
+    "Snapchip Shatter": ("Snapchip Shatter", "Icy Cellar"),
+    "Anodized Elite": ("Anodized Elite", None),
+    "Vinvear Molech": ("Vinvear Molech", None),
+    "Sharp Tooth Sayer": ("Sharptooth Slayer", "Frigid Highlands"),
+    "Magma Torquer": ("Magma Torquer", None),
+    "Blaze Ripper": ("Blaze Ripper", None),
+    "Frozenstein": ("Frozenstein", "Frozen River"),
+}
 
 # Collection checks: quest items you find on Hell (by misc.txt code), then
 # uniques (by name, with their base code).
@@ -167,15 +204,16 @@ def main() -> None:
         areas.append((level_id, int(row["Act"]), row["*StringName"]))
     areas.sort()
 
-    # (superunique row, act index, name). The act comes from the treasure class
-    # ("Act 2 Super A"); Griswold has his own, in Act I.
+    # (superunique row, act index, name, check label). The act comes from the
+    # treasure class ("Act 2 Super A"); Griswold has his own, in Act I.
     superuniques = []
     for position, row in enumerate(read_table(excel / "superuniques.txt")):
         name = row.get("Superunique", "")
         if name in FIELD_SUPERUNIQUES:
             tc = row.get("TC", "")
             act = int(tc.split()[1]) - 1 if tc.startswith("Act ") else 0
-            superuniques.append((int(row["hcIdx"]), act, name))
+            shown, area = FIELD_SUPERUNIQUES[name]
+            superuniques.append((int(row["hcIdx"]), act, name, f"{shown} ({area})" if area else shown))
     assert len(superuniques) == len(FIELD_SUPERUNIQUES), "a field superunique is missing from superuniques.txt"
     superuniques.sort()
 
@@ -314,8 +352,9 @@ def main() -> None:
     py += [f"    ({lid}, {act}, {name!r})," for lid, act, name in areas]
     py += ["]", "", "# (quest flag id, act index, name)", "QUESTS = ["]
     py += [f"    ({qid}, {act}, {name!r})," for qid, act, name in QUESTS]
-    py += ["]", "", "# (superunique id, act index, name): the field superuniques, one check each per difficulty.", "SUPERUNIQUES = ["]
-    py += [f"    ({sid}, {act}, {name!r})," for sid, act, name in superuniques]
+    py += ["]", "", "# (superunique id, act index, name, check label): the field superuniques, one check each per difficulty.",
+           "SUPERUNIQUES = ["]
+    py += [f"    ({sid}, {act}, {name!r}, {label!r})," for sid, act, name, label in superuniques]
     py += ["]", "", "# (rune number, name)", "RUNES = ["]
     py += [f"    ({n}, {name!r})," for n, name in runes]
     py += ["]", "", "# Gem names, in misc.txt order (index = position).", "GEMS = ["]
@@ -339,7 +378,7 @@ def main() -> None:
          "struct Skill { uint16_t id; const char* name; const char* cls; };",
          "struct Area { uint16_t id; uint8_t act; const char* name; };",
          "struct Quest { uint8_t flag; uint8_t act; const char* name; };",
-         "struct SuperUnique { uint8_t id; uint8_t act; const char* name; };",
+         "struct SuperUnique { uint8_t id; uint8_t act; const char* name; const char* label; };",
          "struct Collectible { const char* code; const char* unique; const char* name; };",
          "struct ItemSet { const char* name; const char* pieces[8]; };",
          "struct QuestItem { const char* code; uint8_t act; bool everyDifficulty; const char* name; };",
@@ -355,9 +394,9 @@ def main() -> None:
     h += [f"\t{{ {lid}, {act}, {cstr(name)} }}," for lid, act, name in areas]
     h += ["};", "", "inline constexpr Quest Quests[] = {"]
     h += [f"\t{{ {qid}, {act}, {cstr(name)} }}," for qid, act, name in QUESTS]
-    h += ["};", "", "// The field superuniques (SuperUniques row, act, name), one check each per difficulty.",
+    h += ["};", "", "// The field superuniques (SuperUniques row, act, name, check label), one check each per difficulty.",
           "inline constexpr SuperUnique SuperUniques[] = {"]
-    h += [f"\t{{ {sid}, {act}, {cstr(name)} }}," for sid, act, name in superuniques]
+    h += [f"\t{{ {sid}, {act}, {cstr(name)}, {cstr(label)} }}," for sid, act, name, label in superuniques]
     h += ["};", "", "// Collection checks. Runes are r01..r33; Gems and Specials go by base code,",
           "// and a Special with a unique name must be that unique.", "inline constexpr Collectible Gems[] = {"]
     h += [f"\t{{ {cstr(code)}, nullptr, {cstr(name)} }}," for code, name in gems]

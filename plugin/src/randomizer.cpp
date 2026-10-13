@@ -524,7 +524,7 @@ auto ShuffleRunewords(Table& runes, std::mt19937& random) -> std::vector<std::st
 	return recipes;
 }
 
-auto AddSuperUniqueMonsters(Table& monstats, Table& superUniques) -> int {
+auto AddSuperUniqueMonsters(Table& monstats, Table& superUniques, std::vector<std::pair<std::string, std::string>>* copies) -> int {
 	const int id = monstats.Column("Id");
 	const int index = monstats.Column("*hcIdx");
 	const int minion = monstats.Column("minion1");
@@ -568,6 +568,9 @@ auto AddSuperUniqueMonsters(Table& monstats, Table& superUniques) -> int {
 			monstats.Set(row, minion, original);
 		}
 		superUniques.Set(found->second, cls, name);
+		if (copies != nullptr) {
+			copies->emplace_back(name, original);
+		}
 		++linked;
 	}
 	return linked;
