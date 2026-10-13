@@ -2312,6 +2312,9 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		quests.swap(gQuestQueue);
 	}
 	for (const int quest : quests) {
+		if (static_cast<QuestSource>(quest / 1000) == QuestSource::Event) {
+			Log("Archipelago: quest event for row " + std::to_string(quest % 100) + " on difficulty " + std::to_string(quest % 1000 / 100) + ".");
+		}
 		CompleteQuest(static_cast<uint32_t>(quest % 1000 / 100), static_cast<uint32_t>(quest % 100), static_cast<QuestSource>(quest / 1000));
 	}
 	std::vector<int> areas;
@@ -2477,12 +2480,13 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 		}
 		case Kind::QuestCompleted: {
 			// The row should be the quest flag in data::Quests (1 = Den of Evil);
-			// rows we don't check (act intros, act completions) log only here.
-			// It joins the fallbacks' queue so the log keeps the order they happened in.
-			Log("Archipelago: quest event for row " + std::to_string(event->questRecordId) + " on difficulty " + std::to_string(event->difficulty) + ".");
+			// rows we don't check (act intros, act completions) only log their row.
+			// It joins the fallbacks' queue, and logs from there, so the log keeps the order they happened in.
 			if (event->difficulty < 3 && event->questRecordId < 100) {
 				std::lock_guard lock(gMutex);
 				gQuestQueue.push_back(static_cast<int>(QuestSource::Event) * 1000 + static_cast<int>(event->difficulty) * 100 + static_cast<int>(event->questRecordId));
+			} else {
+				Log("Archipelago: quest event for row " + std::to_string(event->questRecordId) + " on difficulty " + std::to_string(event->difficulty) + ".");
 			}
 			break;
 		}
