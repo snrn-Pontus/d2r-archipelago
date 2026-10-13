@@ -2,6 +2,12 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.7.3 - 2026-10-13
+
+- Added an opt-in repair experiment: run `ap-repairs on`, then choose Trade/Repair at a blacksmith
+  while Merchant Access is locked to try Repair All without opening the shop. It uses normal NPC
+  repair handling, stays off by default, and still needs in-game verification (#5)
+
 ## 0.7.2 - 2026-10-13
 
 - Socketed Base rewards now include two-socket weapons and armor for early runewords, while keeping
