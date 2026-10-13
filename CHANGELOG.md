@@ -2,6 +2,17 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.10.1 - 2026-10-13
+
+New seeds only; existing seeds and the mod are unchanged, so there's no need to rerun `d2r-ap-setup`.
+
+- Skills from other classes only go to a class that can really use them. Smite no longer lands on a
+  Barbarian or Amazon (it swung without hitting), the Assassin's traps stay with the Assassin, and Dodge,
+  Avoid and Evade stay off the Paladin. Skills the game ties to their own class (Fend, Strafe, Jab, Leap,
+  Leap Attack, Whirlwind, Double Swing, Double Throw, Frenzy, Inferno, Zeal, Arctic Blast, Fury, Shock Wave,
+  Rabies, Hunger, the kicks and claw skills, Weapon Block) stay with it, and Charge, Impale and Blade Fury
+  never go to the Necromancer (#117)
+
 ## 0.10.0 - 2026-10-13
 
 Rerun `d2r-ap-setup` for this version: the runeword recipes and the Writ's name are in the mod.
