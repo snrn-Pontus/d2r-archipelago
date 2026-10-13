@@ -31,10 +31,13 @@ class CharacterClass(Choice):
     """The class you'll play: your starting skills come from its level-1 skills. Codex skills of your own
     class work from level 1; other classes' skills need level 6 (Diablo II adds 6 to the requirement of
     another class's skill). "any" picks starting skills from the whole pool.
-    Skills your class can't use stay out of the pool and the tree shuffle: claw skills need an Assassin,
-    two-weapon skills a Barbarian (or an Assassin with claws), the Assassin's traps a Barbarian or
-    Assassin, and wolf and bear attacks (Feral Rage, Maul...) a Druid who also gets that form. With "any",
-    they all stay out."""
+    Skills your class can't use stay out of the pool and the tree shuffle: claw skills and kicks need an
+    Assassin, the Assassin's traps an Assassin, Smite anyone but an Amazon or Barbarian, Dodge, Avoid and
+    Evade anyone but a Paladin, Charge, Impale and Blade Fury anyone but a Necromancer (their animations),
+    and wolf and bear attacks (Feral Rage, Maul...) a Druid who also gets that form. Skills the game itself
+    ties to their class stay with it: Fend, Strafe, Jab; Leap, Leap Attack, Whirlwind, Double Swing, Double
+    Throw, Frenzy; Inferno; Zeal; Arctic Blast, Fury, Shock Wave, Rabies, Hunger; Dragon Flight and the
+    martial arts. With "any", they all stay out."""
     display_name = "Character Class"
     option_any = 0
     option_amazon = 1

@@ -47,6 +47,15 @@ two Ral runes or `ap-debug give lsd 1 3` for a 3-socket Long Sword to try a shuf
 
 Built, pushed and installed, still to check in game:
 
+- [ ] S1 skills (#117, new seed needed): a Barbarian or Amazon seed never gets Smite, a Paladin never gets
+      Dodge, Avoid or Evade, and a Barbarian no longer gets Assassin traps (its S2 animation only exists with a
+      one-handed thrusting weapon). A Sorceress, Necromancer, Druid or Assassin with Smite and a shield can
+      hit with it; a non-Amazon with Dodge, Avoid or Evade doesn't freeze when it triggers. Engine-bound
+      skills stay with their class in pools and shuffled trees (Whirlwind, Leap, Frenzy, Zeal, Strafe, Jab,
+      Fend, Inferno, Arctic Blast, the kicks and martial arts...), and a Necromancer gets no Charge, Impale or
+      Blade Fury. Still to see: Impale and Blade Fury on another non-Necromancer class (only Charge's
+      Necromancer failure was tested elsewhere); Lightning and Chain Lightning off the Sorceress fire without
+      a cast animation (known, #119).
 - [x] Class without a kill: a new character in town gets a banner and chat line saying rewards and locks wait
       (kill a monster or ap-claim). **Claim Character** (F9) or `ap-claim`: the skills unlock, the locks apply
       (Town Portal scroll crumbled), and an Archipelago Ledger arrives. Save and Exit, join again: everything
@@ -85,8 +94,6 @@ Built, pushed and installed, still to check in game:
       Sorceress seeds' spoilers: none of those in the pool; the other classes' skills were Cobra Strike, Blade
       Shield, Shadow Warrior, Fade, Cyclone Armor, Molten Boulder, Spirit of Barbs and Barbarian masteries and
       warcries. Still to check in game: the tree and casting them.)
-- [ ] A Barbarian with an Assassin trap in the pool (allowed: they have the S2 animation) can cast it
-      without freezing.
 - [ ] Werewolf or Werebear on another class: does the form work? If not, keep forms Druid-only too.
 - [x] Tree mode unlocks received skills in the Skills table (no free level): a new character spends its own
       points on them, and a Token respec refunds only those points, with the skills still open (2026-10-13).

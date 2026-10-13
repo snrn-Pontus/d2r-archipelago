@@ -504,6 +504,83 @@ class TestUnusableSkills(D2RTestBase):
         self.assertGreater(len(self.world.skill_pool), 50)
 
 
+class TestBarbarianSkills(D2RTestBase):
+    options = {"character_class": "barbarian", "skill_focus": "any_skills", "skill_pool_size": 240, "skill_copies": 1}
+
+    def test_barbarian_gets_no_smite_or_traps(self) -> None:
+        # The Barbarian's S1 animation has no hit frame (#117) and its S2 only one weapon class.
+        names = {item.name for item in self.multiworld.itempool} | {item.name for item in self.multiworld.precollected_items[self.player]}
+        for skill in ("Smite (Paladin)", "Fire Trauma (Assassin)", "Lightning Sentry (Assassin)"):
+            self.assertNotIn(skill, names)
+        self.assertGreater(len(self.world.skill_pool), 50)
+
+
+class TestS1Skills(D2RTestBase):
+    def test_s1_skills_follow_animdata(self) -> None:
+        from .. import can_use
+        smite, dodges = 97, (13, 18, 29)
+        for cls in ("ama", "bar"):
+            self.assertFalse(can_use(smite, cls), cls)
+        for cls in ("sor", "nec", "pal", "dru", "ass", "war"):
+            self.assertTrue(can_use(smite, cls), cls)
+        for skill in dodges:
+            self.assertFalse(can_use(skill, "pal"))
+            self.assertTrue(can_use(skill, "ama"))
+            self.assertTrue(can_use(skill, "bar"))
+
+
+# Skills the engine ties to their own class (gen_data.py ENGINE_CLASS_SKILLS), by item name.
+ENGINE_CLASS_SKILLS = {
+    "Amazon": ("Fend", "Strafe", "Jab"),
+    "Barbarian": ("Leap", "Leap Attack", "Whirlwind", "Double Swing", "Double Throw", "Frenzy"),
+    "Sorceress": ("Inferno",),
+    "Paladin": ("Zeal",),
+    "Druid": ("Arctic Blast", "Fury", "Shock Wave", "Rabies", "Hunger"),
+    "Assassin": ("Dragon Flight", "Dragon Talon", "Dragon Tail", "Fists of Fire", "Claws of Thunder", "Blades of Ice",
+                 "Dragon Claw", "Claw Mastery", "Weapon Block"),
+}
+
+
+class TestEngineClassSkills(D2RTestBase):
+    options = {"skill_focus": "any_skills", "skill_pool_size": 240, "skill_copies": 1, "include_warlock": True}
+
+    def test_engine_class_skills_stay_with_their_class(self) -> None:
+        from .. import can_use
+        from ..data import CLASSES, SKILLS
+        code = {name: cls for cls, name in CLASSES.items()}
+        id_of = {f"{name} ({CLASSES[cls]})": sid for sid, name, cls in SKILLS}
+        for owner, names in ENGINE_CLASS_SKILLS.items():
+            for name in names:
+                skill = id_of[f"{name} ({owner})"]
+                self.assertEqual([cls for cls in CLASSES if can_use(skill, cls)], [code[owner]], name)
+        self.assertFalse(can_use(id_of["Charge (Paladin)"], "nec"))
+        self.assertTrue(can_use(id_of["Lightning (Sorceress)"], "nec"))
+        for class_name in CLASSES.values():
+            others = {f"{name} ({owner})" for owner, names in ENGINE_CLASS_SKILLS.items() if owner != class_name
+                      for name in names}
+            if class_name == "Necromancer":
+                others.add("Charge (Paladin)")
+            for seed in range(3):
+                self.options = {**type(self).options, "character_class": class_name.lower()}
+                self.world_setup(seed)
+                self.assertEqual(self.world.class_name(), class_name)
+                names = ({item.name for item in self.multiworld.itempool}
+                         | {item.name for item in self.multiworld.precollected_items[self.player]})
+                self.assertFalse(names & others, f"{class_name} seed {seed}")
+                self.assertGreater(len(self.world.skill_pool), 50, f"{class_name} seed {seed}")
+
+
+class TestAnyClassPoolSize(D2RTestBase):
+    options = {"character_class": "any", "skill_pool_size": 240, "skill_copies": 1}
+
+    def test_any_class_still_fills_a_big_pool(self) -> None:
+        from ..data import SKILL_USERS, SKILLS
+        free = [sid for sid, _name, cls in SKILLS if sid not in SKILL_USERS and cls != "war"]
+        self.assertGreater(len(free), 150)
+        self.assertGreater(len(self.world.skill_pool), 50)
+        self.assertGreaterEqual(len(self.world.skill_pool) + len(self.world.starting), 16)
+
+
 class TestAnyClassSkills(D2RTestBase):
     options = {"character_class": "any", "skill_focus": "any_skills", "skill_pool_size": 240, "skill_copies": 1}
 
@@ -546,6 +623,37 @@ class TestTreeShuffleUsable(D2RTestBase):
             dealt = deal_skill_trees(random.Random(seed))
             for skill, slot in dealt.items():
                 self.assertTrue(can_use(skill, slot_class[slot]), f"seed {seed}: {skill} in {slot_class[slot]}'s tree")
+
+    def test_s1_skills_stay_with_classes_that_have_s1(self) -> None:
+        from .. import deal_skill_trees
+        from ..data import SKILLS
+        import random
+        slot_class = {sid: cls for sid, _name, cls in SKILLS}
+        smite_classes = set()
+        for seed in range(200):
+            dealt = deal_skill_trees(random.Random(seed))
+            if 97 in dealt:
+                smite_classes.add(slot_class[dealt[97]])
+            for dodge in (13, 18, 29):
+                if dodge in dealt:
+                    self.assertNotEqual(slot_class[dealt[dodge]], "pal", f"seed {seed}: {dodge} in the Paladin's tree")
+        self.assertFalse(smite_classes & {"ama", "bar"})
+        self.assertGreater(len(smite_classes), 1)
+
+    def test_engine_class_skills_stay_in_their_class_tree(self) -> None:
+        from .. import deal_skill_trees
+        from ..data import CLASSES, SKILLS
+        import random
+        slot_class = {sid: cls for sid, _name, cls in SKILLS}
+        id_of = {f"{name} ({CLASSES[cls]})": sid for sid, name, cls in SKILLS}
+        pinned = {id_of[f"{name} ({owner})"] for owner, names in ENGINE_CLASS_SKILLS.items() for name in names}
+        charge = id_of["Charge (Paladin)"]
+        for seed in range(200):
+            dealt = deal_skill_trees(random.Random(seed))
+            for skill in pinned & set(dealt):
+                self.assertEqual(slot_class[dealt[skill]], slot_class[skill], f"seed {seed}: {skill}")
+            if charge in dealt:
+                self.assertNotEqual(slot_class[dealt[charge]], "nec", f"seed {seed}: Charge in the Necromancer's tree")
 
 
 class TestDruidFullStart(D2RTestBase):

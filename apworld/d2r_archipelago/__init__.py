@@ -37,7 +37,8 @@ WAYPOINT_LOCK_ACTS = 3
 
 def can_use(skill_id: int, cls: str) -> bool:
     """Whether a class (code) can use a skill: claw skills need the Assassin, the traps an S2 animation
-    only the Barbarian and Assassin have, and so on (SKILL_USERS)."""
+    only the Assassin has, Smite an S1 animation that lands a hit, Whirlwind the Barbarian the engine
+    ties it to, and so on (SKILL_USERS)."""
     return cls in SKILL_USERS.get(skill_id, (cls,))
 
 
