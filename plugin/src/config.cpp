@@ -90,8 +90,11 @@ auto ParseConfig(const std::string& text, std::vector<std::string>* warnings) ->
 			// Parse directly into the destination type to reject overflow as well
 			// as negative IDs and trailing junk, without throwing at plugin load.
 			uint32_t id = 0;
+			// TOML allows an explicit positive sign, which from_chars skips
+			// only when we remove it ourselves. A negative sign stays invalid.
+			const char* first = value.data() + (!value.empty() && value.front() == '+' ? 1 : 0);
 			const char* last = value.data() + value.size();
-			const auto [end, error] = std::from_chars(value.data(), last, id);
+			const auto [end, error] = std::from_chars(first, last, id);
 			uint32_t& setting = key == "codex_unique" ? config.codexUnique
 			    : key == "codex_prefix" ? config.codexPrefix : config.oskillProperty;
 			if (error == std::errc {} && end == last) {

@@ -170,7 +170,7 @@ void TestConfigNumericIds() {
 		{ "oskill_property", &ap::Config::oskillProperty },
 	};
 	for (const auto& [key, field] : settings) {
-		for (const std::string value : { "abc", "-1", "", "\"\"", "4294967296", "99999999999999999999", "12oops", "1.5", "0x10" }) {
+		for (const std::string value : { "abc", "-1", "", "\"\"", "4294967296", "99999999999999999999", "12oops", "1.5", "0x10", "+", "++1", "+-1", "+4294967296" }) {
 			std::vector<std::string> warnings;
 			const auto parsed = ap::ParseConfig("# header\n[archipelago]\n" + key + " = " + value + "\nslot = \"Still parsed\"\n", &warnings);
 			EXPECT(parsed.*field == defaults.*field);
@@ -186,6 +186,7 @@ void TestConfigNumericIds() {
 		}
 		for (const auto& [value, expected] : std::vector<std::pair<std::string, uint32_t>> {
 			{ "0", 0 }, { "123", 123 }, { "4294967295", UINT32_MAX }, { " 265 # oskill", 265 }, { "\"500\"", 500 },
+			{ "+0", 0 }, { "+500", 500 }, { "+4294967295", UINT32_MAX },
 		}) {
 			std::vector<std::string> warnings;
 			EXPECT(ap::ParseConfig(key + " = " + value, &warnings).*field == expected);
