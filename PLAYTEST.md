@@ -295,6 +295,10 @@ Any seed. Send each with `/send`, standing outside town for the traps.
   - [ ] An `Ambush Trap` in Cold Plains brings 12 of Cold Plains' own monsters; in Nightmare too.
   - [ ] An `Ambush Trap` in town goes off right away (monsters in town), since waiting is off.
   - [ ] `Tax Collector Trap` takes 250 per level; `Junk Backpack` places at most 10 pieces.
+- [ ] A release no longer crashes (#51). Three-slot D2R seed, two games in, one slot offline, then
+      `/release <slot>` from the server console. Neither game crashes; rewards trickle in (three loot items
+      a second, traps 3 seconds apart), chat shows a few lines at a time and says when the rest went to the
+      log, and every reward arrives in the end.
 
 ## 5b. Personalized rewards
 

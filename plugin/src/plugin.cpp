@@ -145,6 +145,16 @@ struct QueuedTrap {
 };
 std::vector<std::string> gCommandQueue;
 std::vector<QueuedTrap> gTrapQueue;
+// A release can hand over a hundred items at once, and doing it all in one frame
+// crashed the game (#51), so rewards are paced: a few commands per run, a few
+// loot items per pass, and traps some seconds apart.
+constexpr size_t      CommandsPerRun = 4;
+constexpr auto        CommandGap     = std::chrono::milliseconds(250);
+constexpr size_t      LootPerPass    = 3;
+constexpr auto        LootPassGap    = std::chrono::seconds(1);
+constexpr auto        TrapGap        = std::chrono::seconds(3);
+Clock::time_point     gNextCommandsAt;
+Clock::time_point     gNextTrapAt;
 // The level (area) the player is in, from the area events.
 int                   gCurrentLevel = -1;
 
@@ -205,7 +215,8 @@ auto ClassIndex(const std::string& name) -> int {
 }
 
 Clock::time_point     gLastRoomWarning;
-// After a failed item update, wait before trying again instead of every frame.
+// After a failed item update, wait before trying again instead of every frame;
+// a short wait between loot passes too.
 Clock::time_point     gRetryAt;
 // Tree mode: a Token or Writ of Absolution just used, waiting for its respec to finish
 // so the received skills can be unlocked again.
@@ -221,6 +232,12 @@ void Log(const std::string& text) {
 // Messages waiting to be echoed to the D2RLoader console on the UI thread.
 std::vector<std::string> gConsoleQueue;
 std::atomic<bool>        gConsoleQueued;
+// A release prints hundreds of lines (#51): a few go out at a time, and a
+// backlog past ConsoleBacklog goes to the log with one line saying so.
+constexpr size_t         LinesPerFlush  = 3;
+constexpr size_t         ConsoleBacklog = 30;
+constexpr auto           FlushGap       = std::chrono::milliseconds(250);
+Clock::time_point        gNextFlushAt;
 std::atomic<bool>        gBannerQueued;
 
 // The overlay doesn't render, so messages also go to D2R's chat through
@@ -255,11 +272,29 @@ void ShowInChat(const std::string& text) {
 void __cdecl FlushConsole(const D2RL::PluginContext*, void*) noexcept {
 	gConsoleQueued = false;
 	std::vector<std::string> lines;
+	std::vector<std::string> skipped;
 	bool inGame = false;
 	{
 		std::lock_guard lock(gMutex);
-		lines.swap(gConsoleQueue);
+		if (Clock::now() < gNextFlushAt) {
+			return;
+		}
+		if (gConsoleQueue.size() > ConsoleBacklog) {
+			const auto drop = static_cast<std::ptrdiff_t>(gConsoleQueue.size() - ConsoleBacklog);
+			skipped.assign(gConsoleQueue.begin(), gConsoleQueue.begin() + drop);
+			gConsoleQueue.erase(gConsoleQueue.begin(), gConsoleQueue.begin() + drop);
+		}
+		const auto take = static_cast<std::ptrdiff_t>(std::min(gConsoleQueue.size(), LinesPerFlush));
+		lines.assign(gConsoleQueue.begin(), gConsoleQueue.begin() + take);
+		gConsoleQueue.erase(gConsoleQueue.begin(), gConsoleQueue.begin() + take);
 		inGame = gInGame;
+		gNextFlushAt = Clock::now() + FlushGap;
+	}
+	for (const auto& line : skipped) {
+		Log(line);
+	}
+	if (!skipped.empty()) {
+		lines.insert(lines.begin(), "Archipelago: " + std::to_string(skipped.size()) + " more messages are in the D2RLoader log.");
 	}
 	for (const auto& line : lines) {
 		gContext->WriteConsoleMessage(line.c_str());
@@ -1947,11 +1982,19 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 	size_t next = std::min(delivered, items.size());
 	bool   roomFull = false;
+	bool   more     = false;
+	size_t given    = 0;
 	for (; next < items.size(); ++next) {
 		if (!ap::ids::IsLootItem(items[next].item)) {
 			continue;
 		}
+		if (given >= LootPerPass) {
+			more = true;
+			break;
+		}
 		const auto loot = static_cast<ap::loot::Loot>(items[next].item - ap::ids::LootBase);
+		// A Junk Backpack spawns a pile of items, so it fills a whole pass.
+		given += loot == ap::loot::Loot::JunkBackpack ? LootPerPass : 1;
 		if (loot == ap::loot::Loot::JunkBackpack) {
 			Feed("Archipelago: a Junk Backpack! " + std::to_string(GiveJunk(player, std::clamp(slots.traps.junkSize, 1, 40), random))
 				 + " pieces of junk in your inventory.");
@@ -2025,6 +2068,8 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	if (codexOk && next == items.size()) {
 		gCodexItems = generation;
 		gCodexDirty = false;
+	} else if (codexOk && more) {
+		gRetryAt = Clock::now() + LootPassGap;
 	} else {
 		gRetryAt = Clock::now() + std::chrono::seconds(30);
 	}
@@ -2084,9 +2129,15 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 		if (!gInGame) {
 			return;
 		}
-		commands.swap(gCommandQueue);
-		if (!settings.waitForTown || !IsTown(gCurrentLevel)) {
-			traps.swap(gTrapQueue);
+		if (Clock::now() >= gNextCommandsAt && !gCommandQueue.empty()) {
+			const auto take = static_cast<std::ptrdiff_t>(std::min(gCommandQueue.size(), CommandsPerRun));
+			commands.assign(gCommandQueue.begin(), gCommandQueue.begin() + take);
+			gCommandQueue.erase(gCommandQueue.begin(), gCommandQueue.begin() + take);
+			gNextCommandsAt = Clock::now() + CommandGap;
+		}
+		if (!gTrapQueue.empty() && Clock::now() >= gNextTrapAt && (!settings.waitForTown || !IsTown(gCurrentLevel))) {
+			traps.push_back(gTrapQueue.front());
+			gTrapQueue.erase(gTrapQueue.begin());
 		}
 		area = gCurrentLevel;
 		act = gAct;
@@ -2119,7 +2170,7 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 				if (now - trap.waiting > std::chrono::seconds(10)) {
 					return false;
 				}
-				gTrapQueue.push_back(trap);
+				gTrapQueue.insert(gTrapQueue.begin(), trap);
 				return true;
 			});
 			gNextQuestScan = now;
@@ -2127,6 +2178,10 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	}
 	std::mt19937 random(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
 	const ap::loot::TrapSettings tuning { .ambushSize = settings.ambushSize, .taxPerLevel = settings.taxPerLevel };
+	if (!traps.empty()) {
+		std::lock_guard lock(gMutex);
+		gNextTrapAt = Clock::now() + TrapGap;
+	}
 	for (const auto& trap : traps) {
 		const auto fired = ap::loot::CommandsFor(trap.loot, trap.level, act, random, tuning, monsters);
 		Feed("Archipelago: " + fired.message);
@@ -2678,7 +2733,8 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		std::lock_guard lock(gMutex);
 		cows.swap(gCowQueue);
 		collections.swap(gCollectionQueue);
-		commands = !gCommandQueue.empty() || (!gTrapQueue.empty() && gInGame && (!gSlots.traps.waitForTown || !IsTown(gCurrentLevel)));
+		commands = (!gCommandQueue.empty() && Clock::now() >= gNextCommandsAt)
+		        || (!gTrapQueue.empty() && gInGame && Clock::now() >= gNextTrapAt && (!gSlots.traps.waitForTown || !IsTown(gCurrentLevel)));
 	}
 	if (gClient->Slots().cowLevelChecks) {
 		for (const int cow : cows) {
@@ -2746,7 +2802,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	bool console = false;
 	{
 		std::lock_guard lock(gMutex);
-		console = !gConsoleQueue.empty();
+		console = !gConsoleQueue.empty() && Clock::now() >= gNextFlushAt;
 	}
 	if (console && !gConsoleQueued.exchange(true) && gThreads->runOnUiThread(gContext, FlushConsole, nullptr) != D2RL::Threads::Result::Success) {
 		gConsoleQueued = false;
