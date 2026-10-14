@@ -88,7 +88,10 @@ def counts(value: dict[str, int]) -> dict[str, int]:
     return {key: count for key, count in sorted(value.items()) if count}
 
 
-def counter_allows(option: type[Option], count: int) -> bool:
+def counter_allows(option: type[Option], count: Any) -> bool:
+    """A whole number within the counter's limits (older Archipelago versions don't check the type)."""
+    if not isinstance(count, int) or isinstance(count, bool):
+        return False
     return (option.min is None or count >= option.min) and (option.max is None or count <= option.max)
 
 
