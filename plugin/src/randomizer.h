@@ -57,6 +57,8 @@ struct Settings {
 	int      superUniqueMinions = 100;
 	int      betterDrops = 100;
 	int      betterMagic = 100;
+	// Experience lost on death (DeathExpPenalty), in percent of the game's own loss.
+	int      deathXpPenalty = 100;
 	// Field superuniques get monster rows of their own, so their kills are checks.
 	bool     superUniqueChecks = false;
 	// The skill tree shuffle: (skill id, id of the skill whose tree slot it takes).
@@ -256,6 +258,10 @@ auto AddRespecWrit(Table& misc) -> int;
 
 // Multiplies monster experience, in percent for each difficulty.
 void ScaleExperience(Table& monlvl, const PerDifficulty& percent);
+
+// Scales each difficulty's DeathExpPenalty in difficultylevels.txt, in percent,
+// rounded to the nearest whole percent of a level. False if the column is missing.
+auto ScaleDeathPenalty(Table& difficultylevels, int percent) -> bool;
 
 // Clears level and/or strength and dexterity requirements in an item table
 // (weapons, armor, misc, uniqueitems, setitems).

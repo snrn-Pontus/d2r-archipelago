@@ -80,7 +80,7 @@ void Permute(std::vector<T>& values, std::mt19937& random) {
 auto Settings::Any() const -> bool {
 	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != PerDifficulty { 100, 100, 100 } || !itemLevelRequirements
 	    || !itemStatRequirements || monsterDensity != PerDifficulty { 100, 100, 100 } || championPacks != 100 || superUniqueMinions != 100
-	    || betterDrops != 100 || betterMagic != 100 || SuperUniqueCopies() || !skillTree.empty() || treeMode;
+	    || betterDrops != 100 || betterMagic != 100 || deathXpPenalty != 100 || SuperUniqueCopies() || !skillTree.empty() || treeMode;
 }
 
 auto Settings::SuperUniqueCopies() const -> bool {
@@ -118,6 +118,7 @@ auto Settings::Stamp() const -> std::string {
 		}
 	};
 	add(betterMagic != 100, "magic", betterMagic);
+	add(deathXpPenalty != 100, "death_xp", deathXpPenalty);
 	add(monsters == Shuffle::Anywhere && shuffleTolerance != 3, "tolerance", shuffleTolerance);
 	add(monsters != Shuffle::Off && shuffleCowLevel, "cows", 1);
 	add(superUniques == Shuffle::Nearby && superUniqueSpread != 6, "superunique_spread", superUniqueSpread);
@@ -1196,6 +1197,20 @@ void ScaleExperience(Table& monlvl, const PerDifficulty& percent) {
 			}
 		}
 	}
+}
+
+auto ScaleDeathPenalty(Table& difficultylevels, int percent) -> bool {
+	const int column = difficultylevels.Column("DeathExpPenalty");
+	if (column < 0) {
+		return false;
+	}
+	for (size_t row = 0; percent != 100 && row < difficultylevels.Rows().size(); ++row) {
+		const std::string value = difficultylevels.Cell(row, column);
+		if (!value.empty()) {
+			difficultylevels.Set(row, column, std::to_string((ParseInt(value) * percent + 50) / 100));
+		}
+	}
+	return true;
 }
 
 void ClearRequirements(Table& items, bool level, bool stats) {

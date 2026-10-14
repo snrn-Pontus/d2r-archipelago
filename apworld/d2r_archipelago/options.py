@@ -755,6 +755,16 @@ class ExperienceMultiplierHell(NamedRange):
     special_range_names = {"same": 0}
 
 
+class DeathExperiencePenalty(Range):
+    """Experience lost when you die on Nightmare and Hell, in percent of the game's own loss (5% and 10% of a
+    level). 0 never loses experience. Applies to every death, DeathLink ones too; gold loss, your corpse and
+    Hardcore stay as they are."""
+    display_name = "Death Experience Penalty"
+    range_start = 0
+    range_end = 100
+    default = 100
+
+
 class ItemLevelRequirements(DefaultOnToggle):
     """Items keep their level requirements. Turn off to wear anything you find."""
     display_name = "Item Level Requirements"
@@ -936,6 +946,7 @@ class D2ROptions(PerGameCommonOptions):
     experience_multiplier: ExperienceMultiplier
     experience_multiplier_nightmare: ExperienceMultiplierNightmare
     experience_multiplier_hell: ExperienceMultiplierHell
+    death_experience_penalty: DeathExperiencePenalty
     item_level_requirements: ItemLevelRequirements
     item_stat_requirements: ItemStatRequirements
     show_ground_sockets: ShowGroundSockets
@@ -969,7 +980,7 @@ OPTION_GROUPS = [
                                  SuperUniqueShuffleSpread, SuperUniqueMinions, RunewordShuffle,
                                  RunewordRuneSpread, MonsterDensity, MonsterDensityNightmare, MonsterDensityHell, ChampionPacks,
                                  BetterDrops, BetterMagic, ExperienceMultiplier, ExperienceMultiplierNightmare,
-                                 ExperienceMultiplierHell, ItemLevelRequirements, ItemStatRequirements]),
+                                 ExperienceMultiplierHell, DeathExperiencePenalty, ItemLevelRequirements, ItemStatRequirements]),
     OptionGroup("D2RLoader Settings", [ShowGroundSockets, DisplayItemLevels, ItemStatRanges, MaximumSockets, FloorItemLimit,
                                        SharedStashTabs, MaterialsLimit], start_collapsed=True),
     OptionGroup("Multiworld", [DeathLink]),

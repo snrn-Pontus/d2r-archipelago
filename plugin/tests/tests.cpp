@@ -986,7 +986,7 @@ void TestClientSurvivesBadPackets() {
 	// and the ReceivedItems after it in the same message still arrives.
 	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[{"team":0,"slot":1,"alias":7,"name":"Snrn"}],
 		"missing_locations":[2420002,"x"],"checked_locations":"none","slot_data":{"goal":"two","level_cap":90,"locks":true,
-		"hints":[[1,"2",3],[4,1,5]],"randomizer":{"skill_tree":[[1,-2]],"xp_multiplier":"lots"}},
+		"hints":[[1,"2",3],[4,1,5]],"randomizer":{"skill_tree":[[1,-2]],"xp_multiplier":"lots","death_xp_penalty":250}},
 		"slot_info":{"one":{"game":"Diablo II Resurrected"},"1":{"game":5}}},
 		{"cmd":"ReceivedItems","index":0,"items":[{"item":2430054,"location":-2,"player":1,"flags":1}]}])json");
 	EXPECT(client.State() == ap::ConnectionState::Connected);
@@ -994,6 +994,7 @@ void TestClientSurvivesBadPackets() {
 	EXPECT(client.Slots().goal == 0 && client.Slots().levelCap == 90 && !client.Slots().locks.cube);
 	EXPECT(client.Slots().hints.size() == 1 && client.Slots().hints[0].location == 4);
 	EXPECT(client.Slots().randomizer.skillTree.empty() && client.Slots().randomizer.xpPercent[2] == 100);
+	EXPECT(client.Slots().randomizer.deathXpPenalty == 100);
 	EXPECT(client.PlayerName(1) == "Snrn");
 	EXPECT(client.Items().size() == 1 && client.ItemsSynced());
 	client.TakeMessages();
@@ -1590,6 +1591,12 @@ void TestSuperUniqueShuffle() {
 	EXPECT(settings.Stamp().find("xp=100/200/300") != std::string::npos);
 	settings.xpPercent = { 150, 150, 150 };
 	EXPECT(settings.Stamp().find("xp=150 ") != std::string::npos);
+	EXPECT(settings.Stamp().find("death_xp") == std::string::npos);
+	settings.deathXpPenalty = 0;
+	EXPECT(settings.Stamp().find("death_xp=0") != std::string::npos);
+	ap::randomizer::Settings deathOnly;
+	deathOnly.deathXpPenalty = 50;
+	EXPECT(deathOnly.Any());
 	// Tuning for a shuffle that's off leaves the stamp alone.
 	ap::randomizer::Settings quiet;
 	quiet.shuffleTolerance = 9;
@@ -1950,6 +1957,20 @@ void TestTableEdits() {
 	EXPECT(monlvl.Cell(0, 1) == "2" && monlvl.Cell(0, 2) == "250" && monlvl.Cell(0, 3) == "2500");
 	ap::randomizer::ScaleExperience(monlvl, { 100, 200, 50 });
 	EXPECT(monlvl.Cell(0, 1) == "2" && monlvl.Cell(0, 2) == "500" && monlvl.Cell(0, 3) == "1250");
+
+	// The game's own rows: Normal loses nothing, Nightmare 5% and Hell 10% of a level.
+	const std::string levels = "Name\tResistPenalty\tDeathExpPenalty\tResistFloor\r\nNormal\t0\t0\t-100\r\nNightmare\t-40\t5\t-100\r\nHell\t-100\t10\t-100\r\n";
+	auto difficulties = ap::Table::Parse(levels);
+	EXPECT(ap::randomizer::ScaleDeathPenalty(difficulties, 100) && difficulties.Format() == levels);
+	EXPECT(ap::randomizer::ScaleDeathPenalty(difficulties, 50));
+	EXPECT(difficulties.Cell(0, 2) == "0" && difficulties.Cell(1, 2) == "3" && difficulties.Cell(2, 2) == "5" && difficulties.Cell(1, 1) == "-40");
+	difficulties = ap::Table::Parse(levels);
+	EXPECT(ap::randomizer::ScaleDeathPenalty(difficulties, 0));
+	EXPECT(difficulties.Cell(1, 2) == "0" && difficulties.Cell(2, 2) == "0" && difficulties.Cell(2, 3) == "-100");
+	difficulties = ap::Table::Parse(levels);
+	EXPECT(ap::randomizer::ScaleDeathPenalty(difficulties, 20) && difficulties.Cell(1, 2) == "1" && difficulties.Cell(2, 2) == "2");
+	auto noPenalty = ap::Table::Parse("Name\tResistPenalty\r\nHell\t-100\r\n");
+	EXPECT(!ap::randomizer::ScaleDeathPenalty(noPenalty, 50));
 
 	auto armor = ap::Table::Parse("name\treqstr\treqdex\tlevelreq\r\nCap\t0\t\t1\r\nMonarch\t156\t\t54\r\n");
 	ap::randomizer::ClearRequirements(armor, true, false);

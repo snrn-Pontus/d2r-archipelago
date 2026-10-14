@@ -153,6 +153,9 @@ The setup tool rewrites the game's tables for your seed:
 - `experience_multiplier`, `item_level_requirements` and `item_stat_requirements`.
 - `monster_density_nightmare`, `monster_density_hell`, `experience_multiplier_nightmare` and
   `experience_multiplier_hell` override Nightmare and Hell; `same` (the default) follows the Normal value.
+- `death_experience_penalty`: the experience a death costs on Nightmare and Hell, in percent of the game's own
+  5% and 10% of a level (default 100; 0 never loses any). It counts for DeathLink deaths too, and leaves gold
+  loss, corpse recovery and Hardcore alone.
 
 ## What do other items look like?
 

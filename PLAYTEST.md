@@ -679,6 +679,17 @@ on `death_link: true` in both.
 - [ ] The death that DeathLink caused isn't sent back out.
 - [ ] Dying once sends one death, not one per frame or per resurrection.
 
+### 7b. Death experience penalty (issue #58)
+
+`death_experience_penalty: 0` (then `50`), rerun setup; setup prints "experience lost on death at 0%" for
+both banks. Needs a Nightmare or Hell character with some experience into its level (Normal never loses any).
+
+- [ ] With 0, an ordinary death on Nightmare/Hell loses no experience, and picking up the corpse still works
+      (gold still drops as usual).
+- [ ] With 0, a death from DeathLink (`ap_probe ... --death`) loses no experience either.
+- [ ] With 50, a Hell death loses about 5% of the level's experience instead of 10%.
+- [ ] Back on 100 (the default), setup leaves `difficultylevels.txt` out of the mod and deaths lose the usual amount.
+
 ## 8. Shuffles
 
 `monster_shuffle: anywhere`, `superunique_shuffle: anywhere`, `runeword_shuffle: true`,
