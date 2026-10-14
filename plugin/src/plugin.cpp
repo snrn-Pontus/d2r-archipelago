@@ -19,6 +19,7 @@
 #include "randomizer.h"
 #include "repairs.h"
 #include "save_state.h"
+#include "saved_difficulty.h"
 #include "session_log.h"
 #include "skill_table.h"
 #include "sounds.h"
@@ -28,6 +29,7 @@
 #include <D2RLPlugin/core_exports.h>
 
 #include <windows.h>
+#include <shlobj.h>
 
 #include <algorithm>
 #include <array>
@@ -257,6 +259,20 @@ bool                  gDifficultyKnown = false;
 std::vector<int>      gPendingAreas;
 // Quest item codes found before then, for their checks (#123).
 std::set<uint32_t>    gPendingQuestItems;
+// When this game began, for telling the character saves written since (#130).
+std::filesystem::file_time_type gGameBegan;
+// Areas a game was left with before its difficulty was known (#130). The save
+// Save & Exit writes says it: OnFrame looks for it, and joining the next game
+// takes a last look and lets them go if it isn't there.
+struct LeftAreas {
+	std::vector<int>                levels;
+	std::filesystem::file_time_type began;
+	// The seed's save they belong to (empty: no seed was bound).
+	std::filesystem::path           save;
+	std::optional<int>              difficulty;
+};
+std::optional<LeftAreas> gLeftAreas;
+Clock::time_point        gNextSaveLook;
 // Encounter requests logged this game (LogEncounter), as kind, area and difficulty.
 std::set<std::tuple<int, int, uint32_t>> gEncountersLogged;
 int                   gAct          = 0;
@@ -3616,6 +3632,72 @@ void DrawOverlayTest(const D2RL::Overlay::Frame* frame) {
 	}
 }
 
+// Where the game keeps the characters: Saved Games\Diablo II Resurrected, then Mods\<mod> for a mod's.
+auto SavesDirectory() -> std::filesystem::path {
+	PWSTR known = nullptr;
+	std::filesystem::path directory;
+	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_SavedGames, 0, nullptr, &known))) {
+		directory = std::filesystem::path(known) / L"Diablo II Resurrected";
+	}
+	CoTaskMemFree(known);
+	if (!directory.empty() && gContext->activeMod != nullptr && *gContext->activeMod != '\0') {
+		directory /= std::filesystem::path(L"Mods") / std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(gContext->activeMod)));
+	}
+	return directory;
+}
+
+// Reads the difficulty of the game gLeftAreas came from out of the character's save (#130).
+// Until the save shows up it tries every so often; `last` is the final try, when the next game
+// begins (and might save over it), and lets the areas go if it still can't tell.
+void ReadLeftDifficulty(bool last) {
+	std::filesystem::file_time_type began;
+	{
+		std::lock_guard lock(gMutex);
+		if (!gLeftAreas || gLeftAreas->difficulty || (!last && Clock::now() < gNextSaveLook)) {
+			return;
+		}
+		gNextSaveLook = Clock::now() + std::chrono::milliseconds(500);
+		began = gLeftAreas->began;
+	}
+	const std::set<int> found = ap::saved_difficulty::Find(SavesDirectory(), began);
+	if (found.size() != 1 && !last) {
+		return;
+	}
+	std::lock_guard lock(gMutex);
+	if (!gLeftAreas || gLeftAreas->began != began) {
+		return;
+	}
+	if (found.size() == 1) {
+		gLeftAreas->difficulty = *found.begin();
+		Log("Archipelago: the save says the last game was on " + std::string(DifficultyNames[*found.begin()]) + "; checking the "
+		    + std::to_string(gLeftAreas->levels.size()) + " areas entered before that was known.");
+	} else {
+		Log("Archipelago: couldn't tell the last game's difficulty from the saves (" + std::to_string(found.size()) + " found); letting go of the "
+		    + std::to_string(gLeftAreas->levels.size()) + " areas entered before it was known.");
+		gLeftAreas.reset();
+	}
+}
+
+// The checks for entering an area: the act area, the seed's side areas (all of them before a
+// seed is bound; the server skips the rest) and the Secret Cow Level.
+void CheckArea(int difficulty, int level, bool bound, const std::set<int64_t>& sideAreas) {
+	if (level == ap::data::CowLevel) {
+		std::lock_guard lock(gMutex);
+		gCowQueue.insert(difficulty * 10);
+	}
+	for (const auto& area : ap::data::Areas) {
+		if (area.id == level) {
+			AddChecks({ ap::ids::AreaLocation(static_cast<uint32_t>(difficulty), area.id) });
+		}
+	}
+	for (const auto& area : ap::data::SideAreas) {
+		const int64_t location = ap::ids::AreaLocation(static_cast<uint32_t>(difficulty), area.id);
+		if (area.id == level && (!bound || sideAreas.contains(location))) {
+			AddChecks({ location });
+		}
+	}
+}
+
 void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* frame, void*) noexcept {
 	if (frame == nullptr || !gClient) {
 		return;
@@ -3711,9 +3793,11 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		std::lock_guard lock(gMutex);
 		gQuestQueue.insert(gQuestQueue.begin(), waiting.begin(), waiting.end());
 	}
+	ReadLeftDifficulty(false);
 	std::vector<int> areas;
 	int difficulty = 0;
 	bool bound = false;
+	std::optional<LeftAreas> left;
 	{
 		std::lock_guard lock(gMutex);
 		if (gDifficultyKnown) {
@@ -3724,26 +3808,25 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 			}
 		}
 		bound = gBoundSession != 0;
+		if (gLeftAreas && gLeftAreas->difficulty) {
+			left = std::exchange(gLeftAreas, std::nullopt);
+			// Not into another seed than the one the game was played for.
+			if (left->save != (bound ? gSavePath : std::filesystem::path {})) {
+				Log("Archipelago: the seed changed since the last game; letting go of its " + std::to_string(left->levels.size()) + " areas.");
+				left.reset();
+			}
+		}
 	}
-	const std::set<int64_t> sideAreas = areas.empty() ? std::set<int64_t> {} : gClient->Slots().sideAreas;
+	const std::set<int64_t> sideAreas = areas.empty() && !left ? std::set<int64_t> {} : gClient->Slots().sideAreas;
 	UpdateLocks();
 	for (const int level : areas) {
 		EnforceActKeys(difficulty, level);
-		if (level == ap::data::CowLevel) {
-			std::lock_guard lock(gMutex);
-			gCowQueue.insert(difficulty * 10);
-		}
-		for (const auto& area : ap::data::Areas) {
-			if (area.id == level) {
-				AddChecks({ ap::ids::AreaLocation(static_cast<uint32_t>(difficulty), area.id) });
-			}
-		}
-		// Only the side areas the seed picked; before a seed is bound, keep them all (the server skips the rest).
-		for (const auto& area : ap::data::SideAreas) {
-			const int64_t location = ap::ids::AreaLocation(static_cast<uint32_t>(difficulty), area.id);
-			if (area.id == level && (!bound || sideAreas.contains(location))) {
-				AddChecks({ location });
-			}
+		CheckArea(difficulty, level, bound, sideAreas);
+	}
+	// The game they were entered in is over, so no act key to enforce.
+	if (left) {
+		for (const int level : left->levels) {
+			CheckArea(*left->difficulty, level, bound, sideAreas);
 		}
 	}
 	std::set<int> cows;
@@ -3870,11 +3953,15 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 		case Kind::LocalPlayerReady: {
 			gPanelGame = event->sessionGeneration;
 			gWorkQueued = false;
+			if (event->kind == Kind::GameJoined) {
+				ReadLeftDifficulty(true);
+			}
 			std::lock_guard lock(gMutex);
 			// Only on joining: by LocalPlayerReady this game may already have said the level.
 			if (event->kind == Kind::GameJoined) {
 				ForgetPlayer();
 				gEncountersLogged.clear();
+				gGameBegan = std::filesystem::file_time_type::clock::now();
 			}
 			gInGame = true;
 			gRepairOffer.Cancel();
@@ -3926,6 +4013,15 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gRepairOfferQueued = false;
 			gRespecToken = D2RL::InvalidItemHandle;
 			Log("Archipelago: left the game.");
+			// Areas still waiting for the difficulty wait for the save this leaves instead (#130).
+			if (!gDifficultyKnown && !gPendingAreas.empty()) {
+				if (gLeftAreas) {
+					Log("Archipelago: letting go of " + std::to_string(gLeftAreas->levels.size()) + " areas from an earlier game, still without a difficulty.");
+				}
+				gLeftAreas = LeftAreas { std::exchange(gPendingAreas, {}), gGameBegan, gBoundSession != 0 ? gSavePath : std::filesystem::path {}, std::nullopt };
+				gNextSaveLook = Clock::now();
+				Log("Archipelago: left with " + std::to_string(gLeftAreas->levels.size()) + " areas entered before the difficulty was known; reading it from the save.");
+			}
 			// Kill and cow counters only reach the file every so often; leaving the game
 			// (or closing D2R) writes the rest, so the next game carries on from them.
 			// Leaving also saves the character, rewards and all: a crash later can't take them.
