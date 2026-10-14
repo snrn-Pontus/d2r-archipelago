@@ -545,7 +545,24 @@ that registered ("encounter logging provider: result 0").
       Tree Shuffle (tree mode) and without. Is only your own class's skill allowed? (A Warlock isn't asked,
       so it shows every other class refused.)
 
+## 2d2. Difficulty from the game client (issue #154)
+
+The plugin now reads the difficulty from the game client as a game begins (found by byte pattern; the startup
+log says "found the game's difficulty"). Joining logs "the game client says the difficulty is ...", and
+`ap-debug state` has a "game client difficulty" line.
+
+- [ ] **Normal, Nightmare, Hell:** make a game on each (a character that has them). The join line names the
+      right difficulty, before any kill.
+- [ ] **Areas in town:** on a fresh game walk into Cold Plains without killing anything: its check sends at
+      once, not after a kill. Save & Exit then: no "left with N areas" line.
+- [ ] **Switching:** a Nightmare game straight after a Normal one says Nightmare (the byte isn't the old game's).
+- [ ] **Fallback:** `ap-debug native off`, then a new game: no join line, and areas wait for a kill as before
+      (section 2e still works). `ap-debug native on` to undo.
+
 ## 2e. Areas left before the difficulty is known (issue #130)
+
+Only happens now when the game's difficulty can't be read (`ap-debug native off`, or a game build where it
+isn't found).
 
 Areas entered before the first kill wait for the difficulty; leaving the game now reads it from the
 character's save instead of dropping them. Watch the log for "left with N areas entered before the

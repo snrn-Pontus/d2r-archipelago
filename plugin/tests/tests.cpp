@@ -2,6 +2,7 @@
 
 #include "ap_client.h"
 #include "character.h"
+#include "client_info.h"
 #include "codex.h"
 #include "command_panel.h"
 #include "config.h"
@@ -236,6 +237,39 @@ void TestQuestRecord() {
 	EXPECT(ap::quest_record::Read(reinterpret_cast<uintptr_t>(&pointer), read) == ReadResult::NoRecord);
 	pointer = reinterpret_cast<const Record*>(uintptr_t { 0x10 });
 	EXPECT(ap::quest_record::Read(reinterpret_cast<uintptr_t>(&pointer), read) == ReadResult::Fault);
+}
+
+// FakeImage's sections with the game-flags handler at 0x1500 calling a setter at 0x1600
+// that stores to target, and (if withGetter) a getter at 0x1700 that reads getterTarget.
+auto FakeFlagsImage(uint32_t target, bool withGetter, uint32_t getterTarget, bool setterRight = true) -> std::vector<uint8_t> {
+	auto image = FakeImage(0x2010, 0x2010, 0x2010, false);
+	const auto put32 = [&](size_t at, uint32_t value) { std::memcpy(&image[at], &value, 4); };
+	const auto bytes = [&](size_t at, std::initializer_list<uint8_t> list) { std::copy(list.begin(), list.end(), image.begin() + static_cast<std::ptrdiff_t>(at)); };
+	bytes(0x1500, { 0x8B, 0x79, 0x02, 0x48, 0x8B, 0xD9, 0x0F, 0xB6, 0x49, 0x01, 0xE8, 0, 0, 0, 0, 0x0F, 0xB6, 0x53, 0x06, 0x83, 0xEA, 0x01 });
+	put32(0x150B, 0x1600 - 0x150F);
+	bytes(0x1600, { 0x88, setterRight ? uint8_t { 0x0D } : uint8_t { 0x15 }, 0, 0, 0, 0, 0xC3 });
+	put32(0x1602, target - 0x1606);
+	if (withGetter) {
+		bytes(0x1700, { 0x0F, 0xB6, 0x05, 0, 0, 0, 0, 0xC3 });
+		put32(0x1703, getterTarget - 0x1707);
+	}
+	return image;
+}
+
+void TestClientInfo() {
+	using ap::client_info::LocateDifficulty;
+	EXPECT(LocateDifficulty(FakeFlagsImage(0x2020, true, 0x2020).data()).rva == 0x2020);
+	EXPECT(LocateDifficulty(FakeFlagsImage(0x2020, false, 0).data()).error.find("reads") != std::string::npos);
+	EXPECT(LocateDifficulty(FakeFlagsImage(0x2020, true, 0x2021).data()).error.find("reads") != std::string::npos);
+	EXPECT(LocateDifficulty(FakeFlagsImage(0x2020, true, 0x2020, false).data()).error.find("setter") != std::string::npos);
+	EXPECT(LocateDifficulty(FakeFlagsImage(0x1020, true, 0x1020).data()).error.find("data") != std::string::npos);
+	EXPECT(LocateDifficulty(FakeImage(0x2010, 0x2010, 0x2010, false).data()).error.find("not found") != std::string::npos);
+
+	uint8_t difficulty = 2;
+	EXPECT(ap::client_info::ReadDifficulty(reinterpret_cast<uintptr_t>(&difficulty)) == 2);
+	difficulty = 3;
+	EXPECT(!ap::client_info::ReadDifficulty(reinterpret_cast<uintptr_t>(&difficulty)));
+	EXPECT(!ap::client_info::ReadDifficulty(0) && !ap::client_info::ReadDifficulty(0x10));
 }
 
 void TestConfigRoundTrip() {
@@ -2509,6 +2543,7 @@ int main() {
 	TestConnectionEndReasons();
 	TestNativeScan();
 	TestQuestRecord();
+	TestClientInfo();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
 	TestConfigNumericIds();

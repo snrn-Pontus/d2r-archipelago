@@ -11,6 +11,7 @@ add_subdirectory(sdk)
 # Code shared by the plugin, the unit tests and the ap-probe test tool.
 add_library(ap_core STATIC
 	src/ap_client.cpp
+	src/client_info.cpp
 	src/codex.cpp
 	src/command_panel.cpp
 	src/config.cpp

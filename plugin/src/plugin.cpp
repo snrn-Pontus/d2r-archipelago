@@ -6,6 +6,7 @@
 
 #include "ap_client.h"
 #include "character.h"
+#include "client_info.h"
 #include "codex.h"
 #include "command_panel.h"
 #include "config.h"
@@ -300,9 +301,11 @@ Clock::time_point     gNextQuestScan;
 int                   gPlayerLevel  = 0;
 // Where the character is, for estimating its level before that.
 int                   gDifficulty   = 0;
-// Whether a monster death in this game has told us gDifficulty. Areas entered
-// before that wait in gPendingAreas, since the area events don't say.
+// Whether this game has told us gDifficulty: the game client at join (#154), or else a
+// monster death. Areas entered before that wait in gPendingAreas, since the area events don't say.
 bool                  gDifficultyKnown = false;
+// The address of the client's difficulty byte (#154), or 0 if its patterns weren't found in this game build.
+uintptr_t             gDifficultyAddress = 0;
 std::vector<int>      gPendingAreas;
 // Quest item codes found before then, for their checks (#123).
 std::set<uint32_t>    gPendingQuestItems;
@@ -604,6 +607,8 @@ struct UnsavedState {
 std::map<std::filesystem::path, UnsavedState> gUnsaved;
 // ap-debug savefail on: every save fails as if the file were read-only.
 std::atomic<bool>     gDebugSaveFails = false;
+// ap-debug native off: what the game client knows (#154) isn't read, as if its patterns weren't found.
+std::atomic<bool>     gDebugNativeOff = false;
 
 // Writes one copy of a save. True once it's on disk, or a newer one is.
 auto WriteSave(const ap::SaveState& state, const std::filesystem::path& path, uint64_t serial) -> bool {
@@ -4489,6 +4494,14 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gRespecToken = D2RL::InvalidItemHandle;
 			Log(std::string("Archipelago: ") + (event->kind == Kind::GameJoined ? "joined a game" : "local player ready") + " (session "
 			    + std::to_string(event->sessionGeneration) + "; " + (gClient ? gClient->StatusText() : std::string("no client")) + ").");
+			// The client has had the game's first packet by now, which says the difficulty (#154).
+			if (const auto difficulty = ap::client_info::ReadDifficulty(gDebugNativeOff ? 0 : gDifficultyAddress)) {
+				gDifficulty      = *difficulty;
+				gDifficultyKnown = true;
+				if (event->kind == Kind::GameJoined) {
+					Log("Archipelago: the game client says the difficulty is " + std::string(DifficultyNames[*difficulty]) + ".");
+				}
+			}
 			break;
 		}
 		case Kind::PlayerResurrected: {
@@ -5627,6 +5640,9 @@ void LogState() {
 		for (const auto& [difficulty, quests] : gSave.questBaseline) {
 			baselines += ", " + std::string(DifficultyNames[std::clamp(difficulty, 0, 2)]) + " baseline " + std::to_string(std::popcount(quests)) + " quests";
 		}
+		const auto clientDifficulty = ap::client_info::ReadDifficulty(gDifficultyAddress);
+		lines.push_back(std::string("game client difficulty: ") + (gDifficultyAddress == 0 ? "not found" : clientDifficulty ? DifficultyNames[*clientDifficulty] : "unreadable")
+		                + (gDebugNativeOff ? " (ap-debug native off)" : "") + ".");
 		lines.push_back(std::string("quest log: ") + (gQuestLogPointer == 0 ? "not found" : gQuestLogFailed ? "failed" : "found")
 		                + (QuestLogDecides() ? ", completes quests" : ", fallbacks complete quests") + baselines + ", "
 		                + std::to_string(gHeldFallbacks.size()) + " fallback completions held.");
@@ -5850,6 +5866,14 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 		                      : "ap-debug: saves work again; paused rewards should arrive.");
 		return D2RL::ConsoleCommandResult::Handled;
 	}
+	// ap-debug native on|off: off ignores what the game client knows (#154), to test the fallbacks.
+	if (args[0] == "native" && args.size() == 2 && (args[1] == "on" || args[1] == "off")) {
+		gDebugNativeOff = args[1] == "off";
+		Log("Archipelago: ap-debug native " + args[1] + ".");
+		Reply(args[1] == "off" ? "ap-debug: the game client's difficulty is ignored from the next game; a kill tells it."
+		                       : "ap-debug: the game client's difficulty is read again from the next game.");
+		return D2RL::ConsoleCommandResult::Handled;
+	}
 	// ap-debug crash: ends D2R at once, like a crash or Task Manager, for the "no normal
 	// exit" and lost-rewards tests. It needs a second crash within 10 seconds.
 	if (args[0] == "probe") {
@@ -5876,7 +5900,7 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 		return D2RL::ConsoleCommandResult::Handled;
 	}
 	gContext->WriteConsoleMessage("Usage: ap-debug [on|off], ap-debug kit, ap-debug give <item code> [count] [sockets], ap-debug spawn <item code> [unique], "
-	                              "ap-debug mark [text], ap-debug state, ap-debug quests, ap-debug probe, ap-debug kills [n], ap-debug cows [n], ap-debug savefail on|off, ap-debug crash, "
+	                              "ap-debug mark [text], ap-debug state, ap-debug quests, ap-debug probe, ap-debug kills [n], ap-debug cows [n], ap-debug savefail on|off, ap-debug native on|off, ap-debug crash, "
 	                              "ap-debug banner [important|trap|check] <text>, ap-debug overlay");
 	return D2RL::ConsoleCommandResult::InvalidArguments;
 }
@@ -6127,6 +6151,14 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	} else {
 		LogWarning(("Archipelago: can't find the game's quest log in this game build (" + questLog.error + "); quests complete from kills, items and areas.").c_str());
 	}
+	if (const auto difficulty = ap::client_info::LocateDifficulty(reinterpret_cast<const uint8_t*>(context->exeBase)); difficulty.rva != 0) {
+		gDifficultyAddress = context->exeBase + difficulty.rva;
+		char rva[16];
+		std::snprintf(rva, sizeof(rva), "0x%X", difficulty.rva);
+		Log("Archipelago: found the game's difficulty (at " + std::string(rva) + "); it's known as a game begins.");
+	} else {
+		LogWarning(("Archipelago: can't find the game's difficulty in this game build (" + difficulty.error + "); it's learned from the first kill.").c_str());
+	}
 	if (context->QueryService(&gTables) != D2RL::ServiceQueryResult::Success || !D2RL::HasDataTableServiceField(gTables, D2RL::DataTableServiceRequiredSize)) {
 		gTables = nullptr;
 		LogWarning("Archipelago: no data table service; unique and set rows come from the generated numbers.");
@@ -6249,7 +6281,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-missing", CommandMissing, "List the checks left in this act: ap-missing [all].")
 	                   && context->RegisterConsoleCommand("ap-panel", CommandPanel, "Open or close the Archipelago command panel (F9).")
 	                   && context->RegisterConsoleCommand("ap-repairs", CommandRepairs, "Experimental repairs with Merchant Lock: ap-repairs on|off; use the NPC repair panel.")
-	                   && context->RegisterConsoleCommand("ap-debug", CommandDebug, "Debug tools: ap-debug on|off, ap-debug opens the debug panel (F10), ap-debug kit, give <code> [count] [sockets], spawn <code> [unique], mark [text], state, probe, kills [n], cows [n], savefail on|off, crash.")
+	                   && context->RegisterConsoleCommand("ap-debug", CommandDebug, "Debug tools: ap-debug on|off, ap-debug opens the debug panel (F10), ap-debug kit, give <code> [count] [sockets], spawn <code> [unique], mark [text], state, probe, kills [n], cows [n], savefail on|off, native on|off, crash.")
 	                   && context->RegisterConsoleCommand("ap-ui", CommandUi, "Send a D2R UI message: ap-ui <target> <command> [text].");
 	if (!commands) {
 		LogFailure("Archipelago: couldn't register console commands.");
