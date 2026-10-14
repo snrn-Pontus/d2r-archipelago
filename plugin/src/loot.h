@@ -6,6 +6,7 @@
 #include <D2RLPlugin/item.h>
 
 #include <cstdint>
+#include <iterator>
 #include <random>
 #include <span>
 #include <string>
@@ -58,20 +59,44 @@ struct Pick {
 
 auto CodeFromText(const char* text) -> uint32_t;
 
+// The helpful Shrines.txt rows a Random Shrine can be: Refilling, Armor,
+// Combat, the four resistances, Skill, Mana Recharge, Experience, Gem.
+inline constexpr int HelpfulShrines[] = { 1, 6, 7, 8, 9, 10, 11, 12, 13, 15, 18 };
+
+// The seed's reward options; the defaults are the rewards from before these
+// were options.
+struct RewardSettings {
+	int goldPerLevel = 1000;
+	// Percent of what the current level needs to level up.
+	int experiencePercent = 15;
+	// A unique or set item is level-appropriate when its requirement is at most
+	// levelBelow under the character and at most levelAbove over it.
+	int levelBelow = 12;
+	int levelAbove = 2;
+	int rareJewelPercent = 30;
+	// High rune n (Pul 21 .. Zod 33) weighs (34 - n) to this power: 0 makes
+	// them all alike, 2 makes Zod 169 times rarer than Pul.
+	int highRuneCurve = 2;
+	// The HelpfulShrines a Random Shrine picks from. Empty means the seed has
+	// none in its filler; one that arrives anyway (or a pool with none helpful)
+	// picks from all of them.
+	std::vector<int> shrines { std::begin(HelpfulShrines), std::end(HelpfulShrines) };
+};
+
 // Rolls one item. For JunkBackpack it returns one piece of junk; the caller
 // repeats until the inventory is full. playerClass (ClassNames order, -1 for
 // unknown) leaves out uniques, sets and bases only another class can use.
-auto Roll(Loot loot, int level, std::mt19937& random, int playerClass = -1) -> Pick;
+auto Roll(Loot loot, int level, std::mt19937& random, int playerClass = -1, const RewardSettings& rewards = {}) -> Pick;
 
-// Gold for a Gold reward: 1,000 per character level.
-auto GoldAmount(int level) -> int;
+// Gold for a Gold reward: goldPerLevel per character level.
+auto GoldAmount(int level, const RewardSettings& rewards = {}) -> int;
 
-// Experience for an Experience reward: 15% of what the level needs to level
-// up (0 at level 99).
-auto ExperienceAmount(int level) -> int64_t;
+// Experience for an Experience reward: experiencePercent of what the level
+// needs to level up (0 at level 99).
+auto ExperienceAmount(int level, const RewardSettings& rewards = {}) -> int64_t;
 
-// A helpful Shrines.txt row for a Random Shrine.
-auto ShrineId(std::mt19937& random) -> int;
+// A Shrines.txt row for a Random Shrine, from pool (see RewardSettings::shrines).
+auto ShrineId(std::mt19937& random, std::span<const int> pool = {}) -> int;
 
 // A MonStats id for an Ambush in this act (0-4): a common monster of the act.
 auto AmbushMonster(int act, std::mt19937& random) -> const char*;
@@ -89,9 +114,10 @@ struct TrapSettings {
 	int taxPerLevel = 1000;
 };
 // An Ambush picks from areaMonsters (MonStats ids) when there are any, and
-// from the act's common monsters otherwise.
+// from the act's common monsters otherwise. A Random Shrine picks from
+// rewards.shrines.
 auto CommandsFor(Loot loot, int level, int act, std::mt19937& random, const TrapSettings& traps = {},
-                 std::span<const std::string> areaMonsters = {}) -> Commands;
+                 std::span<const std::string> areaMonsters = {}, const RewardSettings& rewards = {}) -> Commands;
 
 // A level estimate from where the character is, for when no level-up has
 // been seen yet: the start of the difficulty plus a few levels per act.

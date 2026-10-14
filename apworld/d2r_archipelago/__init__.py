@@ -15,17 +15,16 @@ from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOW
                   level_location_name, location_name_to_id, quest_item_location_name, quest_location_name,
                   set_location_name, shop_location_name, skill_item_name, skill_names_by_class,
                   superunique_location_name)
-from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions, loader_settings
+from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions, ShrinePool, loader_settings
 
 GAME = "Diablo II Resurrected"
 SKILLS_GROUP = "Skills"
-BOSS_UNIQUE = "Random Unique"
 # Quest flags of the act boss kills: Andariel, Duriel, Mephisto, Diablo, Baal.
 BOSS_QUESTS = (6, 14, 22, 26, 40)
 BOSS_NAMES = ("Andariel", "Duriel", "Mephisto", "Diablo", "Baal")
 # Act key name -> index of the act it unlocks (difficulty * 5 + act).
 KEY_ACTS = {name: index for index, name in enumerate(KEY_NAMES, 1)}
-USEFUL_LOOT = {BOSS_UNIQUE, *UNIQUE_LOOT, "Random Set Item", "High Rune", EMPOWERMENT, SKILL_POINT}
+USEFUL_LOOT = {"Random Unique", *UNIQUE_LOOT, "Random Set Item", "High Rune", EMPOWERMENT, SKILL_POINT}
 # With the Cube Lock, these need the Horadric Cube (the Horadric Staff and Khalim's Will), on every difficulty.
 CUBE_QUESTS = ("The Horadric Staff", "The Seven Tombs", "Khalim's Will", "The Blackened Temple", "The Guardian")
 CUBE_AREAS = ("Duriel's Lair", "Durance of Hate Level 2", "Durance of Hate Level 3")
@@ -335,13 +334,14 @@ class D2RWorld(World):
 
     def create_items(self) -> None:
         if self.options.boss_quests_give_uniques:
+            boss_reward = self.options.boss_reward_type.reward_items[self.options.boss_reward_type.value]
             boss_names = [name for flag, _act, name in QUESTS if flag in BOSS_QUESTS]
             ours = {location.name for location in self.get_locations()}
             for difficulty in range(self.options.goal.value + 1):
                 for name in boss_names:
                     if quest_location_name(difficulty, name) in ours:
                         location = self.get_location(quest_location_name(difficulty, name))
-                        location.place_locked_item(self.create_item(BOSS_UNIQUE))
+                        location.place_locked_item(self.create_item(boss_reward))
 
         allowed = set(self.options.skill_classes.value) or set(CLASSES.values())
         if not self.options.include_warlock:
@@ -594,9 +594,10 @@ class D2RWorld(World):
         weights["Socketed Base"] = self.options.socketed_base_weight.value
         weights["Gold"] = self.options.gold_weight.value
         weights["Experience"] = self.options.experience_weight.value
-        weights["Random Charm"] = self.options.charm_weight.value * 0.6
-        weights["Random Jewel"] = self.options.charm_weight.value * 0.4
-        weights["Random Shrine"] = self.options.shrine_weight.value
+        # The share as a fraction first, so the default 40 gives exactly the weights from before it was an option.
+        weights["Random Charm"] = self.options.charm_weight.value * ((100 - self.options.jewel_share.value) / 100)
+        weights["Random Jewel"] = self.options.charm_weight.value * (self.options.jewel_share.value / 100)
+        weights["Random Shrine"] = self.options.shrine_weight.value if self.options.shrine_pool.value else 0
         weights["Prophecy"] = self.options.prophecy_weight.value
         if sum(weights.values()) == 0:
             return {name: 1 for name in BASIC_LOOT}
@@ -695,6 +696,16 @@ class D2RWorld(World):
                 "ambush_monsters": self.options.ambush_monsters.current_key,
                 "tax_per_level": self.options.tax_collector_gold.value,
                 "junk_size": self.options.junk_backpack_size.value,
+            },
+            # How the plugin rolls rewards when they arrive.
+            "rewards": {
+                "gold_per_level": self.options.gold_reward_per_level.value,
+                "experience_percent": self.options.experience_reward_percent.value,
+                "level_below": self.options.reward_level_below.value,
+                "level_above": self.options.reward_level_above.value,
+                "rare_jewel_chance": self.options.rare_jewel_chance.value,
+                "high_rune_curve": self.options.high_rune_curve.value,
+                "shrines": sorted(ShrinePool.shrines[name] for name in self.options.shrine_pool.value),
             },
             "death_link": bool(self.options.death_link),
             # d2r-ap-setup writes these into the mod's d2rloader.toml, overriding the player's D2RLoader settings.

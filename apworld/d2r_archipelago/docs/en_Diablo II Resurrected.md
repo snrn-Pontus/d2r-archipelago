@@ -172,16 +172,21 @@ The setup tool rewrites the game's tables for your seed:
 Everything else arrives in your inventory, rolled when you receive it and scaled to your character level:
 
 - **Random Unique** (weapon, armor or jewelry) and **Random Set Item**: one your level can use, so you won't
-  find a Windforce at level 3. The act boss quests always give a Random Unique (`boss_quests_give_uniques`).
-- **Runes** in three tiers. High runes run from Pul to Zod, and the higher the rune, the rarer it is.
+  find a Windforce at level 3: its level requirement is at most 12 below your level and 2 above it
+  (`reward_level_below`, `reward_level_above`). The act boss quests always give a Random Unique
+  (`boss_quests_give_uniques`; `boss_reward_type` can make it a unique weapon, armor or jewelry, a set item or
+  a high rune).
+- **Runes** in three tiers. High runes run from Pul to Zod, and the higher the rune, the rarer it is
+  (`high_rune_curve`: flat, gentle, steep or very steep).
 - **Socketed Base**: a white weapon or armor with two or more sockets, ready for a runeword.
   Each socket count from two through that base's legal maximum is equally likely.
 - **Codex Empowerment**: +1 to every skill in your Codex.
 - Potions and perfect gems.
-- **Gold** (1,000 per character level), **Experience** (15% of your current level) and **Random Charms**
-  and **Random Jewels**, rolled at your level.
+- **Gold** (1,000 per character level, `gold_reward_per_level`), **Experience** (15% of your current level,
+  `experience_reward_percent`) and **Random Charms** and **Random Jewels**, rolled at your level. Jewels take
+  40% of `charm_weight` (`jewel_share`) and are rare 30% of the time (`rare_jewel_chance`), magic otherwise.
 - **Random Shrine**: a helpful shrine (refill, defense, combat, a resistance, skill, mana recharge, experience
-  or gem) appears at your feet.
+  or gem) appears at your feet. `shrine_pool` picks which ones; with none, there are no Random Shrines.
 - **Traps** (`trap_percentage`, 10% of filler by default), which wait until you leave town: **Junk Backpack**
   (worthless gear fills your free inventory space), **Ambush** (a pack of the act's monsters), **Poison
   Cloud**, **Firestorm**, **Mana Drain**, **Tax Collector** (lose up to 1,000 gold per level) and, only if you

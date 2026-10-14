@@ -2,6 +2,7 @@
 
 #include "act_lock.h"
 #include "config.h"
+#include "loot.h"
 #include "potion_lock.h"
 #include "randomizer.h"
 #include "websocket.h"
@@ -102,6 +103,8 @@ struct SlotData {
 		int  taxPerLevel = 1000;
 		int  junkSize = 40;
 	} traps;
+	// Reward tuning (gold, experience, uniques' level window, jewels, high runes, shrines).
+	loot::RewardSettings rewards;
 	// Deaths are shared with the other DeathLink players.
 	bool deathLink   = false;
 	randomizer::Settings randomizer;

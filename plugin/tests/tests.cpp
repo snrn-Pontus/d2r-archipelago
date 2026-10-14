@@ -1377,6 +1377,83 @@ void TestGoldExperienceCharms() {
 	EXPECT(charms.size() == 3);
 }
 
+void TestRewardSettings() {
+	// The defaults are the rewards from before these were options.
+	const ap::loot::RewardSettings defaults;
+	EXPECT(ap::loot::GoldAmount(80, defaults) == 80000 && ap::loot::ExperienceAmount(1, defaults) == 75);
+	ap::loot::RewardSettings rewards { .goldPerLevel = 250, .experiencePercent = 100 };
+	EXPECT(ap::loot::GoldAmount(80, rewards) == 20000);
+	// 100% of level 1's gap (500) is a whole level.
+	EXPECT(ap::loot::ExperienceAmount(1, rewards) == 500);
+	rewards.goldPerLevel = 0;
+	rewards.experiencePercent = 0;
+	EXPECT(ap::loot::GoldAmount(80, rewards) == 0 && ap::loot::ExperienceAmount(1, rewards) == 0);
+
+	// The level window: requirement within level - below .. level + above.
+	std::mt19937 random(23);
+	const auto inWindow = [&](const ap::loot::RewardSettings& window, int level) {
+		for (int i = 0; i < 200; ++i) {
+			const auto* unique = FindRecord(ap::data::Uniques, ap::loot::Roll(ap::loot::Loot::RandomUnique, level, random, -1, window).record);
+			const auto* set = FindRecord(ap::data::SetItems, ap::loot::Roll(ap::loot::Loot::SetItem, level, random, -1, window).record);
+			if (!unique || !set) {
+				return false;
+			}
+			for (const int req : { static_cast<int>(unique->reqLevel), static_cast<int>(set->reqLevel) }) {
+				if (req < level - window.levelBelow || req > level + window.levelAbove) {
+					return false;
+				}
+			}
+		}
+		return true;
+	};
+	EXPECT(inWindow(defaults, 50));
+	EXPECT(inWindow({ .levelBelow = 3, .levelAbove = 0 }, 50));
+	EXPECT(inWindow({ .levelBelow = 30, .levelAbove = 8 }, 40));
+	// A wider window above reaches items a default one never gives.
+	bool sawHigher = false;
+	for (int i = 0; i < 500 && !sawHigher; ++i) {
+		sawHigher = FindRecord(ap::data::Uniques, ap::loot::Roll(ap::loot::Loot::RandomUnique, 40, random, -1, { .levelAbove = 8 }).record)->reqLevel > 42;
+	}
+	EXPECT(sawHigher);
+
+	// Rare jewels: never at 0%, always at 100%.
+	for (int i = 0; i < 50; ++i) {
+		EXPECT(ap::loot::Roll(ap::loot::Loot::RandomJewel, 40, random, -1, { .rareJewelPercent = 0 }).quality == D2RL::Items::Quality::Magic);
+		EXPECT(ap::loot::Roll(ap::loot::Loot::RandomJewel, 40, random, -1, { .rareJewelPercent = 100 }).quality == D2RL::Items::Quality::Rare);
+	}
+
+	// High rune curve: a flat curve gives Zod about as often as Pul; the default square one almost never.
+	const auto zods = [&](int curve) {
+		int count = 0;
+		for (int i = 0; i < 2600; ++i) {
+			count += ap::loot::Roll(ap::loot::Loot::HighRune, 60, random, -1, { .highRuneCurve = curve }).name == "Zod Rune";
+		}
+		return count;
+	};
+	const int flat = zods(0);
+	EXPECT(flat > 120 && flat < 280);
+	EXPECT(zods(2) < 20);
+	EXPECT(zods(1) > zods(3));
+
+	// Shrine pool: only the chosen helpful shrines; unknown or harmful ids are ignored.
+	const int pool[] = { 15, 18, 4 };
+	std::set<int> seen;
+	for (int i = 0; i < 100; ++i) {
+		seen.insert(ap::loot::ShrineId(random, pool));
+	}
+	EXPECT(seen == std::set<int>({ 15, 18 }));
+	const int harmful[] = { 4, 21 };
+	for (int i = 0; i < 50; ++i) {
+		EXPECT(std::ranges::find(ap::loot::HelpfulShrines, ap::loot::ShrineId(random, harmful)) != std::end(ap::loot::HelpfulShrines));
+	}
+	// The default pool is every helpful shrine; an empty one (no shrines in the seed) still places one that arrives.
+	EXPECT(defaults.shrines.size() == std::size(ap::loot::HelpfulShrines));
+	const ap::loot::RewardSettings none { .shrines = {} };
+	EXPECT(ap::loot::CommandsFor(ap::loot::Loot::RandomShrine, 30, 0, random, {}, {}, none).commands.back().rfind("shrine ", 0) == 0);
+	const ap::loot::RewardSettings experienceOnly { .shrines = { 15 } };
+	EXPECT(ap::loot::CommandsFor(ap::loot::Loot::RandomShrine, 30, 0, random, {}, {}, experienceOnly).commands.back() == "shrine 15");
+}
+
 void TestShrinesAndTraps() {
 	std::mt19937 random(13);
 	const auto shrine = ap::loot::CommandsFor(ap::loot::Loot::RandomShrine, 30, 0, random);
@@ -2327,6 +2404,7 @@ int main() {
 	TestLootFitsClass();
 	TestSocketedBases();
 	TestGoldExperienceCharms();
+	TestRewardSettings();
 	TestShrinesAndTraps();
 	TestClientParsesServerPackets();
 	TestPanelConnectionTarget();
