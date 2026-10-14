@@ -2247,7 +2247,10 @@ void ScanParcels(D2RL::PlayerHandle player) {
 	if (gInventory->forEachInventoryItem(gContext, player, &filter, CollectParcels, &scan) != D2RL::Inventory::Result::Success) {
 		return;
 	}
-	const uint32_t checks = static_cast<uint32_t>(std::clamp(gClient->Slots().shopChecks, 0, static_cast<int>(ap::ids::MaxShopChecks)));
+	const ap::SlotData slots = gClient->Slots();
+	const uint32_t checks = static_cast<uint32_t>(std::clamp(slots.shopChecks, 0, static_cast<int>(ap::ids::MaxShopChecks)));
+	// Refunds pay what d2r-ap-setup priced the item at for this seed.
+	const ap::randomizer::Settings& prices = slots.randomizer;
 	for (const auto& [parcel, act] : scan.parcels) {
 		const auto result = gItems->destroyItem(gContext, player, parcel, D2RL::Items::SocketedItemPolicy::DestroyContents);
 		if (result != D2RL::Items::Result::Success) {
@@ -2267,14 +2270,14 @@ void ScanParcels(D2RL::PlayerHandle player) {
 			QueueLine("Archipelago: parcel delivered (" + std::string(ActNames[act]) + " shop, " + std::to_string(number + 1) + " of "
 			                        + std::to_string(checks) + ").");
 		} else {
-			QueueReward(-1, "gold " + std::to_string(ap::randomizer::ParcelCosts[act]));
+			QueueReward(-1, "gold " + std::to_string(ap::randomizer::ShopPrice(ap::randomizer::ParcelCosts[act], prices.parcelPrice)));
 			SaveNow();
 			QueueLine("Archipelago: no more parcels to deliver in " + std::string(ActNames[act]) + "; your gold is refunded.");
 		}
 	}
 	// Scrolls of Prophecy: only the next price tier counts (the last one repeats);
 	// a cheaper one is refunded.
-	const bool prophecyShop = gClient->Slots().prophecyShop;
+	const bool prophecyShop = slots.prophecyShop;
 	constexpr int LastTier = static_cast<int>(std::size(ap::randomizer::ProphecyCodes)) - 1;
 	for (const auto& [scroll, tier] : scan.prophecies) {
 		if (gItems->destroyItem(gContext, player, scroll, D2RL::Items::SocketedItemPolicy::DestroyContents) != D2RL::Items::Result::Success) {
@@ -2283,10 +2286,11 @@ void ScanParcels(D2RL::PlayerHandle player) {
 		std::lock_guard lock(gMutex);
 		const int next = std::min(gSave.prophecies, LastTier);
 		if (!prophecyShop || static_cast<int>(tier) < next) {
-			QueueReward(-1, "gold " + std::to_string(ap::randomizer::ProphecyCosts[tier]));
+			QueueReward(-1, "gold " + std::to_string(ap::randomizer::ShopPrice(ap::randomizer::ProphecyCosts[tier], prices.prophecyPrice)));
 			SaveNow();
 			QueueLine(!prophecyShop ? "Archipelago: Scrolls of Prophecy aren't part of this seed; your gold is refunded."
-			                                      : "Archipelago: you already know that prophecy; the next is the " + std::to_string(ap::randomizer::ProphecyCosts[next])
+			                                      : "Archipelago: you already know that prophecy; the next is the "
+			                                            + std::to_string(ap::randomizer::ShopPrice(ap::randomizer::ProphecyCosts[next], prices.prophecyPrice))
 			                                            + "-gold scroll. Your gold is refunded.");
 			continue;
 		}

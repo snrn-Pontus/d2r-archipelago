@@ -215,12 +215,32 @@ class QuestItemChecks(DefaultOnToggle):
 
 
 class ShopChecks(Range):
-    """Each act's potion seller (Akara, Lysander, Ormus, Jamella, Malah) sells Archipelago Parcels; buying
-    one is a check, up to this many per act. They cost more in later acts."""
+    """Each act's potion seller (Akara, Lysander, Ormus, Jamella, Malah), or blacksmith with Shop Vendor, sells
+    Archipelago Parcels; buying one is a check, up to this many per act. They cost more in later acts."""
     display_name = "Shop Checks"
     range_start = 0
     range_end = 5
     default = 3
+
+
+class ShopVendor(Choice):
+    """Who sells the Archipelago Parcels in each act.
+    potion_seller: Akara, Lysander, Ormus, Jamella and Malah.
+    blacksmith: Charsi, Fara, Hratli, Halbu and Larzuk.
+    Scrolls of Prophecy and the Writ of Absolution stay with the potion sellers."""
+    display_name = "Shop Vendor"
+    option_potion_seller = 0
+    option_blacksmith = 1
+    default = 0
+
+
+class ParcelPriceMultiplier(Range):
+    """Price of the Archipelago Parcels, in percent of the usual 2,500 (Act I) to 40,000 (Act V) gold. A parcel
+    bought past the last check refunds this price."""
+    display_name = "Parcel Price Multiplier"
+    range_start = 10
+    range_end = 500
+    default = 100
 
 
 class UberChecks(Toggle):
@@ -347,6 +367,15 @@ class ProphecyShop(DefaultOnToggle):
     (1,000 gold up to 100,000); the vendor lists every price, and only the next one counts (a cheaper scroll
     is refunded)."""
     display_name = "Prophecy Shop"
+
+
+class ProphecyPriceMultiplier(Range):
+    """Price of the Scrolls of Prophecy, in percent of the usual 1,000 to 100,000 gold. A refunded scroll gives
+    this price back."""
+    display_name = "Prophecy Price Multiplier"
+    range_start = 10
+    range_end = 500
+    default = 100
 
 
 class HintBalance(Range):
@@ -933,6 +962,8 @@ class D2ROptions(PerGameCommonOptions):
     superunique_checks: SuperUniqueChecks
     quest_item_checks: QuestItemChecks
     shop_checks: ShopChecks
+    shop_vendor: ShopVendor
+    parcel_price_multiplier: ParcelPriceMultiplier
     uber_checks: UberChecks
     kill_count_checks: KillCountChecks
     find_count_checks: FindCountChecks
@@ -951,6 +982,7 @@ class D2ROptions(PerGameCommonOptions):
     cain_hints: CainHints
     page_hint_chance: PageHintChance
     prophecy_shop: ProphecyShop
+    prophecy_price_multiplier: ProphecyPriceMultiplier
     hint_balance: HintBalance
     rune_checks: RuneChecks
     gem_checks: GemChecks
@@ -1021,11 +1053,12 @@ OPTION_GROUPS = [
     OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, EnforceActKeysMode, ActKeyWindow, SkillsPerAct]),
     OptionGroup("Skills and Codex", [CharacterClass, SkillMode, SkillTreeShuffle, SkillPoints, SkillPoolSize, SkillCopies, SkillFocus, ScaleWithLength, StartingSkills,
                                      UsefulStartingSkills, SkillBlocklist, SkillClasses, IncludeWarlock, SkillLevelScaling, SkillScalingCap, CodexEmpowerments]),
-    OptionGroup("Checks", [AreaChecks, SideAreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, CowLevelChecks]),
+    OptionGroup("Checks", [AreaChecks, SideAreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, ShopVendor,
+                           ParcelPriceMultiplier, CowLevelChecks]),
     OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,
                                                FindCountChecks], start_collapsed=True),
     OptionGroup("Locks", [CubeLock, TownPortalLock, TownPortalAccessTomeCharges, PotionLock, PotionLockMode, StashLock, MerchantLock, WaypointLock]),
-    OptionGroup("Hints", [CainHints, PageHintChance, ProphecyShop, HintBalance]),
+    OptionGroup("Hints", [CainHints, PageHintChance, ProphecyShop, ProphecyPriceMultiplier, HintBalance]),
     OptionGroup("Rewards", [BossQuestsGiveUniques, BasicLootWeight, UniqueWeight, SetItemWeight, HighRuneWeight,
                             SocketedBaseWeight, GoldWeight, ExperienceWeight, CharmWeight, ShrineWeight, ProphecyWeight],
                 start_collapsed=True),

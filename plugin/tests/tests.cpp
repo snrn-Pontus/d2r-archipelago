@@ -993,7 +993,8 @@ void TestClientSurvivesBadPackets() {
 	// and the ReceivedItems after it in the same message still arrives.
 	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[{"team":0,"slot":1,"alias":7,"name":"Snrn"}],
 		"missing_locations":[2420002,"x"],"checked_locations":"none","slot_data":{"goal":"two","level_cap":90,"locks":true,
-		"hints":[[1,"2",3],[4,1,5]],"randomizer":{"skill_tree":[[1,-2]],"xp_multiplier":"lots","death_xp_penalty":250}},
+		"hints":[[1,"2",3],[4,1,5]],"randomizer":{"skill_tree":[[1,-2]],"xp_multiplier":"lots","death_xp_penalty":250,
+		"parcel_price":9999,"prophecy_price":"cheap","shop_vendor":7}},
 		"slot_info":{"one":{"game":"Diablo II Resurrected"},"1":{"game":5}}},
 		{"cmd":"ReceivedItems","index":0,"items":[{"item":2430054,"location":-2,"player":1,"flags":1}]}])json");
 	EXPECT(client.State() == ap::ConnectionState::Connected);
@@ -1002,6 +1003,8 @@ void TestClientSurvivesBadPackets() {
 	EXPECT(client.Slots().hints.size() == 1 && client.Slots().hints[0].location == 4);
 	EXPECT(client.Slots().randomizer.skillTree.empty() && client.Slots().randomizer.xpPercent[2] == 100);
 	EXPECT(client.Slots().randomizer.deathXpPenalty == 100);
+	EXPECT(client.Slots().randomizer.parcelPrice == 500 && client.Slots().randomizer.prophecyPrice == 100
+	       && client.Slots().randomizer.shopVendor == ap::randomizer::ShopVendor::PotionSeller);
 	EXPECT(client.PlayerName(1) == "Snrn");
 	EXPECT(client.Items().size() == 1 && client.ItemsSynced());
 	client.TakeMessages();
@@ -1052,8 +1055,11 @@ void TestClientDeathLink() {
 		"slot_data":{"death_link":true,"superunique_checks":true,"shop_checks":3,"enforce_act_keys":true,"enforce_act_keys_mode":"message_only",
 		"side_areas":[2421019,2421325],
 		"hints":[[77,2,2430951],[2420001,1,2430054]],"hint_balance":30,"hint_sources":{"cain":true,"page_chance":25,"prophecy_shop":true},
-		"locks":{"cube":true,"waypoints":true,"potion_mode":"drink","town_portal_tome_charges":5}},"slot_info":{}}])json");
+		"locks":{"cube":true,"waypoints":true,"potion_mode":"drink","town_portal_tome_charges":5},
+		"randomizer":{"parcel_price":50,"prophecy_price":250,"shop_vendor":1}},"slot_info":{}}])json");
 	EXPECT(client.Slots().locks.potionMode == ap::potion_lock::Mode::Drink);
+	EXPECT(client.Slots().randomizer.parcelPrice == 50 && client.Slots().randomizer.prophecyPrice == 250
+	       && client.Slots().randomizer.shopVendor == ap::randomizer::ShopVendor::Blacksmith);
 	EXPECT(client.Slots().locks.portalTomeCharges == 5 && client.Slots().enforceActKeysMode == ap::act_lock::Mode::MessageOnly);
 	EXPECT(client.Slots().hints.size() == 2 && client.Slots().hints[0].location == 77 && client.Slots().hints[0].player == 2
 	       && client.Slots().hints[1].item == 2430054 && client.Slots().hintBalance == 30 && client.Slots().cainHints
@@ -1607,6 +1613,18 @@ void TestSuperUniqueShuffle() {
 	ap::randomizer::Settings deathOnly;
 	deathOnly.deathXpPenalty = 50;
 	EXPECT(deathOnly.Any());
+	// Shop prices and vendor only show when changed, and a change needs the mod rewritten.
+	ap::randomizer::Settings shop;
+	EXPECT(shop.Stamp().find("parcel_price") == std::string::npos && shop.Stamp().find("prophecy_price") == std::string::npos
+	       && shop.Stamp().find("shop_vendor") == std::string::npos);
+	shop.parcelPrice = 50;
+	EXPECT(shop.Any() && shop.Stamp().find(" parcel_price=50") != std::string::npos);
+	shop = {};
+	shop.prophecyPrice = 200;
+	EXPECT(shop.Any() && shop.Stamp().find(" prophecy_price=200") != std::string::npos);
+	shop = {};
+	shop.shopVendor = ap::randomizer::ShopVendor::Blacksmith;
+	EXPECT(shop.Any() && shop.Stamp().find(" shop_vendor=1") != std::string::npos);
 	// Tuning for a shuffle that's off leaves the stamp alone.
 	ap::randomizer::Settings quiet;
 	quiet.shuffleTolerance = 9;
@@ -1945,6 +1963,28 @@ void TestShopParcels() {
 	EXPECT(ap::randomizer::AddEmblem(misc) == 1 && ap::randomizer::AddEmblem(misc) == 0);
 	EXPECT(misc.Cell(14, 0) == "Archipelago Emblem" && misc.Cell(14, 1) == "ape" && misc.Cell(14, 2) == "0" && misc.Cell(14, 3).empty()
 	       && misc.Cell(14, 7) == "0");
+
+	// Prices scale in whole gold, never below 1; 100% is the usual price.
+	using ap::randomizer::ShopPrice;
+	EXPECT(ShopPrice(2500, 100) == 2500 && ShopPrice(2500, 50) == 1250 && ShopPrice(40000, 250) == 100000 && ShopPrice(7500, 33) == 2475);
+	EXPECT(ShopPrice(1000, 10) == 100 && ShopPrice(5, 10) == 1 && ShopPrice(100000, 500) == 500000);
+	// Scaled parcels at the blacksmiths, scaled scrolls still at the potion sellers.
+	const std::string shopHeader = "name\tcode\tcost\tAkaraMin\tCharsiMin\tLarzukMin\tMalahMin\tspawnable\r\nStandard of Heroes\tstd\t1\t\t\t\t\t1\r\n";
+	auto smith = ap::Table::Parse(shopHeader);
+	EXPECT(ap::randomizer::AddShopParcels(smith, 50, ap::randomizer::ShopVendor::Blacksmith) == 5);
+	EXPECT(smith.Cell(1, 1) == "ap1" && smith.Cell(1, 2) == "1250" && smith.Cell(1, 3).empty() && smith.Cell(1, 4) == "1" && smith.Cell(1, 5).empty());
+	EXPECT(smith.Cell(5, 1) == "ap5" && smith.Cell(5, 2) == "20000" && smith.Cell(5, 5) == "1" && smith.Cell(5, 6).empty());
+	EXPECT(ap::randomizer::AddProphecyScrolls(smith, 300) == 8);
+	EXPECT(smith.Cell(6, 1) == "aq1" && smith.Cell(6, 2) == "3000" && smith.Cell(6, 3) == "1" && smith.Cell(6, 4).empty() && smith.Cell(6, 6) == "1");
+	EXPECT(smith.Cell(13, 1) == "aq8" && smith.Cell(13, 2) == "300000");
+	// The defaults write exactly what the tables had before these options.
+	auto plain = ap::Table::Parse(shopHeader);
+	auto defaults = ap::Table::Parse(shopHeader);
+	ap::randomizer::AddShopParcels(plain);
+	ap::randomizer::AddProphecyScrolls(plain);
+	ap::randomizer::AddShopParcels(defaults, 100, ap::randomizer::ShopVendor::PotionSeller);
+	ap::randomizer::AddProphecyScrolls(defaults, 100);
+	EXPECT(plain.Format() == defaults.Format() && plain.Cell(1, 3) == "1" && plain.Cell(1, 4).empty());
 }
 
 void TestTableEdits() {

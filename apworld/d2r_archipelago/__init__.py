@@ -732,5 +732,9 @@ class D2RWorld(World):
                 "better_drops": self.options.better_drops.value,
                 "better_magic": self.options.better_magic.value,
                 "death_xp_penalty": self.options.death_experience_penalty.value,
+                # Shop prices in percent, and who sells the parcels; the plugin refunds the same prices.
+                "parcel_price": self.options.parcel_price_multiplier.value,
+                "prophecy_price": self.options.prophecy_price_multiplier.value,
+                "shop_vendor": self.options.shop_vendor.value,
             },
         }

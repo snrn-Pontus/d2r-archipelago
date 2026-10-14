@@ -416,6 +416,24 @@ Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: 
       press the button in Act II) on a seed where Act II is still locked: the checks show "(held)" and go out
       with the Act II Key.
 - [ ] Rewards don't count: a Random Unique from the server doesn't count toward "Find 1 Unique".
+
+### 2a. Shop prices and vendor (issue #36)
+
+`shop_checks: 1`, `shop_vendor: blacksmith`, `parcel_price_multiplier: 50`, `prophecy_price_multiplier: 200`;
+rerun setup, which prints "each act's blacksmith sells an Archipelago Parcel (prices at 50%, Scrolls of
+Prophecy at 200%)" for both banks.
+
+- [ ] Charsi's shop shows the Archipelago Parcel (a Misc tab, or wherever she puts it) for 1,250 gold, and
+      buying it sends the check. Akara no longer sells it. If Charsi has no tab for it, note that: the
+      blacksmith choice then needs a different vendor list or goes.
+- [ ] A second parcel from Charsi refunds exactly 1,250 gold. Check one other act's blacksmith too (Fara
+      3,750, Larzuk 20,000).
+- [ ] Akara still sells the Scrolls of Prophecy, now 2,000 to 200,000 gold, and the Writ of Absolution
+      (1,000). A cheaper scroll than the next one refunds its doubled price, and the refund line names the
+      next scroll's doubled price.
+- [ ] Connecting with a default seed while the mod is still set up for this one says the mod was set up for
+      another seed. Setting that seed up prints "potion seller ... prices at 100%" and Akara's parcel is
+      2,500 again.
 - [ ] Side areas (#31): `ap-missing` lists five "Normal: Enter <side area>" checks. Walking
       into one of them (e.g. the Mausoleum or Cave Level 2) sends its check; a side area the seed didn't
       pick sends nothing and shows no banner.

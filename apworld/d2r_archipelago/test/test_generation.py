@@ -263,6 +263,9 @@ class TestShortGame(D2RTestBase):
         self.assertEqual(data["randomizer"]["xp_multiplier_hell"], data["randomizer"]["xp_multiplier"])
         self.assertEqual(data["randomizer"]["monster_density_nightmare"], data["randomizer"]["monster_density"])
         self.assertEqual(data["randomizer"]["death_xp_penalty"], 100)
+        # Shop prices and vendor default to the game as it was: full price, potion sellers.
+        self.assertEqual((data["randomizer"]["parcel_price"], data["randomizer"]["prophecy_price"],
+                          data["randomizer"]["shop_vendor"]), (100, 100, 0))
         self.assertTrue(data["superunique_checks"])
         self.assertFalse(data["death_link"])
         self.assertEqual(data["hint_sources"], {"cain": True, "page_chance": 25, "prophecy_shop": True})
@@ -750,7 +753,8 @@ class TestDruidFullStart(D2RTestBase):
 class TestShuffleTuning(D2RTestBase):
     options = {"experience_multiplier": 200, "experience_multiplier_hell": 400, "monster_density_nightmare": 300,
                "main_path_superunique_minions": "off", "better_drops": 50, "shuffle_cow_level": True,
-               "main_path_superunique_level": "off", "main_path_superunique_strength": 70, "death_experience_penalty": 0}
+               "main_path_superunique_level": "off", "main_path_superunique_strength": 70, "death_experience_penalty": 0,
+               "parcel_price_multiplier": 50, "prophecy_price_multiplier": 250, "shop_vendor": "blacksmith"}
 
     def test_slot_data(self) -> None:
         randomizer = self.world.fill_slot_data()["randomizer"]
@@ -762,6 +766,7 @@ class TestShuffleTuning(D2RTestBase):
         self.assertEqual(randomizer["main_path_superunique_strength"], 70)
         self.assertEqual(randomizer["better_drops"], 50)
         self.assertEqual(randomizer["death_xp_penalty"], 0)
+        self.assertEqual((randomizer["parcel_price"], randomizer["prophecy_price"], randomizer["shop_vendor"]), (50, 250, 1))
         self.assertTrue(randomizer["shuffle_cow_level"])
 
 
