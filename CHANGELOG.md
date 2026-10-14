@@ -2,6 +2,31 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.12.0 - 2026-10-14
+
+Rerun `d2r-ap-setup` for this version: the mod gets tree mode's starting skill and locked-skill icons.
+The Skill Tree Shuffle and starting-skill changes apply to new seeds.
+
+- Quests complete when the game itself marks them done, read from its own quest log, instead of from
+  guesses (a boss kill, a quest item, reaching an area, 20 Den of Evil kills). Den of Evil no longer
+  completes early, walking into Tristram no longer completes The Search for Cain, and a quest finished
+  right before a Save & Exit still counts. An older character on a new seed doesn't hand it the quests it
+  had already done. If a game update ever breaks this, the log says so and the old guesses take over (#138)
+- Tree mode: skills you haven't unlocked show a greyed, padlocked icon in the skill tree, and unlocked ones
+  show in colour even with no points to spend (#143)
+- Tree mode: the starting weapon gives +1 to one of your starting skills, like the Sorceress's Fire Bolt
+  staff, so it's usable at level 1. A shuffled Sorceress no longer gets a stray +1 Fire Bolt (#127)
+- Skill Tree Shuffle always plays in tree mode, whatever Skill Mode says; the options editor switches the
+  two together (#125)
+- Areas you enter before your first kill still count if you Save & Exit before killing anything: the
+  plugin reads the difficulty from your character's save (#130)
+- The same for quest items handed in or used before your first kill, even after two Save & Exits in a
+  row (#135)
+- Handing the Golden Bird to Alkor, or cubing Khalim's Will or the Horadric Staff, right after picking up
+  the last part no longer loses those parts' "Find" checks (#136)
+- When the connection drops, the status line and the log say why: the server closed it, or a network
+  error (#134)
+
 ## 0.11.1 - 2026-10-14
 
 A plugin fix that works with existing seeds: run this download's `d2r-ap-setup` to install it.
