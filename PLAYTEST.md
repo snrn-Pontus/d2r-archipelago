@@ -397,6 +397,13 @@ config turns them off.
 - [ ] With a hired mercenary, the status line and the mercenary's portrait don't overlap.
 - [ ] Several items at once: skills, keys, locks and traps each get a banner; more than three ordinary
       items become "Received n more items", and more than ten in all become one line.
+- [ ] Banner config (#43): an `archipelago.toml` without the new keys behaves as before (5 lines,
+      4.5 s white/grey, 6 s gold/red, the three summing thresholds above). After a restart,
+      `banner_lines = 2` shows two lines at once with the rest queued, `banner_ms = 1500` and
+      `banner_important_ms = 15000` change how long lines stay, and `summarize_checks_over = 0`,
+      `summarize_items_over = 1` and `summarize_loot_over = 0` sum even small batches. A junk or
+      out-of-range value (`banner_lines = 99`, `banner_ms = soon`) logs a warning and clamps or keeps
+      the default. `ap-connect` and a re-run of d2r-ap-setup keep the edited values.
 - [x] Alt-Tab away and back, and minimizing: the banner stays with the game and doesn't float over
       other windows.
 

@@ -21,8 +21,7 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-constexpr size_t MaxLines = 5;
-constexpr auto   FadeIn   = std::chrono::milliseconds(200);
+constexpr auto   FadeIn  = std::chrono::milliseconds(200);
 constexpr auto   FadeOut  = std::chrono::milliseconds(600);
 constexpr BYTE   MaxAlpha = 235;
 constexpr BYTE   StatusAlpha = 200;
@@ -49,6 +48,10 @@ std::mutex        gMutex;
 std::deque<Line>  gWaiting; // queued, not on screen yet
 std::vector<Line> gShowing; // on screen (UI thread only)
 std::atomic<bool> gBusy;
+// The config's banner_lines, banner_ms and banner_important_ms (SetBanner).
+size_t            gMaxLines = 5;
+Clock::duration   gLifetime = std::chrono::milliseconds(4500);
+Clock::duration   gImportantLifetime = std::chrono::milliseconds(6000);
 // The status line, set from any thread.
 std::wstring      gStatusText;
 Corner            gStatusCorner = Corner::TopLeft;
@@ -75,7 +78,7 @@ auto Widen(const std::string& text) -> std::wstring {
 }
 
 auto Lifetime(Style style) -> Clock::duration {
-	return style == Style::Important || style == Style::Trap ? std::chrono::milliseconds(6000) : std::chrono::milliseconds(4500);
+	return style == Style::Important || style == Style::Trap ? gImportantLifetime : gLifetime;
 }
 
 auto TextColor(Style style) -> COLORREF {
@@ -285,7 +288,7 @@ void TickBanner(const RECT& client, POINT origin, Clock::time_point now) {
 	std::vector<Style> shown;
 	{
 		std::lock_guard lock(gMutex);
-		while (gShowing.size() < MaxLines && !gWaiting.empty()) {
+		while (gShowing.size() < gMaxLines &&!gWaiting.empty()) {
 			Line line = std::move(gWaiting.front());
 			gWaiting.pop_front();
 			line.shownAt = now;
@@ -374,6 +377,12 @@ void SetSounds(const std::wstring& folder, bool enabled, int volume) {
 			gSounds[i].clear();
 		}
 	}
+}
+
+void SetBanner(int lines, int ms, int importantMs) {
+	gMaxLines = static_cast<size_t>(std::max(lines, 1));
+	gLifetime = std::chrono::milliseconds(std::max(ms, 1));
+	gImportantLifetime = std::chrono::milliseconds(std::max(importantMs, 1));
 }
 
 void StopSounds() {

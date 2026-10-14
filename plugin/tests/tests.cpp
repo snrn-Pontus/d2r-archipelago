@@ -273,6 +273,38 @@ void TestConfigRoundTrip() {
 	EXPECT(ap::ParseConfig("banner_volume = 50oops").bannerVolume == 10);
 	EXPECT(ap::ParseConfig("banner_volume = 0.5").bannerVolume == 10);
 	EXPECT(ap::ParseConfig("banner_volume = 60 # quieter").bannerVolume == 60);
+	EXPECT(ap::ParseConfig("banner_volume = +60").bannerVolume == 60);
+	EXPECT(ap::ParseConfig("banner_volume = +-60").bannerVolume == 10);
+	EXPECT(ap::ParseConfig("banner_volume = \"60\"").bannerVolume == 60);
+	// Banner and summing settings (#43): today's behaviour by default, clamped, junk keeps the default.
+	{
+		const ap::Config defaults = ap::ParseConfig("");
+		EXPECT(defaults.bannerLines == 5 && defaults.bannerMs == 4500 && defaults.bannerImportantMs == 6000);
+		EXPECT(defaults.summarizeChecksOver == 4 && defaults.summarizeItemsOver == 10 && defaults.summarizeLootOver == 3);
+		ap::Config tuned;
+		tuned.bannerLines = 8;
+		tuned.bannerMs = 3000;
+		tuned.bannerImportantMs = 9000;
+		tuned.summarizeChecksOver = 0;
+		tuned.summarizeItemsOver = 50;
+		tuned.summarizeLootOver = 1000;
+		const ap::Config again = ap::ParseConfig(ap::FormatConfig(tuned));
+		EXPECT(again.bannerLines == 8 && again.bannerMs == 3000 && again.bannerImportantMs == 9000);
+		EXPECT(again.summarizeChecksOver == 0 && again.summarizeItemsOver == 50 && again.summarizeLootOver == 1000);
+		std::vector<std::string> numberWarnings;
+		const ap::Config clamped = ap::ParseConfig(
+		    "banner_lines = 0\nbanner_ms = 100\nbanner_important_ms = 99999999\nsummarize_checks_over = -3\nsummarize_items_over = 5000\nsummarize_loot_over = 2",
+		    &numberWarnings);
+		EXPECT(clamped.bannerLines == 1 && clamped.bannerMs == 500 && clamped.bannerImportantMs == 60000);
+		EXPECT(clamped.summarizeChecksOver == 0 && clamped.summarizeItemsOver == 1000 && clamped.summarizeLootOver == 2);
+		EXPECT(numberWarnings.size() == 5 && numberWarnings[0].find("banner_lines on config line 1 is outside 1 to 20; using 1") != std::string::npos);
+		numberWarnings.clear();
+		const ap::Config junk = ap::ParseConfig("banner_lines = many\nbanner_ms = 4.5\nsummarize_loot_over = 99999999999999999999\nbanner_lines =", &numberWarnings);
+		EXPECT(junk.bannerLines == 5 && junk.bannerMs == 4500 && junk.summarizeLootOver == 3);
+		EXPECT(numberWarnings.size() == 3 && numberWarnings[1].find("banner_ms on config line 2 isn't a whole number; keeping 4500") != std::string::npos);
+		// A later valid line wins, and a bad one after it keeps it.
+		EXPECT(ap::ParseConfig("banner_lines = 7\nbanner_lines = lots").bannerLines == 7);
+	}
 	config.notifications = false;
 	EXPECT(!ap::ParseConfig(ap::FormatConfig(config)).notifications);
 	EXPECT(ap::ParseConfig("").otherSends == ap::OtherSends::Progression);
