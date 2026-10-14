@@ -2,6 +2,7 @@
 
 #include "act_lock.h"
 #include "config.h"
+#include "death_link.h"
 #include "loot.h"
 #include "potion_lock.h"
 #include "randomizer.h"
@@ -107,6 +108,12 @@ struct SlotData {
 	loot::RewardSettings rewards;
 	// Deaths are shared with the other DeathLink players.
 	bool deathLink   = false;
+	// What another player's death does to this one, and how many of this one's
+	// deaths it takes to send one (1: every death).
+	death_link::Mode deathLinkMode = death_link::Mode::Die;
+	int deathLinkAmnesty = 1;
+	// random_trap mode: the seed's command traps with their weights.
+	std::vector<death_link::TrapWeight> deathLinkTraps;
 	randomizer::Settings randomizer;
 	// D2RLoader settings d2r-ap-setup writes as the mod's overrides: dotted
 	// path ("d2rcore.stash.add_shared_tabs") and TOML value ("50", "true").

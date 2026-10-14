@@ -5,6 +5,7 @@
 #include "codex.h"
 #include "command_panel.h"
 #include "config.h"
+#include "death_link.h"
 #include "repairs.h"
 #include "game_data.h"
 #include "ids.h"
@@ -422,6 +423,7 @@ void TestSaveStateRoundTrip() {
 	state.skillPointsGiven = 3;
 	state.portalTomeGiven = true;
 	state.notifiedItems = 12;
+	state.unsentDeaths = 2;
 	state.heldPotions = { 0x20317068, 0x20317068, 0x206C7672 };
 	state.heldPortals = { { ap::loot::CodeFromText("tsc"), 1 }, { ap::loot::CodeFromText("tbk"), 13 } };
 	state.rewardCopies = { { ap::loot::CodeFromText("r08"), 2 }, { ap::loot::CodeFromText("gpv"), 1 } };
@@ -434,7 +436,8 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.playerClass == 4);
 	EXPECT(loaded.kills == state.kills && loaded.cowKills == state.cowKills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2
-	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12);
+	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12
+	       && loaded.unsentDeaths == 2);
 	EXPECT(loaded.heldPotions == state.heldPotions);
 	EXPECT(loaded.heldPortals == state.heldPortals);
 	EXPECT(loaded.rewardCopies == state.rewardCopies);
@@ -979,6 +982,9 @@ void TestClientParsesServerPackets() {
 	EXPECT(!client.Slots().deathLink && !client.Slots().superUniqueChecks && !client.Slots().locks.cube);
 	EXPECT(client.Slots().locks.potionMode == ap::potion_lock::Mode::SetAside);
 	EXPECT(client.Slots().locks.portalTomeCharges == 20 && client.Slots().enforceActKeysMode == ap::act_lock::Mode::WarpToTown);
+	// Without the DeathLink options a death kills and every death is sent, as before them.
+	EXPECT(client.Slots().deathLinkMode == ap::death_link::Mode::Die && client.Slots().deathLinkAmnesty == 1
+	       && client.Slots().deathLinkTraps.empty());
 	// DeathLink is off for this seed, so deaths are ignored.
 	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":1.0,"source":"Other","cause":"Other fell."}}])json");
 	EXPECT(client.TakeDeaths().empty());
@@ -1062,7 +1068,8 @@ void TestClientDeathLink() {
 	client.Connect("localhost", "Snrn", "");
 	client.Disconnect();
 	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[],"missing_locations":[],"checked_locations":[],
-		"slot_data":{"death_link":true,"superunique_checks":true,"shop_checks":3,"enforce_act_keys":true,"enforce_act_keys_mode":"message_only",
+		"slot_data":{"death_link":true,"death_link_mode":"random_trap","death_link_amnesty":3,"death_link_traps":[[17,5],[11,9],[22,2],["x",1],[99,4]],
+		"superunique_checks":true,"shop_checks":3,"enforce_act_keys":true,"enforce_act_keys_mode":"message_only",
 		"side_areas":[2421019,2421325],
 		"hints":[[77,2,2430951],[2420001,1,2430054]],"hint_balance":30,"hint_sources":{"cain":true,"page_chance":25,"prophecy_shop":true},
 		"locks":{"cube":true,"waypoints":true,"potion_mode":"drink","town_portal_tome_charges":5},
@@ -1079,6 +1086,10 @@ void TestClientDeathLink() {
 	EXPECT(client.Slots().shopChecks == 3 && client.Slots().enforceActKeys && client.Slots().locks.cube && client.Slots().locks.waypoints
 	       && !client.Slots().locks.stash);
 	EXPECT(client.Slots().deathLink && client.Slots().superUniqueChecks && client.Slots().randomizer.superUniqueChecks);
+	// Only command traps are kept: not the Junk Backpack (11), a non-number or an unknown index.
+	EXPECT(client.Slots().deathLinkMode == ap::death_link::Mode::RandomTrap && client.Slots().deathLinkAmnesty == 3);
+	EXPECT((client.Slots().deathLinkTraps
+	        == std::vector<ap::death_link::TrapWeight> { { ap::loot::Loot::AmbushTrap, 5 }, { ap::loot::Loot::MercenaryDownTrap, 2 } }));
 	EXPECT(client.Slots().sideAreas == std::set<int64_t>({ ap::ids::AreaLocation(0, 19), ap::ids::AreaLocation(1, 125) }));
 	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":1.0,"source":"Other","cause":"Other was slain by a cow."}}])json");
 	// Our own death comes back from the server too; it's not a new one.
@@ -1478,6 +1489,55 @@ void TestShrinesAndTraps() {
 		EXPECT(id != 0 && id != 4 && id != 5 && id != 16 && id != 17 && id < 19);
 	}
 	EXPECT(std::string_view(ap::loot::AmbushMonster(9, random)).size() > 0);
+}
+
+void TestDeathLinkModes() {
+	using ap::death_link::Mode;
+	EXPECT(ap::death_link::ModeFromKey("die") == Mode::Die && ap::death_link::ModeFromKey("one_hp") == Mode::OneHp
+	       && ap::death_link::ModeFromKey("lose_gold") == Mode::LoseGold && ap::death_link::ModeFromKey("random_trap") == Mode::RandomTrap
+	       && ap::death_link::ModeFromKey("") == Mode::Die && ap::death_link::ModeFromKey("explode") == Mode::Die);
+	// What each mode runs; gold is the Tax Collector's amount for the level.
+	EXPECT(ap::death_link::PenaltyFor(Mode::Die, 30, 1000).commands == std::vector<std::string> { "killme" });
+	EXPECT(ap::death_link::PenaltyFor(Mode::Die, 30, 1000).message.empty());
+	EXPECT(ap::death_link::PenaltyFor(Mode::OneHp, 30, 1000).commands == std::vector<std::string> { "depletehealth 1" });
+	const auto gold = ap::death_link::PenaltyFor(Mode::LoseGold, 30, 250);
+	EXPECT(gold.commands == std::vector<std::string> { "gold -7500" } && gold.message.find("7500") != std::string::npos);
+	EXPECT(ap::death_link::PenaltyFor(Mode::LoseGold, 150, 1000).commands == std::vector<std::string> { "gold -99000" });
+	EXPECT(ap::death_link::PenaltyFor(Mode::RandomTrap, 30, 1000).commands.empty());
+	EXPECT(ap::loot::TaxAmount(0, 1000) == 1000 && ap::loot::TaxAmount(10, -5) == 0);
+
+	// Random traps follow the weights, skip weight 0 and anything that isn't a command trap.
+	std::mt19937 random(41);
+	const ap::death_link::TrapWeight weights[] = { { ap::loot::Loot::FirestormTrap, 3 }, { ap::loot::Loot::AmbushTrap, 0 },
+		                                           { ap::loot::Loot::JunkBackpack, 50 }, { ap::loot::Loot::MercenaryDownTrap, 1 } };
+	std::map<ap::loot::Loot, int> seen;
+	for (int i = 0; i < 400; ++i) {
+		++seen[ap::death_link::PickTrap(weights, random)];
+	}
+	EXPECT(seen.size() == 2 && seen[ap::loot::Loot::FirestormTrap] > seen[ap::loot::Loot::MercenaryDownTrap]
+	       && seen[ap::loot::Loot::MercenaryDownTrap] > 0);
+	// None usable: the five default traps, never Mercenary Down or a Junk Backpack.
+	seen.clear();
+	for (int i = 0; i < 400; ++i) {
+		++seen[ap::death_link::PickTrap({}, random)];
+	}
+	EXPECT(seen.size() == 5 && !seen.contains(ap::loot::Loot::MercenaryDownTrap) && !seen.contains(ap::loot::Loot::JunkBackpack));
+	EXPECT(ap::death_link::IsCommandTrap(ap::loot::Loot::AmbushTrap) && ap::death_link::IsCommandTrap(ap::loot::Loot::MercenaryDownTrap)
+	       && !ap::death_link::IsCommandTrap(ap::loot::Loot::JunkBackpack) && !ap::death_link::IsCommandTrap(ap::loot::Loot::Prophecy)
+	       && !ap::death_link::IsCommandTrap(ap::loot::Loot::RandomShrine));
+
+	// Amnesty: every death with 1, every third with 3, and the count starts over after one is sent.
+	int deaths = 0;
+	EXPECT(ap::death_link::CountDeath(deaths, 1) && deaths == 0);
+	EXPECT(ap::death_link::CountDeath(deaths, 0) && deaths == 0);
+	std::vector<bool> sent;
+	for (int i = 0; i < 7; ++i) {
+		sent.push_back(ap::death_link::CountDeath(deaths, 3));
+	}
+	EXPECT((sent == std::vector<bool> { false, false, true, false, false, true, false }) && deaths == 1);
+	// A count from a save with a higher amnesty sends at once when the seed's is lower.
+	deaths = 5;
+	EXPECT(ap::death_link::CountDeath(deaths, 2) && deaths == 0);
 }
 
 void TestOtherLoot() {
@@ -2406,6 +2466,7 @@ int main() {
 	TestGoldExperienceCharms();
 	TestRewardSettings();
 	TestShrinesAndTraps();
+	TestDeathLinkModes();
 	TestClientParsesServerPackets();
 	TestPanelConnectionTarget();
 	TestClientSurvivesBadPackets();

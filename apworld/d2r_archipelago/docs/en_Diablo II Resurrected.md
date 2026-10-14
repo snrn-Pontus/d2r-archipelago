@@ -80,6 +80,11 @@ full run. Quests, superuniques, areas and level milestones past the goal are lef
 With `death_link`, when you die everyone else with DeathLink dies too, and the other way round. Careful with
 Hardcore characters: a DeathLink death is a real one.
 
+`death_link_mode` softens what another player's death does to you: `die` (the default), `one_hp` (your life
+drops to 1), `lose_gold` (gold like a Tax Collector trap) or `random_trap` (one of your seed's traps, which
+waits for town like the others). `death_link_amnesty` sends only every Nth of your own deaths (1, the default,
+sends each one); the count carries over between sessions.
+
 ## What makes me wait for other players?
 
 With `act_keys` (on by default), every act after the first needs its key, such as "Normal Act II Key", and

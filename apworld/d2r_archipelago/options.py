@@ -1062,6 +1062,30 @@ class MaterialsLimit(LoaderRange):
     default = 99
 
 
+class DeathLinkMode(Choice):
+    """What another player's death does to you with DeathLink on.
+    die: your character dies.
+    one_hp: your life drops to 1.
+    lose_gold: you lose gold like a Tax Collector trap (Tax Collector Gold per character level, as much as you have).
+    random_trap: one of your seed's traps goes off (by the trap weights, Junk Backpack aside; it waits for town like
+    the others). With every trap weight at 0, an Ambush, Poison Cloud, Firestorm, Mana Drain or Tax Collector."""
+    display_name = "DeathLink Mode"
+    option_die = 0
+    option_one_hp = 1
+    option_lose_gold = 2
+    option_random_trap = 3
+    default = 0
+
+
+class DeathLinkAmnesty(Range):
+    """With DeathLink on, how many of your deaths it takes to send one to the other players: 1 sends every death, 3
+    every third. The count carries over between sessions. Deaths that DeathLink caused never count."""
+    display_name = "DeathLink Amnesty"
+    range_start = 1
+    range_end = 20
+    default = 1
+
+
 @dataclass
 class D2ROptions(PerGameCommonOptions):
     goal: Goal
@@ -1185,6 +1209,8 @@ class D2ROptions(PerGameCommonOptions):
     shared_stash_tabs: SharedStashTabs
     materials_limit: MaterialsLimit
     death_link: DeathLink
+    death_link_mode: DeathLinkMode
+    death_link_amnesty: DeathLinkAmnesty
 
 
 # Sections for the Options Creator, the options web page and the template YAML.
@@ -1216,7 +1242,7 @@ OPTION_GROUPS = [
                                  ExperienceMultiplierHell, DeathExperiencePenalty, ItemLevelRequirements, ItemStatRequirements]),
     OptionGroup("D2RLoader Settings", [ShowGroundSockets, DisplayItemLevels, ItemStatRanges, MaximumSockets, FloorItemLimit,
                                        SharedStashTabs, MaterialsLimit], start_collapsed=True),
-    OptionGroup("Multiworld", [DeathLink]),
+    OptionGroup("Multiworld", [DeathLink, DeathLinkMode, DeathLinkAmnesty]),
 ]
 
 
