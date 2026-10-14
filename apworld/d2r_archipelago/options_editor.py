@@ -128,6 +128,9 @@ def load_options(data: dict) -> tuple[dict[str, Any], dict[str, Any]]:
         if name in section and value is None:
             kept[name] = section[name]
         values[name] = default_value(option) if value is None else value
+    # A file from before the shuffle turned on tree mode shows (and saves) what the seed does.
+    if values["skill_tree_shuffle"] and "skill_tree_shuffle" not in kept and "skill_mode" not in kept:
+        values.update(linked_changes("skill_tree_shuffle", True))
     return values, kept
 
 

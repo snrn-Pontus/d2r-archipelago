@@ -47,6 +47,11 @@ class TestOptionsEditor(unittest.TestCase):
         self.assertEqual(linked_changes("skill_mode", codex), {"skill_tree_shuffle": False})
         self.assertEqual(linked_changes("skill_mode", tree), {})
         self.assertEqual(linked_changes("goal", 2), {})
+        # An opened file with the old combination shows tree mode, and saving writes it.
+        data = {"name": "Old", "game": GAME, GAME: {"skill_mode": "codex", "skill_tree_shuffle": True}}
+        values, kept = load_options(data)
+        self.assertEqual(values["skill_mode"], tree)
+        self.assertEqual(save_options(data, "Old", values, kept)[GAME]["skill_mode"], "tree")
 
     def test_reads_plain_and_template_values(self) -> None:
         values, kept = load_options({GAME: {
