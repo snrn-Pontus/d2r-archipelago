@@ -4384,6 +4384,8 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 				gQuestLogOtherSeed = 0;
 				gQuestLogMissing = 0;
 				gHeldFallbacks.clear();
+				// A new game is a new walk into whichever act it starts in.
+				gActNotice.Reset();
 			}
 			gInGame = true;
 			gRepairOffer.Cancel();
