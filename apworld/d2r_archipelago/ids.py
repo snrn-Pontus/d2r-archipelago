@@ -69,7 +69,8 @@ KEY_NAMES = [act_key_name(index) for index in range(1, len(DIFFICULTIES) * len(A
 LOCK_BASE = ITEM_BASE + 980
 CUBE_ACCESS = "Horadric Cube Access"
 MERCHANT_ACCESS = "Merchant Access"
-LOCKS = (CUBE_ACCESS, "Town Portal Access", "Potion Access", "Stash Access", MERCHANT_ACCESS,
+TOWN_PORTAL_ACCESS = "Town Portal Access"
+LOCKS = (CUBE_ACCESS, TOWN_PORTAL_ACCESS, "Potion Access", "Stash Access", MERCHANT_ACCESS,
          *(f"{act} Waypoints" for act in ACTS))
 
 

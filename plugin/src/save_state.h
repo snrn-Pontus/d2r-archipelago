@@ -1,5 +1,7 @@
 #pragma once
 
+#include "portal_lock.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -61,6 +63,9 @@ struct SaveState {
 	// Item codes of the potions put aside from the inventory while potions are
 	// locked (one entry each), handed back with Potion Access.
 	std::vector<uint32_t> heldPotions;
+	// The Town Portal scrolls and tomes put aside while Town Portal is locked,
+	// handed back with Town Portal Access.
+	std::vector<portal_lock::Held> heldPortals;
 	// Reward commands not run yet, in order. Each one stays until D2RCore accepts it,
 	// so a crash or a refused command doesn't lose it.
 	std::vector<PendingCommand> commands;

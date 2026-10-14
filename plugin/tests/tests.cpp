@@ -12,6 +12,7 @@
 #include "milestones.h"
 #include "native_scan.h"
 #include "personalize.h"
+#include "portal_lock.h"
 #include "potion_lock.h"
 #include "quest_record.h"
 #include "quest_triggers.h"
@@ -411,6 +412,7 @@ void TestSaveStateRoundTrip() {
 	state.portalTomeGiven = true;
 	state.notifiedItems = 12;
 	state.heldPotions = { 0x20317068, 0x20317068, 0x206C7672 };
+	state.heldPortals = { { ap::loot::CodeFromText("tsc"), 1 }, { ap::loot::CodeFromText("tbk"), 13 } };
 	state.rewardCopies = { { ap::loot::CodeFromText("r08"), 2 }, { ap::loot::CodeFromText("gpv"), 1 } };
 	EXPECT(state.Save(path));
 	ap::SaveState loaded;
@@ -423,6 +425,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12);
 	EXPECT(loaded.heldPotions == state.heldPotions);
+	EXPECT(loaded.heldPortals == state.heldPortals);
 	EXPECT(loaded.rewardCopies == state.rewardCopies);
 	EXPECT(loaded.questBaseline == state.questBaseline);
 	EXPECT(loaded.commands.empty() && loaded.checkpoint == 0 && !loaded.redeliver);
@@ -964,6 +967,7 @@ void TestClientParsesServerPackets() {
 	EXPECT(client.Items().size() == 1);
 	EXPECT(!client.Slots().deathLink && !client.Slots().superUniqueChecks && !client.Slots().locks.cube);
 	EXPECT(client.Slots().locks.potionMode == ap::potion_lock::Mode::SetAside);
+	EXPECT(client.Slots().locks.portalTomeCharges == 20 && client.Slots().enforceActKeysMode == ap::act_lock::Mode::WarpToTown);
 	// DeathLink is off for this seed, so deaths are ignored.
 	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":1.0,"source":"Other","cause":"Other fell."}}])json");
 	EXPECT(client.TakeDeaths().empty());
@@ -1044,10 +1048,12 @@ void TestClientDeathLink() {
 	client.Connect("localhost", "Snrn", "");
 	client.Disconnect();
 	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[],"missing_locations":[],"checked_locations":[],
-		"slot_data":{"death_link":true,"superunique_checks":true,"shop_checks":3,"enforce_act_keys":true,"side_areas":[2421019,2421325],
+		"slot_data":{"death_link":true,"superunique_checks":true,"shop_checks":3,"enforce_act_keys":true,"enforce_act_keys_mode":"message_only",
+		"side_areas":[2421019,2421325],
 		"hints":[[77,2,2430951],[2420001,1,2430054]],"hint_balance":30,"hint_sources":{"cain":true,"page_chance":25,"prophecy_shop":true},
-		"locks":{"cube":true,"waypoints":true,"potion_mode":"drink"}},"slot_info":{}}])json");
+		"locks":{"cube":true,"waypoints":true,"potion_mode":"drink","town_portal_tome_charges":5}},"slot_info":{}}])json");
 	EXPECT(client.Slots().locks.potionMode == ap::potion_lock::Mode::Drink);
+	EXPECT(client.Slots().locks.portalTomeCharges == 5 && client.Slots().enforceActKeysMode == ap::act_lock::Mode::MessageOnly);
 	EXPECT(client.Slots().hints.size() == 2 && client.Slots().hints[0].location == 77 && client.Slots().hints[0].player == 2
 	       && client.Slots().hints[1].item == 2430054 && client.Slots().hintBalance == 30 && client.Slots().cainHints
 	       && client.Slots().pageHintChance == 25 && client.Slots().prophecyShop);
@@ -2140,7 +2146,13 @@ void TestPotionLock() {
 	using ap::loot::CodeFromText;
 	EXPECT(ModeFromKey("drink") == Mode::Drink);
 	EXPECT(ModeFromKey("set_aside") == Mode::SetAside);
+	EXPECT(ModeFromKey("rejuvenation_allowed") == Mode::RejuvenationAllowed);
 	EXPECT(ModeFromKey("block") == Mode::SetAside);
+	// rejuvenation_allowed leaves rejuvenation potions out of the lock, and only them.
+	EXPECT(IsLocked(Mode::SetAside, CodeFromText("rvl")) && IsLocked(Mode::Drink, CodeFromText("rvs")));
+	EXPECT(!IsLocked(Mode::RejuvenationAllowed, CodeFromText("rvl")) && !IsLocked(Mode::RejuvenationAllowed, CodeFromText("rvs")));
+	EXPECT(IsLocked(Mode::RejuvenationAllowed, CodeFromText("hp5")) && IsLocked(Mode::RejuvenationAllowed, CodeFromText("wms")));
+	EXPECT(!IsLocked(Mode::SetAside, CodeFromText("tsc")));
 	EXPECT(IsPotion(CodeFromText("hp1")) && IsPotion(CodeFromText("wms")) && !IsPotion(CodeFromText("xyz")) && !IsPotion(CodeFromText("tsc")));
 	const auto healing = DrinkEffect(CodeFromText("hp5"));
 	EXPECT(healing && healing->life && !healing->mana);
@@ -2159,6 +2171,43 @@ void TestPotionLock() {
 	EXPECT((DrinkCommands(both) == std::vector<std::string> { "heal", "setmana 100000" }));
 	const Effect one[] = { *rejuvenation };
 	EXPECT((DrinkCommands(one) == std::vector<std::string> { "heal", "setmana 100000" }));
+}
+
+void TestPortalLock() {
+	using namespace ap::portal_lock;
+	using ap::loot::CodeFromText;
+	const uint32_t scroll = CodeFromText("tsc"), tome = CodeFromText("tbk");
+	EXPECT(IsPortal(scroll) && IsPortal(tome) && IsTome(tome) && !IsTome(scroll) && !IsPortal(CodeFromText("isc")) && !IsPortal(CodeFromText("ibk")));
+	// A scroll is one charge whatever its quantity says; a tome keeps its charges, at most 20.
+	EXPECT((SetAside(scroll, 0) == Held { scroll, 1 } && SetAside(scroll, 7) == Held { scroll, 1 }));
+	EXPECT((SetAside(tome, 13) == Held { tome, 13 } && SetAside(tome, 40) == Held { tome, MaxCharges }));
+	// An empty tome can't open a portal, so it stays.
+	EXPECT(!SetAside(tome, 0) && !SetAside(tome, -1));
+	EXPECT(!SetAside(CodeFromText("hp1"), 1));
+	// Town Portal Access brings its tome once, with the seed's charges, and none at 0.
+	EXPECT((AccessTome(false, 20) == Held { tome, 20 } && AccessTome(false, 5) == Held { tome, 5 }));
+	EXPECT(!AccessTome(true, 20) && !AccessTome(false, 0));
+}
+
+void TestActLock() {
+	using namespace ap::act_lock;
+	EXPECT(ModeFromKey("warp_to_town") == Mode::WarpToTown && ModeFromKey("message_only") == Mode::MessageOnly && ModeFromKey("") == Mode::WarpToTown);
+	// Back to the furthest open act below the locked one, or Act I.
+	EXPECT(TownBelow(3, [](int act) { return act == 1; }) == 1);
+	EXPECT(TownBelow(3, [](int act) { return act <= 2; }) == 2);
+	EXPECT(TownBelow(2, [](int) { return false; }) == 0);
+	EXPECT(TownBelow(4, [](int act) { return act == 3 || act == 1; }) == 3);
+	// Message only: once per walk into a locked act, again after leaving it or for another one.
+	Notice notice;
+	EXPECT(notice.Enter(1, true));
+	EXPECT(!notice.Enter(1, true));
+	EXPECT(notice.Enter(2, true));
+	EXPECT(!notice.Enter(0, false));
+	EXPECT(notice.Enter(2, true));
+	notice.Reset();
+	EXPECT(notice.Enter(2, true));
+	// The same act on another difficulty is another act.
+	EXPECT(notice.Enter(7, true));
 }
 
 int main() {
@@ -2212,6 +2261,8 @@ int main() {
 	TestSessionLog();
 	TestStarterKit();
 	TestPotionLock();
+	TestPortalLock();
+	TestActLock();
 	TestDebugCounts();
 	TestSkillTablePrerequisite();
 	TestCharacterCheck();

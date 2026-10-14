@@ -525,6 +525,10 @@ difficulty was known" and then "the save says the last game was on ...".
 Defaults (`act_keys` and `enforce_act_keys` on).
 
 - [ ] Walking into Act II without its key warps you back to the Rogue Encampment.
+- [ ] With `enforce_act_keys_mode: message_only` (#37, new seed): walking into Act II without its key
+      doesn't warp; the chat says once "Act II ... is locked until you find its key; its checks wait for it".
+      Walking between Act II areas says nothing more; going back to the Rogue Encampment and in again says
+      it again. Its checks are held as with `enforce_act_keys: false`.
 - [ ] With `enforce_act_keys: false`, Act II's checks are recorded but held: the chat says so, the status
       line shows "n held", and they're sent all at once after
       `/send Snrn Normal Act II Key`.
@@ -547,7 +551,7 @@ Defaults (`act_keys` and `enforce_act_keys` on).
       from the plugin log: each lists the input (1 mouse, 2 controller), modifiers (1 Shift, 2 Ctrl, 4 Alt)
       and the mouse buttons held (L, R). A move only passes with L held, so an empty "buttons" means the
       event fires on release. Also report any plain left click or controller pickup that gets logged.
-  - [ ] Ctrl+click a locked potion, or a Town Portal scroll before it crumbles, into the stash: it moves,
+  - [ ] Ctrl+click a locked potion, or a Town Portal scroll before it's set aside, into the stash: it moves,
         with no lock message.
   - [ ] Shift+click a potion to the belt: it moves.
   - [ ] Right-click a locked potion in the inventory, with or without Shift: it's blocked. So is
@@ -571,6 +575,20 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 - [x] Town Portal: D2RLoader doesn't report scroll use, so within 5 seconds every scroll and tome on the
       character crumbles, with a chat message (the starting scroll too).
 - [x] Town Portal Access brings a Tome of Town Portal, once.
+- [ ] Town Portal set aside (#37, new seed): within 5 seconds scrolls and tomes on the character (the
+      starting scroll, one from the debug panel, a bought tome with some charges) are set aside instead of
+      crumbling, with a chat message; the log says how many charges. An empty tome stays. **Log State** counts
+      them. `/send` Town Portal Access: they come back (a tome with the same charges; check the
+      log's `set aside ... (n charges)` against the tooltip), plus a new tome with 20 charges. With a full
+      inventory they come back as you make room.
+  - [ ] With `tp_access_tome_charges: 5`, the new tome has 5 charges; with 0, no new tome comes, only the
+        set-aside ones.
+  - [ ] A seed with `cow_level_checks` and `town_portal_lock` (goal past Normal): the spoiler log puts the cow
+        checks after Town Portal Access.
+- [ ] Rejuvenation allowed (#37, `potion_lock_mode: rejuvenation_allowed`, new seed): a rejuvenation
+      potion (`ap-debug give rvl 1`) stays in the inventory and drinks from the belt and the inventory; healing
+      and mana potions are still set aside and blocked in the belt. The log's seed line says "(rejuvenation
+      allowed)".
 - [ ] Each opens after its item: `Horadric Cube Access`, `Town Portal Access`, `Potion Access`,
       `Stash Access`, `Merchant Access`, `Act I Waypoints`. (Stash confirmed after All Lock Items.)
 - [ ] Shop parcels can't be bought before Merchant Access.

@@ -15,6 +15,7 @@
 #include "milestones.h"
 #include "notify.h"
 #include "personalize.h"
+#include "portal_lock.h"
 #include "potion_lock.h"
 #include "quest_record.h"
 #include "quest_triggers.h"
@@ -757,6 +758,8 @@ std::set<int64_t> gSent;
 bool              gGoalSent = false;
 // Acts we've already said are locked this session.
 std::set<int>     gWarnedActs;
+// Enforce Act Keys' message-only mode: the locked act you last walked into.
+ap::act_lock::Notice gActNotice;
 uint64_t          gKeyItems = UINT64_MAX;
 
 constexpr const char* ActNames[] = { "Act I", "Act II", "Act III", "Act IV", "Act V" };
@@ -835,14 +838,17 @@ auto SlotSummary(const ap::SlotData& slots) -> std::string {
 	return "apworld " + (slots.worldVersion.empty() ? std::string("?") : slots.worldVersion) + ", class "
 	     + (slots.characterClass.empty() ? std::string("any") : slots.characterClass) + ", goal " + std::to_string(slots.goal) + "/act "
 	     + std::to_string(slots.goalAct) + "/quest " + std::to_string(slots.goalQuest) + ", act keys " + on(slots.actKeys) + " (enforced "
-	     + on(slots.enforceActKeys) + "), checks: areas " + on(slots.areaChecks) + ", side areas " + std::to_string(slots.sideAreas.size())
+	     + on(slots.enforceActKeys) + (slots.enforceActKeysMode == ap::act_lock::Mode::MessageOnly ? ", message only" : "") + "), checks: areas " + on(slots.areaChecks) + ", side areas " + std::to_string(slots.sideAreas.size())
 	     + ", levels " + on(slots.levelChecks) + " every " + std::to_string(slots.levelStep) + " to " + std::to_string(slots.levelCap)
 	     + ", superuniques " + on(slots.superUniqueChecks) + ", cows " + on(slots.cowLevelChecks) + ", runes " + std::to_string(slots.runeChecks)
 	     + ", gems " + on(slots.gemChecks) + ", sets " + on(slots.setChecks) + ", specials " + on(slots.specialItemChecks) + ", quest items "
 	     + on(slots.questItemChecks) + ", shops " + std::to_string(slots.shopChecks) + ", ubers " + on(slots.uberChecks) + ", kill counts "
 	     + on(slots.killCountChecks) + ", find counts " + on(slots.findCountChecks) + "; locks: cube " + on(slots.locks.cube) + ", town portal "
-	     + on(slots.locks.townPortal) + ", potions " + on(slots.locks.potions)
-	     + (slots.locks.potionMode == ap::potion_lock::Mode::Drink ? " (drunk on pickup)" : "") + ", stash " + on(slots.locks.stash) + ", merchants "
+	     + on(slots.locks.townPortal) + " (tome " + std::to_string(slots.locks.portalTomeCharges) + " charges), potions " + on(slots.locks.potions)
+	     + (slots.locks.potionMode == ap::potion_lock::Mode::Drink                  ? " (drunk on pickup)"
+	        : slots.locks.potionMode == ap::potion_lock::Mode::RejuvenationAllowed ? " (rejuvenation allowed)"
+	                                                                              : "")
+	     + ", stash " + on(slots.locks.stash) + ", merchants "
 	     + on(slots.locks.merchants) + ", waypoints " + on(slots.locks.waypoints) + "; hints: " + std::to_string(slots.hints.size()) + ", Cain "
 	     + on(slots.cainHints) + ", pages " + std::to_string(slots.pageHintChance) + "%, prophecy shop " + on(slots.prophecyShop)
 	     + "; skill scaling " + std::to_string(slots.skillScaling) + " (cap " + std::to_string(slots.skillScalingCap) + "), tree mode "
@@ -1325,6 +1331,7 @@ void BindSession(uint64_t session) {
 		gSent.clear();
 		gGoalSent = false;
 		gWarnedActs.clear();
+		gActNotice.Reset();
 		// The quest log reads again for this seed (its own baseline), and fallbacks held for another go.
 		gQuestLogQueued.clear();
 		gHeldFallbacks.clear();
@@ -2293,69 +2300,131 @@ void ScanParcels(D2RL::PlayerHandle player) {
 //
 // D2RLoader doesn't report Town Portal scroll use, so it can't be blocked like a
 // potion. Instead, while Town Portal is locked, scrolls and tomes on the
-// character are taken away; Town Portal Access then brings a Tome of Town Portal.
+// character are set aside; Town Portal Access hands them back and brings a Tome
+// of Town Portal with the seed's charges (portal_lock.h).
+
+struct HeldPortalItem {
+	D2RL::ItemHandle        handle;
+	ap::portal_lock::Held   held;
+};
 
 auto __cdecl CollectPortals(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
-	static const uint32_t scroll = ap::loot::CodeFromText("tsc"), tome = ap::loot::CodeFromText("tbk");
-	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && (item->code == scroll || item->code == tome)
-		&& item->container != D2RL::Items::ItemContainer::Ground && item->container != D2RL::Items::ItemContainer::Trade) {
-		static_cast<std::vector<D2RL::ItemHandle>*>(userData)->push_back(item->handle);
+	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->container != D2RL::Items::ItemContainer::Ground
+		&& item->container != D2RL::Items::ItemContainer::Trade) {
+		if (const auto held = ap::portal_lock::SetAside(item->code, item->quantity)) {
+			static_cast<std::vector<HeldPortalItem>*>(userData)->push_back({ item->handle, *held });
+		}
 	}
 	return D2RL::Inventory::IterationAction::Continue;
 }
 
-// Whether the Tome waits for room in a full inventory (said once). Game thread only.
+// Whether the Tome, or set-aside scrolls and tomes, wait for room in a full
+// inventory (said once). Game thread only.
 bool gPortalTomeWaiting = false;
+bool gPortalsTrickling = false;
 
 void EnforceTownPortalLock(D2RL::PlayerHandle player) {
 	bool locked = false, lockInSeed = false, given = false;
+	int tomeCharges = 0;
+	std::vector<ap::portal_lock::Held> held;
 	{
 		std::lock_guard lock(gMutex);
 		locked = gLocks.townPortal;
 		lockInSeed = gSlots.locks.townPortal;
 		given = gSave.portalTomeGiven;
+		tomeCharges = gSlots.locks.portalTomeCharges;
+		held = gSave.heldPortals;
 	}
 	if (!locked) {
-		if (!lockInSeed || given) {
+		if (!lockInSeed) {
 			return;
 		}
-		auto spec = MakeSpec(ap::loot::CodeFromText("tbk"), D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
-		spec.quantity = 20;
-		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
-		auto result = gItems->createItem(gContext, player, &spec, &item);
-		// A full inventory: it waits for room (nothing goes to the ground, #109), said once.
-		if (result != D2RL::Items::Result::Success) {
-			if (!gPortalTomeWaiting) {
-				gPortalTomeWaiting = true;
-				Log("Archipelago: couldn't give the Tome of Town Portal (" + std::to_string(static_cast<uint32_t>(result)) + "); it waits for room.");
-				Feed("Archipelago: Town Portal Access! Make room in your inventory for your Tome of Town Portal.");
+		if (const auto tome = ap::portal_lock::AccessTome(given, tomeCharges)) {
+			auto spec = MakeSpec(tome->code, D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
+			spec.quantity = static_cast<uint32_t>(tome->charges);
+			D2RL::ItemHandle item = D2RL::InvalidItemHandle;
+			auto result = gItems->createItem(gContext, player, &spec, &item);
+			// A full inventory: it waits for room (nothing goes to the ground, #109), said once.
+			if (result != D2RL::Items::Result::Success) {
+				if (!gPortalTomeWaiting) {
+					gPortalTomeWaiting = true;
+					Log("Archipelago: couldn't give the Tome of Town Portal (" + std::to_string(static_cast<uint32_t>(result)) + "); it waits for room.");
+					Feed("Archipelago: Town Portal Access! Make room in your inventory for your Tome of Town Portal.");
+				}
+				return;
 			}
+			gPortalTomeWaiting = false;
+			{
+				std::lock_guard lock(gMutex);
+				gSave.portalTomeGiven = true;
+				SaveNow();
+			}
+			Feed("Archipelago: Town Portal Access! Here's a Tome of Town Portal with " + std::to_string(tome->charges) + " charges.");
+		}
+		if (held.empty()) {
 			return;
 		}
-		gPortalTomeWaiting = false;
-		{
+		// The ones a full inventory can't take stay held for later passes.
+		std::vector<ap::portal_lock::Held> kept;
+		for (const auto& portal : held) {
+			auto spec = MakeSpec(portal.code, D2RL::Items::Quality::Normal, D2RL::Items::ItemContainer::Inventory);
+			if (ap::portal_lock::IsTome(portal.code)) {
+				spec.quantity = static_cast<uint32_t>(portal.charges);
+			}
+			D2RL::ItemHandle item = D2RL::InvalidItemHandle;
+			if (gItems->createItem(gContext, player, &spec, &item) != D2RL::Items::Result::Success) {
+				kept.push_back(portal);
+			}
+		}
+		if (kept.size() < held.size()) {
 			std::lock_guard lock(gMutex);
-			gSave.portalTomeGiven = true;
+			gSave.heldPortals = kept;
 			SaveNow();
 		}
-		Feed("Archipelago: Town Portal Access! Here's a Tome of Town Portal.");
+		// Said once when they start coming back, and once when the last one is.
+		const size_t back = held.size() - kept.size();
+		if (!gPortalsTrickling) {
+			if (kept.empty()) {
+				Feed("Archipelago: Town Portal Access! Your " + std::to_string(back) + " set-aside Town Portal scrolls and tomes are back.");
+			} else {
+				Feed("Archipelago: Town Portal Access! Your inventory is full, so " + std::to_string(kept.size()) + " of your "
+				     + std::to_string(held.size()) + " set-aside Town Portal scrolls and tomes come back as you make room.");
+			}
+		} else if (kept.empty()) {
+			Feed("Archipelago: the last of your set-aside Town Portal scrolls and tomes is back.");
+		}
+		gPortalsTrickling = !kept.empty();
+		if (!kept.empty() && back > 0) {
+			Log("Archipelago: gave back " + std::to_string(back) + " Town Portal scrolls or tomes; " + std::to_string(kept.size()) + " wait for room.");
+		}
 		return;
 	}
-	std::vector<D2RL::ItemHandle> portals;
+	std::vector<HeldPortalItem> portals;
 	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
 	if (gInventory->forEachInventoryItem(gContext, player, &filter, CollectPortals, &portals) != D2RL::Inventory::Result::Success) {
 		return;
 	}
-	int removed = 0;
-	for (const auto item : portals) {
-		if (gItems->destroyItem(gContext, player, item, D2RL::Items::SocketedItemPolicy::DestroyContents) == D2RL::Items::Result::Success) {
-			++removed;
+	std::vector<ap::portal_lock::Held> removed;
+	for (const auto& portal : portals) {
+		if (gItems->destroyItem(gContext, player, portal.handle, D2RL::Items::SocketedItemPolicy::DestroyContents) == D2RL::Items::Result::Success) {
+			removed.push_back(portal.held);
 		}
 	}
-	if (removed > 0) {
-		Log("Archipelago: removed " + std::to_string(removed) + " Town Portal scrolls or tomes.");
-		Feed("Archipelago: Town Portal is locked until you find Town Portal Access, so your Town Portal scrolls crumble.");
+	if (removed.empty()) {
+		return;
 	}
+	{
+		std::lock_guard lock(gMutex);
+		gSave.heldPortals.insert(gSave.heldPortals.end(), removed.begin(), removed.end());
+		SaveNow();
+	}
+	int charges = 0;
+	for (const auto& portal : removed) {
+		charges += portal.charges;
+	}
+	Log("Archipelago: set aside " + std::to_string(removed.size()) + " Town Portal scrolls or tomes (" + std::to_string(charges) + " charges).");
+	Feed("Archipelago: Town Portal is locked until you find Town Portal Access, so " + std::to_string(removed.size())
+	     + " Town Portal scrolls and tomes are set aside until then.");
 }
 
 // ---- Potion lock (game thread) ---------------------------------------------------
@@ -2365,7 +2434,8 @@ void EnforceTownPortalLock(D2RL::PlayerHandle player) {
 // in the inventory are set aside, and Potion Access hands them back. With the
 // seed's drink mode, healing, mana and rejuvenation potions picked up (into the
 // inventory or the belt) are drunk instead: the potion goes, and D2RCore fills
-// life or mana (potion_lock.h).
+// life or mana (potion_lock.h). With rejuvenation_allowed, rejuvenation potions
+// aren't locked at all.
 
 using ap::potion_lock::IsPotion;
 
@@ -2387,14 +2457,16 @@ auto __cdecl CollectPotions(const D2RL::PluginContext*, const D2RL::Items::ItemI
 bool gPotionsTrickling = false;
 
 void EnforcePotionLock(D2RL::PlayerHandle player) {
-	bool locked = false, drink = false;
+	bool locked = false;
+	auto mode = ap::potion_lock::Mode::SetAside;
 	std::vector<uint32_t> held;
 	{
 		std::lock_guard lock(gMutex);
 		locked = gLocks.potions;
-		drink = gSlots.locks.potionMode == ap::potion_lock::Mode::Drink;
+		mode = gSlots.locks.potionMode;
 		held = gSave.heldPotions;
 	}
+	const bool drink = mode == ap::potion_lock::Mode::Drink;
 	if (!locked) {
 		if (held.empty()) {
 			return;
@@ -2443,6 +2515,9 @@ void EnforcePotionLock(D2RL::PlayerHandle player) {
 	std::vector<uint32_t> removed;
 	std::vector<ap::potion_lock::Effect> drunk;
 	for (const auto& potion : potions) {
+		if (!ap::potion_lock::IsLocked(mode, potion.code)) {
+			continue;
+		}
 		const auto effect = drink ? ap::potion_lock::DrinkEffect(potion.code) : std::nullopt;
 		if (!effect && potion.container != D2RL::Items::ItemContainer::Inventory) {
 			continue;
@@ -3622,10 +3697,12 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 		return Decision::Continue;
 	}
 	bool townPortal = false, potions = false, questItems = false, respecs = false;
+	auto potionMode = ap::potion_lock::Mode::SetAside;
 	{
 		std::lock_guard lock(gMutex);
 		townPortal = gLocks.townPortal;
 		potions = gLocks.potions;
+		potionMode = gSlots.locks.potionMode;
 		questItems = gSlots.questItemChecks;
 		respecs = gSlots.randomizer.treeMode && gGameRules != nullptr && !gSave.unlockedSkills.empty();
 	}
@@ -3657,11 +3734,11 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 		gRespecToken = event->item;
 		gRespecTokenAt = Clock::now();
 	}
-	if (townPortal && (info.code == ap::loot::CodeFromText("tsc") || info.code == ap::loot::CodeFromText("tbk"))) {
+	if (townPortal && ap::portal_lock::IsPortal(info.code)) {
 		LockMessage("Town Portal is locked until you find Town Portal Access.");
 		return Decision::Consume;
 	}
-	if (potions && IsPotion(info.code)) {
+	if (potions && ap::potion_lock::IsLocked(potionMode, info.code)) {
 		LockMessage("potions are locked until you find Potion Access.");
 		return Decision::Consume;
 	}
@@ -3669,7 +3746,8 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 }
 
 // With Enforce Act Keys, an area in a locked act sends you to the town of the
-// furthest act you may be in, below it.
+// furthest act you may be in, below it; in the message-only mode it says so once
+// each time you walk into the act (act_lock.h).
 void EnforceActKeys(int difficulty, int level) {
 	const ap::SlotData slots = gClient->Slots();
 	if (!slots.actKeys || !slots.enforceActKeys || level < 0 || level >= static_cast<int>(std::size(ap::data::LevelActs))) {
@@ -3685,16 +3763,24 @@ void EnforceActKeys(int difficulty, int level) {
 	const int act = ap::data::LevelActs[level];
 	const std::set<int> unlocked = UnlockedActs();
 	auto open = [&](int a) { return difficulty * 5 + a == 0 || unlocked.contains(difficulty * 5 + a); };
-	if (act >= 5 || open(act)) {
+	if (act >= 5) {
 		return;
 	}
-	int town = 0;
-	for (int a = act - 1; a > 0; --a) {
-		if (open(a)) {
-			town = a;
-			break;
+	if (slots.enforceActKeysMode == ap::act_lock::Mode::MessageOnly) {
+		bool say = false;
+		{
+			std::lock_guard lock(gMutex);
+			say = gActNotice.Enter(difficulty * 5 + act, !open(act));
 		}
+		if (say) {
+			Feed("Archipelago: " + ActLabel(difficulty * 5 + act) + " is locked until you find its key; its checks wait for it.");
+		}
+		return;
 	}
+	if (open(act)) {
+		return;
+	}
+	const int town = ap::act_lock::TownBelow(act, open);
 	{
 		std::lock_guard lock(gMutex);
 		if (Clock::now() - gLastActWarp < std::chrono::seconds(3)) {
@@ -5444,7 +5530,8 @@ void LogState() {
 		                + " announced, " + std::to_string(gSave.commands.size()) + " reward commands waiting, " + std::to_string(gCommandQueue.size() + gRelearnCommandQueue.size())
 		                + " queued commands, " + std::to_string(gTrapQueue.size()) + " traps queued" + (gRewardRefused ? ", last reward refused" : "")
 		                + ", lost to a crash " + std::to_string(gSave.lostFrom) + "-" + std::to_string(gSave.lostTo) + (gSave.redeliver ? " (redelivering)" : "")
-		                + ", held potions " + std::to_string(gSave.heldPotions.size()) + ", skill points given " + std::to_string(gSave.skillPointsGiven)
+		                + ", held potions " + std::to_string(gSave.heldPotions.size()) + ", held Town Portal scrolls and tomes "
+		                + std::to_string(gSave.heldPortals.size()) + ", skill points given " + std::to_string(gSave.skillPointsGiven)
 		                + ", tree skills unlocked " + std::to_string(gSave.unlockedSkills.size()) + ", prophecies " + std::to_string(gSave.prophecies) + ".");
 		std::string baselines;
 		for (const auto& [difficulty, quests] : gSave.questBaseline) {
