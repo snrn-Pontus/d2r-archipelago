@@ -2436,6 +2436,77 @@ auto UnlockInTable(const std::set<uint32_t>& skills) -> bool {
 	return found;
 }
 
+// Tree mode: d2r-ap-setup's list of padlocked skill icons for a bank, read once
+// from the mod folder (empty without one: an older mod, or not tree mode).
+auto LockedIcons(D2RL::DataTables::Bank bank) -> const std::vector<ap::randomizer::LockedIcon>& {
+	static std::map<uint32_t, std::vector<ap::randomizer::LockedIcon>> loaded;
+	const auto known = loaded.find(static_cast<uint32_t>(bank));
+	if (known != loaded.end()) {
+		return known->second;
+	}
+	const std::filesystem::path directory = gContext->modDirectory != nullptr ? gContext->modDirectory : L"";
+	const wchar_t* name = bank == D2RL::DataTables::Bank::Rotw ? L"locked-icons.txt" : L"locked-icons-lod.txt";
+	std::vector<ap::randomizer::LockedIcon> icons;
+	for (const auto& candidate : { directory / name, directory.parent_path() / name }) {
+		std::ifstream file(candidate, std::ios::binary);
+		if (file) {
+			icons = ap::randomizer::ParseLockedIcons(std::string(std::istreambuf_iterator<char>(file), {}));
+			break;
+		}
+	}
+	return loaded.emplace(static_cast<uint32_t>(bank), std::move(icons)).first->second;
+}
+
+// Where each bank's SkillDesc rows keep IconCel, once found (game thread).
+std::map<uint32_t, size_t> gIconCelOffsets;
+
+// Tree mode: gives the received skills their own icons back in the live SkillDesc
+// rows of both banks, in place of the padlocked ones. Like UnlockInTable, it runs
+// on every pass, since the tables reload with each game.
+void ShowUnlockedIcons(const std::set<uint32_t>& skills) {
+	if (gTables == nullptr) {
+		return;
+	}
+	for (const auto bank : { D2RL::DataTables::Bank::Rotw, D2RL::DataTables::Bank::Lod }) {
+		const auto& icons = LockedIcons(bank);
+		D2RL::DataTables::TableView view { .structSize = D2RL::DataTables::TableViewSize };
+		if (icons.empty() || gTables->getTable(gContext, bank, D2RL::DataTables::TableId::SkillDesc, &view) != D2RL::DataTables::Result::Success
+		    || view.rows == nullptr || view.rowCount == 0) {
+			continue;
+		}
+		const auto* rows = static_cast<const uint8_t*>(view.rows);
+		auto offset = gIconCelOffsets.find(static_cast<uint32_t>(bank));
+		if (offset == gIconCelOffsets.end()) {
+			const auto at = ap::skill_table::FindIconCel(rows, view.rowCount, view.rowSize, icons);
+			Log("Archipelago: SkillDesc bank " + std::to_string(static_cast<uint32_t>(bank)) + " (" + std::to_string(view.rowCount) + " rows of "
+			    + std::to_string(view.rowSize) + " bytes): " + (at ? "icon at +" + std::to_string(*at) + "." : std::string("no icon field found.")));
+			if (!at) {
+				continue;
+			}
+			offset = gIconCelOffsets.emplace(static_cast<uint32_t>(bank), *at).first;
+		}
+		std::vector<uint32_t> shown;
+		for (const auto& icon : icons) {
+			if (!skills.contains(icon.skill) || icon.descRow >= view.rowCount) {
+				continue;
+			}
+			auto* field = const_cast<uint8_t*>(rows) + static_cast<size_t>(icon.descRow) * view.rowSize + offset->second;
+			if (*field != icon.lockedCel) {
+				continue;
+			}
+			const auto cel = static_cast<uint8_t>(icon.cel);
+			if (!SafeCopy(field, &cel, sizeof(cel))) {
+				Log("Archipelago: couldn't write the SkillDesc row of " + SkillName(icon.skill) + "; its icon stays locked.");
+				break;
+			}
+			shown.push_back(icon.skill);
+		}
+		if (!shown.empty()) {
+			Log("Archipelago: showed the icons of " + SkillNames(shown) + " in SkillDesc bank " + std::to_string(static_cast<uint32_t>(bank)) + ".");
+		}
+	}
+}
+
 void DeliverTreeSkills(const std::vector<ap::NetworkItem>& items, bool inTable) {
 	std::vector<std::string> news;
 	{
@@ -2755,6 +2826,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			}
 		}
 		DeliverTreeSkills(items, UnlockInTable(received));
+		ShowUnlockedIcons(received);
 	}
 	const bool codexOk = treeMode || SyncCodex(player, skills, playerClass, config, slots);
 

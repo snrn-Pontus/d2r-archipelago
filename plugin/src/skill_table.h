@@ -1,5 +1,7 @@
 #pragma once
 
+#include "randomizer.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -25,5 +27,10 @@ auto FindSelfPrerequisite(const uint8_t* rows, size_t rowCount, size_t rowSize, 
 // Whether the skill still names itself at offset (locked); the caller unlocks it by
 // writing NoSkill there.
 auto IsSelfLocked(const uint8_t* rows, size_t rowCount, size_t rowSize, size_t offset, uint16_t skill) -> bool;
+
+// The offset of IconCel in a compiled SkillDesc row, found as the byte where most of
+// d2r-ap-setup's padlocked icons show their locked frame and the rest their own
+// (unlocked already). Rows are indexed like skilldesc.txt. Nothing if no byte fits.
+auto FindIconCel(const uint8_t* rows, size_t rowCount, size_t rowSize, std::span<const randomizer::LockedIcon> icons) -> std::optional<size_t>;
 
 } // namespace ap::skill_table

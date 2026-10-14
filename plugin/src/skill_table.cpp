@@ -58,4 +58,25 @@ auto IsSelfLocked(const uint8_t* rows, size_t rowCount, size_t rowSize, size_t o
 	return rows != nullptr && skill < rowCount && offset + 2 <= rowSize && Read(rows, rowSize, skill, offset) == skill;
 }
 
+auto FindIconCel(const uint8_t* rows, size_t rowCount, size_t rowSize, std::span<const randomizer::LockedIcon> icons) -> std::optional<size_t> {
+	if (rows == nullptr || icons.size() < 10) {
+		return std::nullopt;
+	}
+	for (size_t offset = 0; offset < rowSize; ++offset) {
+		size_t locked = 0, shown = 0;
+		for (const auto& icon : icons) {
+			if (icon.descRow >= rowCount) {
+				continue;
+			}
+			const int cel = rows[icon.descRow * rowSize + offset];
+			locked += cel == icon.lockedCel ? 1 : 0;
+			shown += cel == icon.cel ? 1 : 0;
+		}
+		if (locked * 2 >= icons.size() && (locked + shown) * 10 >= icons.size() * 9) {
+			return offset;
+		}
+	}
+	return std::nullopt;
+}
+
 } // namespace ap::skill_table
