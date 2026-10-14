@@ -5,9 +5,15 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace ap {
+
+// Why a connection ended, for the log: the server's close (status and reason) or a
+// WinHTTP receive error, with the system's text for it when there is one.
+auto DescribeClose(unsigned short status, std::string_view reason) -> std::string;
+auto DescribeReceiveError(unsigned long error, std::string_view text = {}) -> std::string;
 
 // A blocking WebSocket client on WinHTTP. One thread (the owner) calls Connect,
 // Receive and Close; Send and Interrupt may be called from any thread.
@@ -29,8 +35,9 @@ public:
 	// error on failure. Owner only.
 	bool Connect(const std::wstring& host, unsigned short port, bool secure, std::string& error);
 	// Blocks until one whole text message arrives. Returns false when the
-	// connection closes or fails, or after Interrupt. Owner only.
-	bool Receive(std::string& message);
+	// connection closes or fails, or after Interrupt, and says why in ended.
+	// Owner only.
+	bool Receive(std::string& message, std::string& ended);
 	bool Send(const std::string& message);
 	// Any thread: starts closing the connection (a WebSocket close to the server),
 	// so a Receive returns false soon and the owner closes the handles.

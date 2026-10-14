@@ -223,7 +223,8 @@ public:
 
 private:
 	void Run();
-	void Session(uint64_t target);
+	// Runs the connected socket until it ends, and says why it ended.
+	auto Session(uint64_t target) -> std::string;
 	// Sets Idle with the "Disconnected" status; mutex_ must be held.
 	void SetDisconnected();
 	void HandlePacket(const void* packet, std::optional<uint64_t> target);
