@@ -2,6 +2,14 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.11.1 - 2026-10-14
+
+A plugin fix that works with existing seeds: run this download's `d2r-ap-setup` to install it.
+
+- A quest item handed in or used in town right after a Save & Exit, before your first kill, now sends its
+  check after that kill instead of being lost. The Scroll of Inifuss also counts once Akara has deciphered
+  it, and entering Tristram sends its check if it was still missing (#123)
+
 ## 0.11.0 - 2026-10-13
 
 Rerun `d2r-ap-setup` for this version: the Ledger is gone from the mod and the Emblem is new.
