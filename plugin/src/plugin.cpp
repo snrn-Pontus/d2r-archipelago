@@ -1931,8 +1931,14 @@ auto QuestItemCheck(uint32_t code, int difficulty) -> std::optional<int64_t> {
 }
 
 // A quest item found before this game's difficulty is known: its check waits in
-// gPendingQuestItems until a kill tells it (#123). Call with gMutex held.
+// gPendingQuestItems until a kill tells it (#123). Finding an item made from
+// others finds those too (#136). Call with gMutex held.
 void FindQuestItem(uint32_t code) {
+	for (const auto& entry : ap::quests::QuestItemParts) {
+		if (entry.made == code) {
+			FindQuestItem(entry.part);
+		}
+	}
 	if (gDifficultyKnown) {
 		if (const auto check = QuestItemCheck(code, gDifficulty)) {
 			gCollectionQueue.push_back(*check);

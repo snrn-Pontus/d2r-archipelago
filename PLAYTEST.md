@@ -415,8 +415,12 @@ recorded the moment you use them. Use each one right after picking it up, within
 - [ ] **Potion of Life** (Alkor, after the Golden Bird): drink it at once; "Find Potion of Life" still sends.
 - [ ] **Scroll of Resistance** (Anya): read it at once; "Find Scroll of Resistance" still sends.
 - [ ] Each sends once, not again on the next scan or after rejoining.
-- [ ] Note whether handing the Golden Bird to Alkor right after Meshif gives it to you still sends
-      "Find The Golden Bird" (this one is handed over, not used, so the change doesn't cover it).
+- [ ] Golden Bird (#136): take it from Meshif and hand it to Alkor within 5 seconds. Getting the Potion of Life
+      sends "Find The Golden Bird" too, also when you drink the potion at once.
+- [ ] Khalim's Will (#136): pick up the last of Khalim's Eye, Heart, Brain and Flail and cube them within 5 seconds.
+      Khalim's Will sends all four finds. The same for the Horadric Staff and "Find Staff of Kings".
+- [ ] Mephisto's Soulstone (#136): note whether "Find Mephisto's Soulstone" sent before you smashed it; nothing
+      backs it up yet, but it's held from Mephisto to the Hellforge, so a scan should always see it.
 
 ## 2c. D2RLoader's quest event (issue #20)
 
