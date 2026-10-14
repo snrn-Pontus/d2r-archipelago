@@ -634,6 +634,7 @@ class D2RWorld(World):
                 "cube": bool(self.options.cube_lock),
                 "town_portal": bool(self.options.town_portal_lock),
                 "potions": bool(self.options.potion_lock),
+                "potion_mode": self.options.potion_lock_mode.current_key,
                 "stash": bool(self.options.stash_lock),
                 "merchants": bool(self.options.merchant_lock),
                 "waypoints": bool(self.options.waypoint_lock),

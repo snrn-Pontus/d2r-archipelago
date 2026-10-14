@@ -26,7 +26,8 @@ inline constexpr Entry Items[] = {
 	{ "fed", 1, "Festering Essence of Destruction" },
 	// Identifies the reward and found uniques without a trip to Cain.
 	{ "ibk", 1, "Tome of Identify" },
-	// Survives the tests without god mode; the Potion lock sets them aside until Potion Access.
+	// Survives the tests without god mode; the Potion lock sets them aside until Potion Access
+	// (or drinks them, with potion_lock_mode drink).
 	{ "rvl", 3, "Full Rejuvenation Potion" },
 };
 

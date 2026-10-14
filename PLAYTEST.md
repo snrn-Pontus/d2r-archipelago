@@ -550,6 +550,17 @@ Defaults (`act_keys` and `enforce_act_keys` on).
       on an inventory potion is logged, the set-aside on pickup could go.
 - [ ] Potion Access gives the set-aside potions back (as room frees up if the inventory is full). **4 Healing
       Potions** on the debug panel gives some to set aside.
+- [ ] Drink on pickup (#4; a seed with `potion_lock_mode: drink`, rerun setup):
+  - [ ] Lose some life, then pick up a healing potion (or **4 Healing Potions** on the debug panel): within a
+        few seconds it's gone from the inventory or belt, life fills up, and the chat says you drink it at
+        once. The log shows `console command "heal" accepted`.
+  - [ ] Same with a mana potion after casting: mana fills (`console command "cheat setmana 100000"`). If it
+        doesn't, D2RCore's setmana may want another unit; report what the console says.
+  - [ ] A rejuvenation potion (`ap-debug give rvl 1`) fills both; several picked up together run each command
+        once.
+  - [ ] A stamina, antidote or thawing potion in the inventory is set aside as before; one in the belt stays
+        there, blocked. Potion Access hands the set-aside ones back.
+  - [ ] Potions already in the belt when the seed starts (or auto-belted on pickup) are drunk too.
 - [x] Town Portal: D2RLoader doesn't report scroll use, so within 5 seconds every scroll and tome on the
       character crumbles, with a chat message (the starting scroll too).
 - [x] Town Portal Access brings a Tome of Town Portal, once.

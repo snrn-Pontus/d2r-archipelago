@@ -390,6 +390,7 @@ class TestLocks(D2RTestBase):
         self.assertFalse(self.world.create_item("Stash Access").advancement)
         self.assertTrue(self.world.create_item("Stash Access").useful)
         self.assertEqual(self.world.fill_slot_data()["locks"]["cube"], True)
+        self.assertEqual(self.world.fill_slot_data()["locks"]["potion_mode"], "set_aside")
 
     def test_late_waypoints_never_lock(self) -> None:
         # From Acts IV and V only a waypoint goes back an act, so those must work from the start.
@@ -409,6 +410,15 @@ class TestLocks(D2RTestBase):
     def test_shops_need_merchants(self) -> None:
         self.collect_all_but(["Merchant Access"])
         self.assertFalse(self.can_reach_location("Act I: Buy Archipelago Parcel 1"))
+
+
+class TestDrinkPotions(D2RTestBase):
+    options = {"potion_lock": True, "potion_lock_mode": "drink"}
+
+    def test_slot_data(self) -> None:
+        locks = self.world.fill_slot_data()["locks"]
+        self.assertTrue(locks["potions"])
+        self.assertEqual(locks["potion_mode"], "drink")
 
 
 class TestCowLevelMerchants(D2RTestBase):

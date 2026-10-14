@@ -15,6 +15,7 @@
 #include "milestones.h"
 #include "notify.h"
 #include "personalize.h"
+#include "potion_lock.h"
 #include "quest_record.h"
 #include "quest_triggers.h"
 #include "randomizer.h"
@@ -840,7 +841,8 @@ auto SlotSummary(const ap::SlotData& slots) -> std::string {
 	     + ", gems " + on(slots.gemChecks) + ", sets " + on(slots.setChecks) + ", specials " + on(slots.specialItemChecks) + ", quest items "
 	     + on(slots.questItemChecks) + ", shops " + std::to_string(slots.shopChecks) + ", ubers " + on(slots.uberChecks) + ", kill counts "
 	     + on(slots.killCountChecks) + ", find counts " + on(slots.findCountChecks) + "; locks: cube " + on(slots.locks.cube) + ", town portal "
-	     + on(slots.locks.townPortal) + ", potions " + on(slots.locks.potions) + ", stash " + on(slots.locks.stash) + ", merchants "
+	     + on(slots.locks.townPortal) + ", potions " + on(slots.locks.potions)
+	     + (slots.locks.potionMode == ap::potion_lock::Mode::Drink ? " (drunk on pickup)" : "") + ", stash " + on(slots.locks.stash) + ", merchants "
 	     + on(slots.locks.merchants) + ", waypoints " + on(slots.locks.waypoints) + "; hints: " + std::to_string(slots.hints.size()) + ", Cain "
 	     + on(slots.cainHints) + ", pages " + std::to_string(slots.pageHintChance) + "%, prophecy shop " + on(slots.prophecyShop)
 	     + "; skill scaling " + std::to_string(slots.skillScaling) + " (cap " + std::to_string(slots.skillScalingCap) + "), tree mode "
@@ -2360,23 +2362,23 @@ void EnforceTownPortalLock(D2RL::PlayerHandle player) {
 //
 // D2RLoader reports drinking from the belt, which OnItemActivate blocks, but not
 // right-clicking a potion in the inventory. So while potions are locked, potions
-// in the inventory are set aside, and Potion Access hands them back.
+// in the inventory are set aside, and Potion Access hands them back. With the
+// seed's drink mode, healing, mana and rejuvenation potions picked up (into the
+// inventory or the belt) are drunk instead: the potion goes, and D2RCore fills
+// life or mana (potion_lock.h).
 
-auto IsPotion(uint32_t code) -> bool {
-	static const std::set<uint32_t> potions = [] {
-		std::set<uint32_t> codes;
-		for (const char* text : { "hp1", "hp2", "hp3", "hp4", "hp5", "mp1", "mp2", "mp3", "mp4", "mp5", "rvs", "rvl", "yps", "vps", "wms" }) {
-			codes.insert(ap::loot::CodeFromText(text));
-		}
-		return codes;
-	}();
-	return potions.contains(code);
-}
+using ap::potion_lock::IsPotion;
+
+struct HeldPotion {
+	D2RL::ItemHandle             handle;
+	uint32_t                     code;
+	D2RL::Items::ItemContainer   container;
+};
 
 auto __cdecl CollectPotions(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
-	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && item->container == D2RL::Items::ItemContainer::Inventory
-		&& IsPotion(item->code)) {
-		static_cast<std::vector<std::pair<D2RL::ItemHandle, uint32_t>>*>(userData)->emplace_back(item->handle, item->code);
+	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize
+		&& (item->container == D2RL::Items::ItemContainer::Inventory || item->container == D2RL::Items::ItemContainer::Belt) && IsPotion(item->code)) {
+		static_cast<std::vector<HeldPotion>*>(userData)->push_back({ item->handle, item->code, item->container });
 	}
 	return D2RL::Inventory::IterationAction::Continue;
 }
@@ -2385,11 +2387,12 @@ auto __cdecl CollectPotions(const D2RL::PluginContext*, const D2RL::Items::ItemI
 bool gPotionsTrickling = false;
 
 void EnforcePotionLock(D2RL::PlayerHandle player) {
-	bool locked = false;
+	bool locked = false, drink = false;
 	std::vector<uint32_t> held;
 	{
 		std::lock_guard lock(gMutex);
 		locked = gLocks.potions;
+		drink = gSlots.locks.potionMode == ap::potion_lock::Mode::Drink;
 		held = gSave.heldPotions;
 	}
 	if (!locked) {
@@ -2429,17 +2432,41 @@ void EnforcePotionLock(D2RL::PlayerHandle player) {
 		}
 		return;
 	}
-	std::vector<std::pair<D2RL::ItemHandle, uint32_t>> potions;
+	// Belt potions are only looked at to drink them; otherwise they stay, blocked by OnItemActivate.
+	std::vector<HeldPotion> potions;
 	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize,
-		.containerMask = D2RL::Items::ContainerBit(D2RL::Items::ItemContainer::Inventory) };
+		.containerMask = D2RL::Items::ContainerBit(D2RL::Items::ItemContainer::Inventory)
+		               | (drink ? D2RL::Items::ContainerBit(D2RL::Items::ItemContainer::Belt) : 0U) };
 	if (gInventory->forEachInventoryItem(gContext, player, &filter, CollectPotions, &potions) != D2RL::Inventory::Result::Success) {
 		return;
 	}
 	std::vector<uint32_t> removed;
-	for (const auto& [item, code] : potions) {
-		if (gItems->destroyItem(gContext, player, item, D2RL::Items::SocketedItemPolicy::DestroyContents) == D2RL::Items::Result::Success) {
-			removed.push_back(code);
+	std::vector<ap::potion_lock::Effect> drunk;
+	for (const auto& potion : potions) {
+		const auto effect = drink ? ap::potion_lock::DrinkEffect(potion.code) : std::nullopt;
+		if (!effect && potion.container != D2RL::Items::ItemContainer::Inventory) {
+			continue;
 		}
+		if (gItems->destroyItem(gContext, player, potion.handle, D2RL::Items::SocketedItemPolicy::DestroyContents) != D2RL::Items::Result::Success) {
+			continue;
+		}
+		if (effect) {
+			drunk.push_back(*effect);
+		} else {
+			removed.push_back(potion.code);
+		}
+	}
+	if (!drunk.empty()) {
+		{
+			std::lock_guard lock(gMutex);
+			for (auto& command : ap::potion_lock::DrinkCommands(drunk)) {
+				gCommandQueue.push_back(std::move(command));
+			}
+		}
+		Log("Archipelago: drank " + std::to_string(drunk.size()) + " potions picked up while potions are locked.");
+		Feed(drunk.size() == 1 ? std::string("Archipelago: potions are locked until you find Potion Access, so you drink the one you picked up at once.")
+		                       : "Archipelago: potions are locked until you find Potion Access, so you drink the " + std::to_string(drunk.size())
+		                             + " you picked up at once.");
 	}
 	if (removed.empty()) {
 		return;

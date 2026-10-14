@@ -171,6 +171,7 @@ auto ReadSlotData(const json& data) -> SlotData {
 		.stash = Get(locks, "stash", false),
 		.merchants = Get(locks, "merchants", false),
 		.waypoints = Get(locks, "waypoints", false),
+		.potionMode = potion_lock::ModeFromKey(Get(locks, "potion_mode", std::string("set_aside"))),
 	};
 	const json traps = Object(data, "traps");
 	slots.traps = {
