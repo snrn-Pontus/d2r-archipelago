@@ -429,6 +429,26 @@ Quest checks use fallbacks (boss kill, quest item, reaching an area, 20 Den kill
 - [ ] Rejoin a character with finished quests: no events for them (they're baselined), and nothing is lost.
 - [ ] Nightmare: the event's difficulty is 1.
 
+## 2d. Difficulty and class before a kill (issue #126)
+
+The plugin only learns the difficulty, and usually the class, from a kill; until then area checks, quest
+items and rewards wait. These checks find out whether something earlier could tell it. With debug tools on
+(`ap-debug on`, then restart D2R), the plugin also listens to D2RLoader's encounter requests and logs them
+("encounter boss request ... difficulty N", "encounter herald request"); the start of the log says whether
+that registered ("encounter logging provider: result 0").
+
+- [ ] **Area events on Nightmare/Hell:** enter a few areas on Nightmare (and Hell, if you have a character
+      there) before killing anything. What does "entered ... (event difficulty N)" say: 1 / 2, or still 0?
+- [ ] **Encounters:** with debug tools on, walk out of town on a new game without killing. Is there an
+      "encounter ... request" line, and does it end "before the difficulty was known"? When does it come:
+      entering an area, when monsters spawn, near a boss or superunique, only in a Terror Zone? On
+      Nightmare, does the boss request say difficulty 1?
+- [ ] **Class:** `ap-debug probe` logs whether each class's first skill could take a point
+      ("can allocate: Amazon Magic Arrow (allowed), Sorceress Fire Bolt (refused), ..."). Try it right after
+      joining, with unspent skill points (debug panel **+5 Skill Points**) and with none, on a seed with Skill
+      Tree Shuffle (tree mode) and without. Is only your own class's skill allowed? (A Warlock isn't asked,
+      so it shows every other class refused.)
+
 ## 3. Act keys
 
 Defaults (`act_keys` and `enforce_act_keys` on).

@@ -257,6 +257,8 @@ bool                  gDifficultyKnown = false;
 std::vector<int>      gPendingAreas;
 // Quest item codes found before then, for their checks (#123).
 std::set<uint32_t>    gPendingQuestItems;
+// Encounter requests logged this game (LogEncounter), as kind, area and difficulty.
+std::set<std::tuple<int, int, uint32_t>> gEncountersLogged;
 int                   gAct          = 0;
 // The player's class id seen in this game (from the killer of a monster), or -1.
 int                   gPlayerClass  = -1;
@@ -3866,6 +3868,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			// Only on joining: by LocalPlayerReady this game may already have said the level.
 			if (event->kind == Kind::GameJoined) {
 				ForgetPlayer();
+				gEncountersLogged.clear();
 			}
 			gInGame = true;
 			gRepairOffer.Cancel();
@@ -4178,6 +4181,38 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::U
 		Log("Archipelago: UI message " + key + (text.empty() ? "" : " \"" + text + "\""));
 	}
 	return D2RL::SharedEvents::UiMessageAction::Continue;
+}
+
+// Encounter provider (#126), only to log when D2RLoader asks it, and with what
+// difficulty, so we can tell whether it could say the difficulty before a kill.
+// It never changes an encounter. Each kind of request is logged once per game and area.
+void LogEncounter(int kind, int levelId, uint32_t difficulty, const std::string& text) {
+	bool beforeKill = false;
+	{
+		std::lock_guard lock(gMutex);
+		if (!gEncountersLogged.emplace(kind, levelId, difficulty).second) {
+			return;
+		}
+		beforeKill = !gDifficultyKnown;
+	}
+	Log("Archipelago: encounter " + text + " in " + AreaLabel(levelId) + (beforeKill ? ", before the difficulty was known." : "."));
+}
+
+auto __cdecl DecideHerald(const D2RL::PluginContext*, const D2RL::Encounters::HeraldRequest* request, D2RL::Encounters::HeraldDecision*, void*) noexcept
+	-> D2RL::Encounters::Result {
+	if (request != nullptr) {
+		LogEncounter(0, request->levelId, 0, "herald request (act " + std::to_string(request->act) + ", tier " + std::to_string(request->heraldTier) + ")");
+	}
+	return D2RL::Encounters::Result::Success;
+}
+
+auto __cdecl DecideBoss(const D2RL::PluginContext*, const D2RL::Encounters::BossRequest* request, D2RL::Encounters::BossDecision*, void*) noexcept
+	-> D2RL::Encounters::Result {
+	if (request != nullptr) {
+		LogEncounter(1, request->levelId, request->difficulty, "boss request (monster " + std::to_string(request->monsterIndex) + ", difficulty "
+		             + std::to_string(request->difficulty) + ")");
+	}
+	return D2RL::Encounters::Result::Success;
 }
 
 // Runs on the server thread: the current difficulty, quest bosses, Den of Evil
@@ -4898,6 +4933,40 @@ void __cdecl SpawnWork(const D2RL::PluginContext*, void*) noexcept {
 	}
 }
 
+// ap-debug probe (#126): whether CanAllocateSkill gives the class away without a
+// kill. Asks about each class's first skill; if only your own class's comes back
+// allowed, the class could be learned on joining. Logs what the kill or Codex says too.
+void __cdecl ProbeWork(const D2RL::PluginContext*, void*) noexcept {
+	D2RL::PlayerHandle player = D2RL::InvalidPlayerHandle;
+	if (gInventory->getLocalPlayer(gContext, &player) != D2RL::Inventory::Result::Success) {
+		std::lock_guard lock(gMutex);
+		QueueLine("ap-debug: join a game first.");
+		return;
+	}
+	std::string known;
+	{
+		std::lock_guard lock(gMutex);
+		known = "class " + (GameClass() >= 0 ? ClassName(GameClass()) : std::string("not known yet")) + ", difficulty "
+		      + (gDifficultyKnown ? DifficultyNames[std::clamp(gDifficulty, 0, 2)] : "not known yet");
+	}
+	std::string results;
+	std::set<std::string_view> asked;
+	for (const auto& skill : ap::data::Skills) {
+		// Not the Warlock: a Lord of Destruction character has no Warlock skills (D2R
+		// asserts on them), and a Warlock shows as every other class refused.
+		if (!asked.insert(skill.cls).second || IsWarlockSkill(skill.id)) {
+			continue;
+		}
+		bool allowed = false;
+		const auto result = gGameRules->canAllocateSkill(gContext, player, skill.id, &allowed);
+		results += std::string(results.empty() ? "" : ", ") + skill.cls + " " + skill.name + " ("
+		         + (result != D2RL::GameRules::Result::Success ? "result " + std::to_string(static_cast<uint32_t>(result)) : allowed ? "allowed" : "refused") + ")";
+	}
+	Log("Archipelago: ap-debug probe: " + known + "; can allocate: " + results + ".");
+	std::lock_guard lock(gMutex);
+	QueueLine("ap-debug: the probe is in the log.");
+}
+
 // ap-debug state: what the plugin knows, in the log, for a bug report.
 void LogState() {
 	std::vector<std::string> lines;
@@ -5115,6 +5184,17 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 	}
 	// ap-debug crash: ends D2R at once, like a crash or Task Manager, for the "no normal
 	// exit" and lost-rewards tests. It needs a second crash within 10 seconds.
+	if (args[0] == "probe") {
+		if (gGameRules == nullptr) {
+			Reply("ap-debug: this D2RLoader has no game rule service.");
+			return D2RL::ConsoleCommandResult::Failed;
+		}
+		if (gThreads->runOnGameThread(gContext, ProbeWork, nullptr) != D2RL::Threads::Result::Success) {
+			Reply("ap-debug: join a game first.");
+			return D2RL::ConsoleCommandResult::Failed;
+		}
+		return D2RL::ConsoleCommandResult::Handled;
+	}
 	if (args[0] == "crash") {
 		static Clock::time_point armed;
 		const auto now = Clock::now();
@@ -5128,7 +5208,7 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 		return D2RL::ConsoleCommandResult::Handled;
 	}
 	gContext->WriteConsoleMessage("Usage: ap-debug [on|off], ap-debug kit, ap-debug give <item code> [count] [sockets], ap-debug spawn <item code> [unique], "
-	                              "ap-debug mark [text], ap-debug state, ap-debug kills [n], ap-debug cows [n], ap-debug savefail on|off, ap-debug crash, "
+	                              "ap-debug mark [text], ap-debug state, ap-debug probe, ap-debug kills [n], ap-debug cows [n], ap-debug savefail on|off, ap-debug crash, "
 	                              "ap-debug banner [important|trap|check] <text>, ap-debug overlay");
 	return D2RL::ConsoleCommandResult::InvalidArguments;
 }
@@ -5425,6 +5505,19 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	for (const auto& warning : configWarnings) {
 		LogWarning(warning.c_str());
 	}
+	// Debug tools only, as it's just logging (#126): whether encounter requests say the
+	// difficulty before a kill. Not for everyone, in case another plugin's provider needs the spot.
+	if (const D2RL::EncounterService* encounters = nullptr;
+		gConfig.debugTools && Query(encounters, D2RL::HasEncounterServiceField, D2RL::EncounterServiceRequiredSize)) {
+		const D2RL::Encounters::ProviderRegistration provider {
+			.structSize   = D2RL::Encounters::ProviderRegistrationSize,
+			.decideHerald = DecideHerald,
+			.decideBoss   = DecideBoss,
+		};
+		D2RL::Encounters::ProviderHandle handle = D2RL::Encounters::InvalidProviderHandle;
+		const auto result = encounters->registerProvider(context, &provider, &handle);
+		Log("Archipelago: encounter logging provider: result " + std::to_string(static_cast<uint32_t>(result)) + " (0 is registered).");
+	}
 	ap::notify::SetSounds((GameDirectory() / ap::sounds::Folder).wstring(), gConfig.bannerSounds, gConfig.bannerVolume);
 	gClient = std::make_unique<ap::Client>(Log);
 	gClient->SetOtherSends(gConfig.otherSends);
@@ -5479,7 +5572,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	                   && context->RegisterConsoleCommand("ap-missing", CommandMissing, "List the checks left in this act: ap-missing [all].")
 	                   && context->RegisterConsoleCommand("ap-panel", CommandPanel, "Open or close the Archipelago command panel (F9).")
 	                   && context->RegisterConsoleCommand("ap-repairs", CommandRepairs, "Experimental repairs with Merchant Lock: ap-repairs on|off; use the NPC repair panel.")
-	                   && context->RegisterConsoleCommand("ap-debug", CommandDebug, "Debug tools: ap-debug on|off, ap-debug opens the debug panel (F10), ap-debug kit, give <code> [count] [sockets], spawn <code> [unique], mark [text], state, kills [n], cows [n], savefail on|off, crash.")
+	                   && context->RegisterConsoleCommand("ap-debug", CommandDebug, "Debug tools: ap-debug on|off, ap-debug opens the debug panel (F10), ap-debug kit, give <code> [count] [sockets], spawn <code> [unique], mark [text], state, probe, kills [n], cows [n], savefail on|off, crash.")
 	                   && context->RegisterConsoleCommand("ap-ui", CommandUi, "Send a D2R UI message: ap-ui <target> <command> [text].");
 	if (!commands) {
 		LogFailure("Archipelago: couldn't register console commands.");
