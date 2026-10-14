@@ -207,6 +207,7 @@ auto ReadSlotData(const json& data) -> SlotData {
 	slots.randomizer.championPacks = Get(randomizer, "champion_packs", 100);
 	slots.randomizer.betterDrops = Get(randomizer, "better_drops", 100);
 	slots.randomizer.betterMagic = Get(randomizer, "better_magic", 100);
+	slots.randomizer.deathXpPenalty = std::clamp(Get(randomizer, "death_xp_penalty", 100), 0, 100);
 	for (const json& pair : Array(randomizer, "skill_tree")) {
 		if (pair.is_array() && pair.size() == 2 && pair[0].is_number_unsigned() && pair[1].is_number_unsigned()) {
 			slots.randomizer.skillTree.emplace_back(pair[0].get<uint32_t>(), pair[1].get<uint32_t>());

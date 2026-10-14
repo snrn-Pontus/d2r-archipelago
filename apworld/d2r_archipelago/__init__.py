@@ -684,5 +684,6 @@ class D2RWorld(World):
                 "champion_packs": self.options.champion_packs.value,
                 "better_drops": self.options.better_drops.value,
                 "better_magic": self.options.better_magic.value,
+                "death_xp_penalty": self.options.death_experience_penalty.value,
             },
         }

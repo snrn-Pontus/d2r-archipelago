@@ -262,6 +262,7 @@ class TestShortGame(D2RTestBase):
         # Nightmare and Hell follow Normal by default.
         self.assertEqual(data["randomizer"]["xp_multiplier_hell"], data["randomizer"]["xp_multiplier"])
         self.assertEqual(data["randomizer"]["monster_density_nightmare"], data["randomizer"]["monster_density"])
+        self.assertEqual(data["randomizer"]["death_xp_penalty"], 100)
         self.assertTrue(data["superunique_checks"])
         self.assertFalse(data["death_link"])
         self.assertEqual(data["hint_sources"], {"cain": True, "page_chance": 25, "prophecy_shop": True})
@@ -711,7 +712,7 @@ class TestDruidFullStart(D2RTestBase):
 class TestShuffleTuning(D2RTestBase):
     options = {"experience_multiplier": 200, "experience_multiplier_hell": 400, "monster_density_nightmare": 300,
                "main_path_superunique_minions": "off", "better_drops": 50, "shuffle_cow_level": True,
-               "main_path_superunique_level": "off", "main_path_superunique_strength": 70}
+               "main_path_superunique_level": "off", "main_path_superunique_strength": 70, "death_experience_penalty": 0}
 
     def test_slot_data(self) -> None:
         randomizer = self.world.fill_slot_data()["randomizer"]
@@ -722,6 +723,7 @@ class TestShuffleTuning(D2RTestBase):
         self.assertIsNone(randomizer["main_path_superunique_level"])
         self.assertEqual(randomizer["main_path_superunique_strength"], 70)
         self.assertEqual(randomizer["better_drops"], 50)
+        self.assertEqual(randomizer["death_xp_penalty"], 0)
         self.assertTrue(randomizer["shuffle_cow_level"])
 
 

@@ -882,6 +882,15 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			PatchTable(storage, excel, bank, "monlvl.txt", [&](Table& t) { rnd::ScaleExperience(t, xp); });
 			std::printf("  %s: monster experience at %d/%d/%d%%\n", label, xp[0], xp[1], xp[2]);
 		}
+		if (settings.deathXpPenalty != 100) {
+			bool found = false;
+			PatchTable(storage, excel, bank, "difficultylevels.txt", [&](Table& t) { found = rnd::ScaleDeathPenalty(t, settings.deathXpPenalty); });
+			if (found) {
+				std::printf("  %s: experience lost on death at %d%%\n", label, settings.deathXpPenalty);
+			} else {
+				std::printf("  %s: couldn't change the experience lost on death (difficultylevels.txt has no DeathExpPenalty)\n", label);
+			}
+		}
 		const bool clearRequirements = !settings.itemLevelRequirements || !settings.itemStatRequirements;
 		if (clearRequirements) {
 			for (const char* table : { "weapons.txt", "armor.txt", "setitems.txt" }) {
