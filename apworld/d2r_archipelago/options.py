@@ -486,8 +486,23 @@ class CodexEmpowerments(Range):
 
 class BossQuestsGiveUniques(DefaultOnToggle):
     """The act boss quests (Andariel, Duriel, Mephisto, Diablo, Baal) always reward you with a
-    Random Unique, scaled to your level, instead of an item from the multiworld."""
+    Random Unique (or what Boss Reward Type picks), scaled to your level, instead of an item from the multiworld."""
     display_name = "Boss Quests Give Uniques"
+
+
+class BossRewardType(Choice):
+    """What the act boss quests give with Boss Quests Give Uniques on. Unique: a Random Unique of any kind."""
+    display_name = "Boss Reward Type"
+    option_unique = 0
+    option_unique_weapon = 1
+    option_unique_armor = 2
+    option_unique_jewelry = 3
+    option_set_item = 4
+    option_high_rune = 5
+    default = 0
+
+    # The reward item for each choice.
+    reward_items = ("Random Unique", "Random Unique Weapon", "Random Unique Armor", "Random Unique Jewelry", "Random Set Item", "High Rune")
 
 
 class BasicLootWeight(Range):
@@ -533,7 +548,7 @@ class SocketedBaseWeight(Range):
 
 
 class GoldWeight(Range):
-    """Weight of gold among the filler items: a pile worth 1,000 gold per character level."""
+    """Weight of gold among the filler items: a pile worth Gold per Level (1,000) per character level."""
     display_name = "Gold Weight"
     range_start = 0
     range_end = 100
@@ -541,7 +556,8 @@ class GoldWeight(Range):
 
 
 class ExperienceWeight(Range):
-    """Weight of experience among the filler items: 15% of what your current level needs to level up."""
+    """Weight of experience among the filler items: Experience Reward Percent (15%) of what your current level
+    needs to level up."""
     display_name = "Experience Weight"
     range_start = 0
     range_end = 100
@@ -550,20 +566,95 @@ class ExperienceWeight(Range):
 
 class CharmWeight(Range):
     """Weight of Random Charms (small, large or grand) and Random Jewels (magic or rare) among the filler
-    items, rolled at your character level."""
+    items, rolled at your character level. Jewel Share splits it between the two."""
     display_name = "Charm and Jewel Weight"
     range_start = 0
     range_end = 100
     default = 8
 
 
+class JewelShare(Range):
+    """Percentage of Charm and Jewel Weight that goes to Random Jewels; the rest goes to Random Charms.
+    0: charms only. 100: jewels only."""
+    display_name = "Jewel Share"
+    range_start = 0
+    range_end = 100
+    default = 40
+
+
 class ShrineWeight(Range):
-    """Weight of Random Shrines among the filler items: a helpful shrine (refill, defense, combat, a
-    resistance, skill, mana recharge, experience or gem) appears at your feet."""
+    """Weight of Random Shrines among the filler items: a helpful shrine (from Shrine Pool) appears at your feet."""
     display_name = "Shrine Weight"
     range_start = 0
     range_end = 100
     default = 6
+
+
+class GoldRewardPerLevel(Range):
+    """Gold in a gold reward, per character level."""
+    display_name = "Gold per Level"
+    range_start = 0
+    range_end = 10000
+    default = 1000
+
+
+class ExperienceRewardPercent(Range):
+    """Experience in an experience reward, in percent of what your current level needs to level up
+    (100: a whole level)."""
+    display_name = "Experience Reward Percent"
+    range_start = 0
+    range_end = 100
+    default = 15
+
+
+class RewardLevelBelow(Range):
+    """Random Uniques and Set Items (boss rewards too) are ones whose level requirement is at most this many
+    levels below your character level..."""
+    display_name = "Reward Levels Below"
+    range_start = 0
+    range_end = 30
+    default = 12
+
+
+class RewardLevelAbove(Range):
+    """...and at most this many levels above it, so you may have to grow into them. When nothing falls in
+    the window, the closest items to your level are used."""
+    display_name = "Reward Levels Above"
+    range_start = 0
+    range_end = 10
+    default = 2
+
+
+class RareJewelChance(Range):
+    """Percentage chance that a Random Jewel is rare instead of magic."""
+    display_name = "Rare Jewel Chance"
+    range_start = 0
+    range_end = 100
+    default = 30
+
+
+class HighRuneCurve(Choice):
+    """How much rarer each High Rune (Pul through Zod) is than the one before.
+    Flat: all thirteen alike (Ber and Zod each 1 in 13).
+    Gentle: Ber about 1 in 23, Zod 1 in 91.
+    Steep: Ber about 1 in 51, Zod 1 in 819.
+    Very steep: Ber about 1 in 129, Zod 1 in 8,281."""
+    display_name = "High Rune Curve"
+    option_flat = 0
+    option_gentle = 1
+    option_steep = 2
+    option_very_steep = 3
+    default = 2
+
+
+class ShrinePool(OptionSet):
+    """The shrines a Random Shrine can be. With none, Random Shrines aren't in the filler at all."""
+    display_name = "Shrine Pool"
+    # Shrine name -> its Shrines.txt row (loot::HelpfulShrines in the plugin).
+    shrines = {"Refilling": 1, "Armor": 6, "Combat": 7, "Resist Fire": 8, "Resist Cold": 9, "Resist Lightning": 10,
+               "Resist Poison": 11, "Skill": 12, "Mana Recharge": 13, "Experience": 15, "Gem": 18}
+    valid_keys = sorted(shrines)
+    default = frozenset(shrines)
 
 
 class TrapPercentage(Range):
@@ -1029,6 +1120,7 @@ class D2ROptions(PerGameCommonOptions):
     special_item_checks: SpecialItemChecks
     codex_empowerments: CodexEmpowerments
     boss_quests_give_uniques: BossQuestsGiveUniques
+    boss_reward_type: BossRewardType
     basic_loot_weight: BasicLootWeight
     unique_weight: UniqueWeight
     set_item_weight: SetItemWeight
@@ -1037,8 +1129,16 @@ class D2ROptions(PerGameCommonOptions):
     gold_weight: GoldWeight
     experience_weight: ExperienceWeight
     charm_weight: CharmWeight
+    jewel_share: JewelShare
     shrine_weight: ShrineWeight
     prophecy_weight: ProphecyWeight
+    gold_reward_per_level: GoldRewardPerLevel
+    experience_reward_percent: ExperienceRewardPercent
+    reward_level_below: RewardLevelBelow
+    reward_level_above: RewardLevelAbove
+    rare_jewel_chance: RareJewelChance
+    high_rune_curve: HighRuneCurve
+    shrine_pool: ShrinePool
     trap_percentage: TrapPercentage
     junk_backpack_weight: JunkBackpackWeight
     ambush_weight: AmbushWeight
@@ -1100,8 +1200,10 @@ OPTION_GROUPS = [
                                                FindCountChecks], start_collapsed=True),
     OptionGroup("Locks", [CubeLock, TownPortalLock, TownPortalAccessTomeCharges, PotionLock, PotionLockMode, StashLock, MerchantLock, WaypointLock]),
     OptionGroup("Hints", [CainHints, PageHintChance, ProphecyShop, ProphecyPriceMultiplier, HintBalance]),
-    OptionGroup("Rewards", [BossQuestsGiveUniques, BasicLootWeight, UniqueWeight, SetItemWeight, HighRuneWeight,
-                            SocketedBaseWeight, GoldWeight, ExperienceWeight, CharmWeight, ShrineWeight, ProphecyWeight],
+    OptionGroup("Rewards", [BossQuestsGiveUniques, BossRewardType, BasicLootWeight, UniqueWeight, SetItemWeight, HighRuneWeight,
+                            SocketedBaseWeight, GoldWeight, ExperienceWeight, CharmWeight, JewelShare, ShrineWeight, ProphecyWeight,
+                            GoldRewardPerLevel, ExperienceRewardPercent, RewardLevelBelow, RewardLevelAbove, RareJewelChance,
+                            HighRuneCurve, ShrinePool],
                 start_collapsed=True),
     OptionGroup("Traps", [TrapPercentage, JunkBackpackWeight, AmbushWeight, PoisonCloudWeight, FirestormWeight, ManaDrainWeight,
                           TaxCollectorWeight, MercenaryDownWeight, TrapsWaitForTown, AmbushSize, AmbushMonsters, TaxCollectorGold,

@@ -40,6 +40,16 @@ class TestDefaults(D2RTestBase):
         self.assertEqual(self.world.fill_slot_data()["traps"], {"wait_for_town": True, "ambush_size": 6, "ambush_monsters": "act",
                                                                 "tax_per_level": 1000, "junk_size": 40})
 
+    def test_default_reward_tuning(self) -> None:
+        # The rewards from before these were options.
+        self.assertEqual(self.world.fill_slot_data()["rewards"], {
+            "gold_per_level": 1000, "experience_percent": 15, "level_below": 12, "level_above": 2, "rare_jewel_chance": 30,
+            "high_rune_curve": 2, "shrines": [1, 6, 7, 8, 9, 10, 11, 12, 13, 15, 18]})
+        weights = self.world.loot_weights()
+        self.assertEqual(weights["Random Charm"], 8 * 0.6)
+        self.assertEqual(weights["Random Jewel"], 8 * 0.4)
+        self.assertEqual(weights["Random Shrine"], 6)
+
     def test_default_quest_items_and_shops(self) -> None:
         names = {location.name for location in self.multiworld.get_locations(self.player)}
         self.assertIn("Normal: Find Horadric Cube", names)
@@ -406,6 +416,38 @@ class TestTrapTuning(D2RTestBase):
     def test_slot_data(self) -> None:
         self.assertEqual(self.world.fill_slot_data()["traps"], {"wait_for_town": False, "ambush_size": 12, "ambush_monsters": "area",
                                                                 "tax_per_level": 250, "junk_size": 10})
+
+
+class TestRewardTuning(D2RTestBase):
+    options = {"gold_reward_per_level": 250, "experience_reward_percent": 50, "reward_level_below": 5, "reward_level_above": 0,
+               "rare_jewel_chance": 100, "high_rune_curve": "flat", "shrine_pool": ["Experience", "Skill"], "jewel_share": 100,
+               "boss_reward_type": "high_rune"}
+
+    def test_slot_data(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["rewards"], {
+            "gold_per_level": 250, "experience_percent": 50, "level_below": 5, "level_above": 0, "rare_jewel_chance": 100,
+            "high_rune_curve": 0, "shrines": [12, 15]})
+
+    def test_jewels_only(self) -> None:
+        weights = self.world.loot_weights()
+        self.assertEqual(weights["Random Charm"], 0)
+        self.assertEqual(weights["Random Jewel"], 8)
+        names = [item.name for item in self.multiworld.itempool if item.player == self.player]
+        self.assertNotIn("Random Charm", names)
+
+    def test_boss_quests_hold_the_chosen_reward(self) -> None:
+        for quest in ("Sisters to the Slaughter", "The Seven Tombs", "The Guardian"):
+            self.assertEqual(self.multiworld.get_location(f"Normal: {quest}", self.player).item.name, "High Rune")
+
+
+class TestNoShrines(D2RTestBase):
+    options = {"shrine_pool": [], "shrine_weight": 100}
+
+    def test_no_random_shrines(self) -> None:
+        self.assertEqual(self.world.loot_weights()["Random Shrine"], 0)
+        names = [item.name for item in self.multiworld.itempool if item.player == self.player]
+        self.assertNotIn("Random Shrine", names)
+        self.assertEqual(self.world.fill_slot_data()["rewards"]["shrines"], [])
 
 
 class TestLocks(D2RTestBase):

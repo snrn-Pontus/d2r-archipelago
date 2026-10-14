@@ -855,7 +855,11 @@ auto SlotSummary(const ap::SlotData& slots) -> std::string {
 	     + std::to_string(slots.levelsPerCopy) + " per copy, +" + std::to_string(slots.levelsPerEmpowerment) + " per empowerment, cap "
 	     + std::to_string(slots.codexLevelCap) + ", tree mode "
 	     + on(r.treeMode) + ", tree shuffle " + std::to_string(r.skillTree.size()) + " skills, monsters " + std::to_string(static_cast<int>(r.monsters))
-	     + ", superunique shuffle " + std::to_string(static_cast<int>(r.superUniques)) + ", runewords " + on(r.runewords) + "; DeathLink "
+	     + ", superunique shuffle " + std::to_string(static_cast<int>(r.superUniques)) + ", runewords " + on(r.runewords)
+	     + "; rewards: gold " + std::to_string(slots.rewards.goldPerLevel) + "/level, experience " + std::to_string(slots.rewards.experiencePercent)
+	     + "%, levels -" + std::to_string(slots.rewards.levelBelow) + "/+" + std::to_string(slots.rewards.levelAbove) + ", rare jewels "
+	     + std::to_string(slots.rewards.rareJewelPercent) + "%, high rune curve " + std::to_string(slots.rewards.highRuneCurve) + ", shrines "
+	     + (slots.rewards.shrines.empty() ? std::string("all") : std::to_string(slots.rewards.shrines.size())) + "; DeathLink "
 	     + on(slots.deathLink) + ", traps wait for town " + on(slots.traps.waitForTown) + ".";
 }
 
@@ -3159,7 +3163,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			}
 			return true;
 		}
-		if (auto commands = ap::loot::CommandsFor(loot, characterLevel, act, random); !commands.commands.empty()) {
+		if (auto commands = ap::loot::CommandsFor(loot, characterLevel, act, random, {}, {}, slots.rewards); !commands.commands.empty()) {
 			if (commands.trap) {
 				if (!again) {
 					std::lock_guard lock(gMutex);
@@ -3176,7 +3180,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		}
 		if (loot == ap::loot::Loot::Gold || loot == ap::loot::Loot::Experience) {
 			const bool gold = loot == ap::loot::Loot::Gold;
-			const int64_t amount = gold ? ap::loot::GoldAmount(characterLevel) : ap::loot::ExperienceAmount(characterLevel);
+			const int64_t amount = gold ? ap::loot::GoldAmount(characterLevel, slots.rewards) : ap::loot::ExperienceAmount(characterLevel, slots.rewards);
 			if (amount > 0) {
 				queued.push_back({ static_cast<int64_t>(index), (gold ? "gold " : "experience ") + std::to_string(amount) });
 			}
@@ -3193,7 +3197,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		ap::loot::Pick pick {};
 		bool placed = false;
 		for (int attempt = 0; attempt < 5 && !placed; ++attempt) {
-			pick = ap::loot::Roll(loot, characterLevel, random, playerClass);
+			pick = ap::loot::Roll(loot, characterLevel, random, playerClass, slots.rewards);
 			if (pick.code == 0) {
 				break;
 			}

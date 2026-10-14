@@ -186,6 +186,18 @@ auto ReadSlotData(const json& data) -> SlotData {
 		.taxPerLevel = Get(traps, "tax_per_level", 1000),
 		.junkSize = Get(traps, "junk_size", 40),
 	};
+	const json rewards = Object(data, "rewards");
+	slots.rewards = {
+		.goldPerLevel = Get(rewards, "gold_per_level", 1000),
+		.experiencePercent = Get(rewards, "experience_percent", 15),
+		.levelBelow = Get(rewards, "level_below", 12),
+		.levelAbove = Get(rewards, "level_above", 2),
+		.rareJewelPercent = Get(rewards, "rare_jewel_chance", 30),
+		.highRuneCurve = Get(rewards, "high_rune_curve", 2),
+	};
+	for (const int64_t shrine : Integers(rewards, "shrines")) {
+		slots.rewards.shrines.push_back(static_cast<int>(shrine));
+	}
 	const json randomizer = Object(data, "randomizer");
 	slots.randomizer.seed = Get(randomizer, "seed", 0U);
 	slots.randomizer.monsters = static_cast<randomizer::Shuffle>(Get(randomizer, "monster_shuffle", 0));

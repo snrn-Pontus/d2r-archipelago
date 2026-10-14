@@ -3,6 +3,7 @@
 #include "game_data.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <iterator>
 #include <span>
@@ -14,10 +15,8 @@ namespace {
 
 using D2RL::Items::Quality;
 
-// A unique or set item counts as level-appropriate when its requirement is at
-// most this far below the character, and no more than LevelAbove above it.
-constexpr int LevelBelow = 12;
-constexpr int LevelAbove = 2;
+// A socketed base can require at most this many levels over the character's.
+constexpr int BaseLevelAbove = 2;
 
 // Whether a character of this class can use the item (-1: class unknown).
 bool Usable(int8_t itemClass, int playerClass) {
@@ -39,7 +38,9 @@ auto Rune(uint32_t number) -> Pick {
 // Picks a level-appropriate unique or set item, widening the search when the
 // window is empty (a level 1 character still gets the lowest items).
 auto PickQualityItem(std::span<const data::QualityItem> items, Quality quality, int level, bool anyKind, data::Kind kind, int playerClass,
-                     std::mt19937& random) -> Pick {
+                     const RewardSettings& rewards, std::mt19937& random) -> Pick {
+	const int below = std::max(rewards.levelBelow, 0);
+	const int above = std::max(rewards.levelAbove, 0);
 	std::vector<const data::QualityItem*> matching;
 	for (const auto& item : items) {
 		if ((anyKind || item.kind == kind) && Usable(item.cls, playerClass)) {
@@ -51,7 +52,7 @@ auto PickQualityItem(std::span<const data::QualityItem> items, Quality quality, 
 	}
 	std::vector<const data::QualityItem*> window;
 	for (const auto* item : matching) {
-		if (item->reqLevel >= level - LevelBelow && item->reqLevel <= level + LevelAbove) {
+		if (item->reqLevel >= level - below && item->reqLevel <= level + above) {
 			window.push_back(item);
 		}
 	}
@@ -73,13 +74,13 @@ auto PickQualityItem(std::span<const data::QualityItem> items, Quality quality, 
 auto PickBase(int level, int playerClass, std::mt19937& random) -> Pick {
 	std::vector<const data::Base*> window;
 	for (const auto& base : data::SocketBases) {
-		if (base.sockets >= 2 && Usable(base.cls, playerClass) && base.reqLevel <= level + LevelAbove && base.reqLevel + 20 >= level) {
+		if (base.sockets >= 2 && Usable(base.cls, playerClass) && base.reqLevel <= level + BaseLevelAbove && base.reqLevel + 20 >= level) {
 			window.push_back(&base);
 		}
 	}
 	if (window.empty()) {
 		for (const auto& base : data::SocketBases) {
-			if (base.sockets >= 2 && Usable(base.cls, playerClass) && base.reqLevel <= std::max(level, 1) + LevelAbove) {
+			if (base.sockets >= 2 && Usable(base.cls, playerClass) && base.reqLevel <= std::max(level, 1) + BaseLevelAbove) {
 				window.push_back(&base);
 			}
 		}
@@ -104,7 +105,7 @@ auto CodeFromText(const char* text) -> uint32_t {
 	return D2RL::Items::MakeItemCode(padded[0], padded[1], padded[2], padded[3]);
 }
 
-auto Roll(Loot loot, int level, std::mt19937& random, int playerClass) -> Pick {
+auto Roll(Loot loot, int level, std::mt19937& random, int playerClass, const RewardSettings& rewards) -> Pick {
 	level = std::clamp(level, 1, 99);
 	switch (loot) {
 		case Loot::FullRejuvenation: return { .code = CodeFromText("rvl"), .name = "Full Rejuvenation Potion" };
@@ -112,19 +113,20 @@ auto Roll(Loot loot, int level, std::mt19937& random, int playerClass) -> Pick {
 		case Loot::LowRune:          return Rune(1 + random() % 10);
 		case Loot::MidRune:          return Rune(11 + random() % 10);
 		case Loot::HighRune: {
-			// Pul (21) through Zod (33), each rarer than the one before.
+			// Pul (21) through Zod (33), each (with a curve above 0) rarer than the one before.
+			const int curve = std::clamp(rewards.highRuneCurve, 0, 4);
 			std::vector<double> weights;
 			for (int number = 21; number <= 33; ++number) {
-				weights.push_back(static_cast<double>((34 - number) * (34 - number)));
+				weights.push_back(std::pow(34.0 - number, curve));
 			}
 			std::discrete_distribution<int> pick(weights.begin(), weights.end());
 			return Rune(21 + static_cast<uint32_t>(pick(random)));
 		}
-		case Loot::RandomUnique:  return PickQualityItem(data::Uniques, Quality::Unique, level, true, data::Weapon, playerClass, random);
-		case Loot::UniqueWeapon:  return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Weapon, playerClass, random);
-		case Loot::UniqueArmor:   return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Armor, playerClass, random);
-		case Loot::UniqueJewelry: return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Jewelry, playerClass, random);
-		case Loot::SetItem:       return PickQualityItem(data::SetItems, Quality::Set, level, true, data::Weapon, playerClass, random);
+		case Loot::RandomUnique:  return PickQualityItem(data::Uniques, Quality::Unique, level, true, data::Weapon, playerClass, rewards, random);
+		case Loot::UniqueWeapon:  return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Weapon, playerClass, rewards, random);
+		case Loot::UniqueArmor:   return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Armor, playerClass, rewards, random);
+		case Loot::UniqueJewelry: return PickQualityItem(data::Uniques, Quality::Unique, level, false, data::Jewelry, playerClass, rewards, random);
+		case Loot::SetItem:       return PickQualityItem(data::SetItems, Quality::Set, level, true, data::Weapon, playerClass, rewards, random);
 		case Loot::SocketedBase:  return PickBase(level, playerClass, random);
 		case Loot::JunkBackpack:  return { .code = CodeFromText(Junk[random() % std::size(Junk)]), .name = "junk" };
 		case Loot::RandomCharm: {
@@ -133,7 +135,7 @@ auto Roll(Loot loot, int level, std::mt19937& random, int playerClass) -> Pick {
 			return { .code = CodeFromText(charm[0]), .quality = Quality::Magic, .itemLevel = static_cast<uint32_t>(level), .name = charm[1] };
 		}
 		case Loot::RandomJewel: {
-			const bool rare = random() % 10 < 3;
+			const bool rare = static_cast<int>(random() % 100) < rewards.rareJewelPercent;
 			return { .code = CodeFromText("jew"), .quality = rare ? Quality::Rare : Quality::Magic, .itemLevel = static_cast<uint32_t>(level),
 				     .name = rare ? "Rare Jewel" : "Magic Jewel" };
 		}
@@ -141,22 +143,29 @@ auto Roll(Loot loot, int level, std::mt19937& random, int playerClass) -> Pick {
 	}
 }
 
-auto GoldAmount(int level) -> int {
-	return std::clamp(level, 1, 99) * 1000;
+auto GoldAmount(int level, const RewardSettings& rewards) -> int {
+	return std::clamp(level, 1, 99) * std::clamp(rewards.goldPerLevel, 0, 10000);
 }
 
-auto ExperienceAmount(int level) -> int64_t {
+auto ExperienceAmount(int level, const RewardSettings& rewards) -> int64_t {
 	level = std::clamp(level, 1, 99);
 	if (level >= 99) {
 		return 0;
 	}
-	return (static_cast<int64_t>(data::Experience[level]) - data::Experience[level - 1]) * 15 / 100;
+	return (static_cast<int64_t>(data::Experience[level]) - data::Experience[level - 1]) * std::clamp(rewards.experiencePercent, 0, 100) / 100;
 }
 
-auto ShrineId(std::mt19937& random) -> int {
-	// Refilling, Armor, Combat, the four resistances, Skill, Mana Recharge, Experience, Gem.
-	static constexpr int Shrines[] = { 1, 6, 7, 8, 9, 10, 11, 12, 13, 15, 18 };
-	return Shrines[random() % std::size(Shrines)];
+auto ShrineId(std::mt19937& random, std::span<const int> pool) -> int {
+	std::vector<int> shrines;
+	for (const int id : pool) {
+		if (std::ranges::find(HelpfulShrines, id) != std::end(HelpfulShrines) && std::ranges::find(shrines, id) == shrines.end()) {
+			shrines.push_back(id);
+		}
+	}
+	if (shrines.empty()) {
+		shrines.assign(std::begin(HelpfulShrines), std::end(HelpfulShrines));
+	}
+	return shrines[random() % shrines.size()];
 }
 
 auto AmbushMonster(int act, std::mt19937& random) -> const char* {
@@ -170,11 +179,12 @@ auto AmbushMonster(int act, std::mt19937& random) -> const char* {
 	return Monsters[std::clamp(act, 0, 4)][random() % 4];
 }
 
-auto CommandsFor(Loot loot, int level, int act, std::mt19937& random, const TrapSettings& traps, std::span<const std::string> areaMonsters)
-	-> Commands {
+auto CommandsFor(Loot loot, int level, int act, std::mt19937& random, const TrapSettings& traps, std::span<const std::string> areaMonsters,
+                 const RewardSettings& rewards) -> Commands {
 	switch (loot) {
 		// Spawns go to D2RCore's spawn location; "loc player" puts it on the player.
-		case Loot::RandomShrine:     return { { "loc player", "shrine " + std::to_string(ShrineId(random)) }, "a shrine appears at your feet." };
+		case Loot::RandomShrine:
+			return { { "loc player", "shrine " + std::to_string(ShrineId(random, rewards.shrines)) }, "a shrine appears at your feet." };
 		case Loot::AmbushTrap: {
 			const std::string monster = areaMonsters.empty() ? AmbushMonster(act, random) : areaMonsters[random() % areaMonsters.size()];
 			return { { "loc player", "mspawn " + monster + "," + std::to_string(std::max(traps.ambushSize, 1)) }, "it's a trap! An ambush!", true };

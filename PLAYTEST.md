@@ -651,6 +651,17 @@ Any seed. Send each with `/send`, standing outside town for the traps.
   - [ ] An `Ambush Trap` in Cold Plains brings 12 of Cold Plains' own monsters; in Nightmare too.
   - [ ] An `Ambush Trap` in town goes off right away (monsters in town), since waiting is off.
   - [ ] `Tax Collector Trap` takes 250 per level; `Junk Backpack` places at most 10 pieces.
+- [ ] Reward options (#35), with `gold_reward_per_level: 250`, `experience_reward_percent: 100`,
+      `reward_level_below: 2`, `reward_level_above: 0`, `rare_jewel_chance: 100`, `high_rune_curve: flat`,
+      `shrine_pool: [Experience]` and `boss_reward_type: set_item`:
+  - [ ] The plugin log's slot summary has "rewards: gold 250/level, experience 100%, levels -2/+0, rare jewels
+        100%, high rune curve 0, shrines 1".
+  - [ ] `Gold` gives 250 per level; `Experience` gives a whole level.
+  - [ ] `Random Unique` and `Random Set Item` arrive with a requirement at most 2 under your level and never
+        above it.
+  - [ ] `Random Jewel` is always a Rare Jewel; a few `High Rune`s are spread over Pul..Zod, not mostly Pul.
+  - [ ] `Random Shrine` is always an Experience shrine.
+  - [ ] Sisters to the Slaughter (Andariel) gives a Random Set Item instead of a unique.
 - [ ] A release no longer crashes (#51). Three-slot D2R seed, two games in, one slot offline, then
       `/release <slot>` from the server console. Neither game crashes; rewards trickle in (three loot items
       a second, traps 3 seconds apart), chat shows a few lines at a time and says when the rest went to the
