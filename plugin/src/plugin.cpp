@@ -261,11 +261,12 @@ std::vector<int>      gPendingAreas;
 std::set<uint32_t>    gPendingQuestItems;
 // When this game began, for telling the character saves written since (#130).
 std::filesystem::file_time_type gGameBegan;
-// Areas a game was left with before its difficulty was known (#130). The save
-// Save & Exit writes says it: OnFrame looks for it, and joining the next game
-// takes a last look and lets them go if it isn't there.
+// Areas (#130) and quest items (#135) a game was left with before its difficulty
+// was known. The save Save & Exit writes says it: OnFrame looks for it, and
+// joining the next game takes a last look and lets them go if it isn't there.
 struct LeftAreas {
 	std::vector<int>                levels;
+	std::set<uint32_t>              questItems;
 	std::filesystem::file_time_type began;
 	// The seed's save they belong to (empty: no seed was bound).
 	std::filesystem::path           save;
@@ -273,6 +274,10 @@ struct LeftAreas {
 };
 std::optional<LeftAreas> gLeftAreas;
 Clock::time_point        gNextSaveLook;
+
+auto WaitingText(const LeftAreas& left) -> std::string {
+	return std::to_string(left.levels.size()) + " areas and " + std::to_string(left.questItems.size()) + " quest items";
+}
 // Encounter requests logged this game (LogEncounter), as kind, area and difficulty.
 std::set<std::tuple<int, int, uint32_t>> gEncountersLogged;
 int                   gAct          = 0;
@@ -1947,7 +1952,8 @@ auto QuestItemCheck(uint32_t code, int difficulty) -> std::optional<int64_t> {
 }
 
 // A quest item found before this game's difficulty is known: its check waits in
-// gPendingQuestItems until a kill tells it (#123). Finding an item made from
+// gPendingQuestItems until a kill tells it (#123), or leaving reads it from the
+// save (#135). Finding an item made from
 // others finds those too (#136). Call with gMutex held.
 void FindQuestItem(uint32_t code) {
 	for (const auto& entry : ap::quests::QuestItemParts) {
@@ -3648,7 +3654,7 @@ auto SavesDirectory() -> std::filesystem::path {
 
 // Reads the difficulty of the game gLeftAreas came from out of the character's save (#130).
 // Until the save shows up it tries every so often; `last` is the final try, when the next game
-// begins (and might save over it), and lets the areas go if it still can't tell.
+// begins (and might save over it), and lets them go if it still can't tell.
 void ReadLeftDifficulty(bool last) {
 	std::filesystem::file_time_type began;
 	{
@@ -3670,10 +3676,10 @@ void ReadLeftDifficulty(bool last) {
 	if (found.size() == 1) {
 		gLeftAreas->difficulty = *found.begin();
 		Log("Archipelago: the save says the last game was on " + std::string(DifficultyNames[*found.begin()]) + "; checking the "
-		    + std::to_string(gLeftAreas->levels.size()) + " areas entered before that was known.");
+		    + WaitingText(*gLeftAreas) + " found before that was known.");
 	} else {
 		Log("Archipelago: couldn't tell the last game's difficulty from the saves (" + std::to_string(found.size()) + " found); letting go of the "
-		    + std::to_string(gLeftAreas->levels.size()) + " areas entered before it was known.");
+		    + WaitingText(*gLeftAreas) + " found before it was known.");
 		gLeftAreas.reset();
 	}
 }
@@ -3812,8 +3818,14 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 			left = std::exchange(gLeftAreas, std::nullopt);
 			// Not into another seed than the one the game was played for.
 			if (left->save != (bound ? gSavePath : std::filesystem::path {})) {
-				Log("Archipelago: the seed changed since the last game; letting go of its " + std::to_string(left->levels.size()) + " areas.");
+				Log("Archipelago: the seed changed since the last game; letting go of its " + WaitingText(*left) + ".");
 				left.reset();
+			} else {
+				for (const uint32_t code : left->questItems) {
+					if (const auto check = QuestItemCheck(code, *left->difficulty)) {
+						gCollectionQueue.push_back(*check);
+					}
+				}
 			}
 		}
 	}
@@ -4013,14 +4025,16 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gRepairOfferQueued = false;
 			gRespecToken = D2RL::InvalidItemHandle;
 			Log("Archipelago: left the game.");
-			// Areas still waiting for the difficulty wait for the save this leaves instead (#130).
-			if (!gDifficultyKnown && !gPendingAreas.empty()) {
+			// Areas and quest items still waiting for the difficulty wait for the save this leaves
+			// instead (#130, #135): a used-up quest item can't be found again in the next game.
+			if (!gDifficultyKnown && (!gPendingAreas.empty() || !gPendingQuestItems.empty())) {
 				if (gLeftAreas) {
-					Log("Archipelago: letting go of " + std::to_string(gLeftAreas->levels.size()) + " areas from an earlier game, still without a difficulty.");
+					Log("Archipelago: letting go of " + WaitingText(*gLeftAreas) + " from an earlier game, still without a difficulty.");
 				}
-				gLeftAreas = LeftAreas { std::exchange(gPendingAreas, {}), gGameBegan, gBoundSession != 0 ? gSavePath : std::filesystem::path {}, std::nullopt };
+				gLeftAreas = LeftAreas { std::exchange(gPendingAreas, {}), std::exchange(gPendingQuestItems, {}), gGameBegan,
+					                     gBoundSession != 0 ? gSavePath : std::filesystem::path {}, std::nullopt };
 				gNextSaveLook = Clock::now();
-				Log("Archipelago: left with " + std::to_string(gLeftAreas->levels.size()) + " areas entered before the difficulty was known; reading it from the save.");
+				Log("Archipelago: left with " + WaitingText(*gLeftAreas) + " found before the difficulty was known; reading it from the save.");
 			}
 			// Kill and cow counters only reach the file every so often; leaving the game
 			// (or closing D2R) writes the rest, so the next game carries on from them.

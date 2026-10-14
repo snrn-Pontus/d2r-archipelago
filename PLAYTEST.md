@@ -471,6 +471,10 @@ difficulty was known" and then "the save says the last game was on ...".
       the Normal check still goes to Normal.
 - [ ] **Quit to desktop** right after leaving: nothing breaks (the visits may be lost, as before).
 - [ ] **A kill first:** with a kill before leaving, there's no "left with ... areas" line (nothing waited).
+- [ ] **Used-up quest items (#135):** with a Book of Skill (or Potion of Life, Scroll of Resistance) whose
+      check hasn't been sent, join, use it in town without killing anything, Save & Exit. The log says
+      "left with 0 areas and 1 quest items" and the item's check arrives on that difficulty. Then the same
+      twice in a row (use it, Save & Exit, rejoin, Save & Exit): the check still arrives.
 
 ## 3. Act keys
 
