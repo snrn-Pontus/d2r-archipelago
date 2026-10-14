@@ -245,8 +245,6 @@ Ideas, not started:
 - [ ] Your class's skills are on one Codex and other classes' skills on a second one. Below level 6 the
       second one's skills don't work, but your class's still do.
 - [ ] Codex skill levels: copies + Empowerments + 1 per 5 character levels, the last part stopping at +10.
-- [ ] With `skill_tree_shuffle` in Codex mode, skills dealt into your class's tree go on your-class Codex
-      and work from level 1; your class's original skills dealt elsewhere go on the other one.
 
 ## 0b. Tree mode
 
@@ -266,7 +264,11 @@ Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fana
 
 ## 0c. Skill tree shuffle
 
-`skill_tree_shuffle: true` (either skill mode).
+`skill_tree_shuffle: true` (which turns on tree mode).
+
+- [ ] With `skill_mode: codex` and `skill_tree_shuffle: true`, the seed plays in tree mode: no Codex, and the
+      shuffled tree's skills unlock as they arrive.
+- [ ] In the options editor, ticking Skill Tree Shuffle switches Skill Mode to Tree; picking Codex unticks it.
 
 - [x] Your tree shows the dealt skills in their slots, with names and tooltips.
 - [x] Icons match the skills, in the tree and on the skill bar and hotkeys.

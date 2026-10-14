@@ -490,6 +490,19 @@ class TestTreeShuffle(D2RTestBase):
         self.assertTrue(all(cls != "war" for skill, _name, cls in SKILLS if skill in dealt))
 
 
+class TestTreeShuffleTurnsOnTreeMode(D2RTestBase):
+    options = {"skill_mode": "codex", "character_class": "necromancer", "skill_tree_shuffle": True}
+
+    def test_codex_with_shuffle_plays_tree_mode(self) -> None:
+        self.assertTrue(self.world.tree_mode)
+        self.assertNotEqual(self.world.skill_tree, {})
+        self.assertEqual(sorted(self.world.skill_pool + self.world.starting), sorted(self.world.tree_skills()))
+        data = self.world.fill_slot_data()
+        self.assertEqual(data["skill_mode"], "tree")
+        self.assertTrue(data["randomizer"]["tree_mode"])
+        self.assertNotIn("Codex Empowerment", [item.name for item in self.multiworld.itempool])
+
+
 class TestUnusableSkills(D2RTestBase):
     options = {"character_class": "sorceress", "skill_focus": "any_skills", "skill_pool_size": 240, "skill_copies": 1}
 
