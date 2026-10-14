@@ -172,10 +172,15 @@ std::vector<int>      gHeldFallbacks;
 std::set<int>         gQuestLogQueued;
 uint64_t              gQuestLogLastDone = 0;
 // What the quest log showed done as this game began (its first read): a seed's baseline
-// comes from this, so quests done later in the game are progress.
+// comes from this, so quests done later in the game are progress. Known gap: a game left
+// before its difficulty was known can't take a baseline, and the next game's start includes
+// what it finished; that takes a quest done with no kill at all, on a seed's first game
+// there, by an older character (the left game's save says the difficulty, not who played).
 std::optional<uint64_t> gQuestLogAtJoin;
-// Quests done in this game while another seed was bound (ap-connect to a new seed in game):
-// they were that seed's, so they don't count for this one.
+// Quests the quest log showed done this game while a seed was bound, and of those, the ones
+// seen while another seed was bound (ap-connect to a new seed in game): they were that seed's,
+// so they don't count for this one. Ones done while no seed was bound count for the next.
+uint64_t              gQuestLogSeenBound = 0;
 uint64_t              gQuestLogOtherSeed = 0;
 // Quest log completions waiting for the render thread, as (bound session, difficulty * 100 + flag):
 // one queued for a seed that's no longer bound is dropped, not given to the next.
@@ -1115,6 +1120,9 @@ void __cdecl QuestLogWork(const D2RL::PluginContext*, void*) noexcept {
 			if (!gQuestLogAtJoin) {
 				gQuestLogAtJoin = done;
 			}
+			if (gBoundSession != 0) {
+				gQuestLogSeenBound |= done & ~*gQuestLogAtJoin;
+			}
 			if (gDifficultyKnown && gBoundSession != 0 && CharacterVerdict(gSlots) == ap::character::Verdict::Match) {
 				const int difficulty = std::clamp(gDifficulty, 0, 2);
 				auto baseline = gSave.questBaseline.find(difficulty);
@@ -1220,8 +1228,8 @@ void BindSession(uint64_t session) {
 		// Another seed in the middle of a game: what this game's quest log already shows done was the
 		// other seed's, and it's where this one starts from.
 		if (path != gSavePath && gQuestLogAtJoin) {
-			gQuestLogOtherSeed |= gQuestLogLastDone;
-			gQuestLogAtJoin = *gQuestLogAtJoin | gQuestLogLastDone;
+			gQuestLogOtherSeed |= gQuestLogSeenBound;
+			gQuestLogAtJoin = *gQuestLogAtJoin | gQuestLogSeenBound;
 		}
 		// What the old file hasn't got yet (kill counts the render thread hasn't written, or
 		// anything since saving started failing) goes there first. gSavePath stays set through an
@@ -4245,6 +4253,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 				gQuestLogQueued.clear();
 				gQuestLogLastDone = 0;
 				gQuestLogAtJoin.reset();
+				gQuestLogSeenBound = 0;
 				gQuestLogOtherSeed = 0;
 				gHeldFallbacks.clear();
 			}
