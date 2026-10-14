@@ -540,6 +540,49 @@ inline constexpr uint8_t LevelActs[] = {
 	4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
 };
 
+// Each waypoint's area, in the order of the player's waypoint bits (Levels.txt Waypoint).
+inline constexpr Area Waypoints[] = {
+	{ 1, 0, "Rogue Encampment" },
+	{ 3, 0, "Cold Plains" },
+	{ 4, 0, "Stony Field" },
+	{ 5, 0, "Dark Wood" },
+	{ 6, 0, "Black Marsh" },
+	{ 27, 0, "Outer Cloister" },
+	{ 29, 0, "Jail Level 1" },
+	{ 32, 0, "Inner Cloister" },
+	{ 35, 0, "Catacombs Level 2" },
+	{ 40, 1, "Lut Gholein" },
+	{ 48, 1, "Sewers Level 2" },
+	{ 42, 1, "Dry Hills" },
+	{ 57, 1, "Halls of the Dead Level 2" },
+	{ 43, 1, "Far Oasis" },
+	{ 44, 1, "Lost City" },
+	{ 52, 1, "Palace Cellar Level 1" },
+	{ 74, 1, "Arcane Sanctuary" },
+	{ 46, 1, "Canyon of the Magi" },
+	{ 75, 2, "Kurast Docktown" },
+	{ 76, 2, "Spider Forest" },
+	{ 77, 2, "Great Marsh" },
+	{ 78, 2, "Flayer Jungle" },
+	{ 79, 2, "Lower Kurast" },
+	{ 80, 2, "Kurast Bazaar" },
+	{ 81, 2, "Upper Kurast" },
+	{ 83, 2, "Travincal" },
+	{ 101, 2, "Durance of Hate Level 2" },
+	{ 103, 3, "The Pandemonium Fortress" },
+	{ 106, 3, "City of the Damned" },
+	{ 107, 3, "River of Flame" },
+	{ 109, 4, "Harrogath" },
+	{ 111, 4, "Frigid Highlands" },
+	{ 112, 4, "Arreat Plateau" },
+	{ 113, 4, "Crystalline Passage" },
+	{ 115, 4, "Glacial Trail" },
+	{ 123, 4, "Halls of Pain" },
+	{ 117, 4, "Frozen Tundra" },
+	{ 118, 4, "The Ancients' Way" },
+	{ 129, 4, "The Worldstone Keep Level 2" },
+};
+
 // The Secret Cow Level and its monster rows.
 inline constexpr uint16_t CowLevel = 39;
 inline constexpr uint16_t CowMonster = 179;

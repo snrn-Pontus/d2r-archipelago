@@ -16,6 +16,7 @@
 #include "milestones.h"
 #include "native_scan.h"
 #include "personalize.h"
+#include "player_records.h"
 #include "portal_lock.h"
 #include "potion_lock.h"
 #include "quest_record.h"
@@ -33,6 +34,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -41,6 +43,7 @@
 #include <algorithm>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <set>
 #include <random>
 #include <span>
@@ -423,6 +426,118 @@ void TestCharacterSaves() {
 	EXPECT(MenuLine(-1, "", {}, name) == "Archipelago: create a character for this seed");
 	const std::vector<Character> many { { "A1", 1, 1 }, { "A2", 1, 1 }, { "A3", 1, 1 }, { "A4", 1, 1 }, { "A5", 1, 1 }, { "A6", 1, 1 } };
 	EXPECT(MenuLine(1, "", many, name) == "Archipelago: play a Sorceress: A1, A2, A3, A4 and 2 more");
+}
+
+// FakeImage's sections with the server's client table code at 0x1800 (the table at 0x2400,
+// next at +0x630), the name's at 0x1880 (+0x2C), and CLIENTS_GetPlayerFromClient's at 0x1900
+// (the unit cached at +0x278) and lookupAt (the unit id at +0x270, the cache stored at storedAt).
+auto FakeServerImage(size_t lookupAt, uint32_t storedAt = 0x278) -> std::vector<uint8_t> {
+	auto image = FakeImage(0x2010, 0x2010, 0x2010, false);
+	const auto put32 = [&](size_t at, uint32_t value) { std::memcpy(&image[at], &value, 4); };
+	const auto bytes = [&](size_t at, std::initializer_list<uint8_t> list) { std::copy(list.begin(), list.end(), image.begin() + static_cast<std::ptrdiff_t>(at)); };
+	bytes(0x1800, { 0x0F, 0xB6, 0xD9, 0x48, 0x8D, 0x05, 0, 0, 0, 0, 0x4D, 0x8B, 0xF8, 0x4C, 0x8B, 0xF2, 0x48, 0x8B, 0x1C, 0xD8, 0x48, 0x85, 0xDB, 0x74, 0x10,
+	                0x39, 0x0B, 0x74, 0x28, 0x48, 0x8B, 0x9B, 0x30, 0x06, 0x00, 0x00 });
+	put32(0x1806, 0x2400 - 0x180A);
+	bytes(0x1880, { 0x39, 0x33, 0x75, 0x22, 0x4C, 0x8D, 0x43, 0x2C, 0xBA, 0x3D, 0x00, 0x00, 0x00 });
+	bytes(0x1900, { 0xF6, 0x83, 0xE0, 0x04, 0x00, 0x00, 0x01, 0x75, 0x4B, 0x85, 0xFF, 0x75, 0x47, 0x48, 0x83, 0xBB, 0x78, 0x02, 0x00, 0x00, 0x00, 0x75, 0x0D, 0x33, 0xC0 });
+	bytes(lookupAt, { 0x44, 0x8B, 0x83, 0x70, 0x02, 0x00, 0x00, 0x8B, 0x93, 0x6C, 0x02, 0x00, 0x00, 0x48, 0x8B, 0x8B, 0xB0, 0x02, 0x00, 0x00, 0xE8, 0, 0, 0, 0,
+	                  0x48, 0x85, 0xC0, 0x75, 0x19, 0x48, 0x89, 0x83, 0, 0, 0, 0 });
+	put32(lookupAt + 33, storedAt);
+	return image;
+}
+
+void TestPlayerRecords() {
+	using ap::player_records::Locate;
+	const auto found = Locate(FakeServerImage(0x1924).data());
+	EXPECT(found.error.empty() && found.clients == 0x2400 && found.next == 0x630 && found.name == 0x2C && found.unit == 0x278 && found.unitId == 0x270);
+	EXPECT(Locate(FakeServerImage(0x1924, 0x280).data()).error.find("doesn't look right") != std::string::npos);
+	EXPECT(Locate(FakeServerImage(0x1B00).data()).error.find("doesn't look right") != std::string::npos);
+	EXPECT(Locate(FakeImage(0x2010, 0x2010, 0x2010, false).data()).error.find("not found") != std::string::npos);
+
+	// The server: a client for "Barb" and one for "SorkenTwo" in the same bucket, then the
+	// player unit, its player data and the records.
+	struct QuestRecord {
+		const uint8_t* bytes;
+		uint64_t       bitCount;
+	};
+	struct PlayerData {
+		char                name[0x40];
+		const QuestRecord*  quests[3];
+		const uint8_t*      waypoints[3];
+	};
+	static_assert(offsetof(PlayerData, quests) == 0x40 && offsetof(PlayerData, waypoints) == 0x58);
+	struct Unit {
+		uint32_t          type;
+		uint32_t          classId;
+		uint32_t          id;
+		uint32_t          mode;
+		const PlayerData* data;
+	};
+	struct Client {
+		uint32_t     id;
+		uint8_t      before[0x2C - 4];
+		char         name[0x3D];
+		uint8_t      gap[0x270 - 0x2C - 0x3D];
+		uint32_t     unitId;
+		uint32_t     padding;
+		const Unit*  unit;
+		uint8_t      rest[0x630 - 0x280];
+		const Client* next;
+	};
+	static_assert(offsetof(Client, name) == 0x2C && offsetof(Client, unitId) == 0x270 && offsetof(Client, unit) == 0x278 && offsetof(Client, next) == 0x630);
+	std::array<std::array<uint8_t, ap::quest_record::Bytes>, 3> questBytes {};
+	questBytes[0][2] = 0x01; // Den of Evil done on Normal
+	questBytes[1][80] = 0x02; // Eve of Destruction waiting for its reward on Nightmare
+	const QuestRecord quests[3] = { { questBytes[0].data(), 0x300 }, { questBytes[1].data(), 0x300 }, { questBytes[2].data(), 0x300 } };
+	std::array<std::array<uint8_t, 24>, 3> waypointBytes {};
+	for (auto& record : waypointBytes) {
+		record[0] = 2;
+		record[1] = 1;
+		record[2] = 0x01;
+	}
+	waypointBytes[0][2] = 0x23;
+	PlayerData data {};
+	strcpy_s(data.name, "SorkenTwo");
+	for (int d = 0; d < 3; ++d) {
+		data.quests[d]    = &quests[d];
+		data.waypoints[d] = waypointBytes[d].data();
+	}
+	Unit unit { 0, 1, 7, 0, &data };
+	auto sorken = std::make_unique<Client>();
+	*sorken = {};
+	strcpy_s(sorken->name, "SorkenTwo");
+	sorken->unitId = 7;
+	sorken->unit = &unit;
+	auto barb = std::make_unique<Client>();
+	*barb = {};
+	strcpy_s(barb->name, "Barb");
+	barb->next = sorken.get();
+	std::array<const Client*, 256> table {};
+	table[3] = barb.get();
+	const auto base = reinterpret_cast<uintptr_t>(table.data()) - found.clients;
+	auto records = ap::player_records::Read(base, found, "SorkenTwo");
+	EXPECT(records.has_value());
+	if (records) {
+		EXPECT(ap::quest_record::DoneMask(records->quests[0]) == (uint64_t { 1 } << 1));
+		EXPECT(ap::quest_record::DoneMask(records->quests[1]) == (uint64_t { 1 } << 40));
+		EXPECT(ap::player_records::Has(records->waypoints[0], 0) && ap::player_records::Has(records->waypoints[0], 1) && ap::player_records::Has(records->waypoints[0], 5)
+		       && !ap::player_records::Has(records->waypoints[0], 2) && ap::player_records::Has(records->waypoints[2], 0));
+	}
+	EXPECT(!ap::player_records::Read(base, found, "Sorken"));
+	EXPECT(!ap::player_records::Read(base, found, ""));
+	unit.id = 8;
+	EXPECT(!ap::player_records::Read(base, found, "SorkenTwo"));
+	unit.id = 7;
+	waypointBytes[1][0] = 0;
+	EXPECT(!ap::player_records::Read(base, found, "SorkenTwo"));
+	waypointBytes[1][0] = 2;
+	strcpy_s(data.name, "Other");
+	EXPECT(!ap::player_records::Read(base, found, "SorkenTwo"));
+	strcpy_s(data.name, "SorkenTwo");
+	barb->next = reinterpret_cast<const Client*>(uintptr_t { 0x10 });
+	EXPECT(!ap::player_records::Read(base, found, "SorkenTwo"));
+
+	EXPECT(std::size(ap::data::Waypoints) == 39 && ap::data::Waypoints[1].id == 3 && ap::data::Waypoints[9].id == 40);
 }
 
 void TestConfigRoundTrip() {
@@ -2824,6 +2939,7 @@ int main() {
 	TestQuestRecord();
 	TestClientInfo();
 	TestClientPlayer();
+	TestPlayerRecords();
 	TestCharacterSaves();
 	TestConfigRoundTrip();
 	TestConfigDefaults();

@@ -17,6 +17,7 @@
 #include "milestones.h"
 #include "notify.h"
 #include "personalize.h"
+#include "player_records.h"
 #include "portal_lock.h"
 #include "potion_lock.h"
 #include "quest_record.h"
@@ -654,6 +655,14 @@ void __cdecl PlayerWork(const D2RL::PluginContext*, void*) noexcept {
 	std::lock_guard lock(gMutex);
 	ReadClientPlayer();
 }
+
+// The player's quest and waypoint records for every difficulty (#157), from the game server's
+// copy of the player: where they're found (clients is 0 if not in this game build), and this
+// game's last read, which the next is compared with for waypoints activated meanwhile.
+ap::player_records::Location             gRecordsLocation;
+std::optional<ap::player_records::Records> gRecords;
+Clock::time_point                        gNextRecordsRead {};
+std::atomic<bool>                        gRecordsReadQueued { false };
 
 // Writes one copy of a save. True once it's on disk, or a newer one is.
 auto WriteSave(const ap::SaveState& state, const std::filesystem::path& path, uint64_t serial) -> bool {
@@ -4313,6 +4322,42 @@ void CheckArea(int difficulty, int level, bool bound, const std::set<int64_t>& s
 	}
 }
 
+// Reads the player's records (#157) on the game thread, where the server changes them, and logs
+// the waypoints activated since the last read (a game's first read only sets what's already there).
+void __cdecl RecordsWork(const D2RL::PluginContext*, void*) noexcept {
+	gRecordsReadQueued = false;
+	std::string name;
+	{
+		std::lock_guard lock(gMutex);
+		if (!gInGame || gDebugNativeOff) {
+			return;
+		}
+		name = gPlayerName;
+	}
+	const auto records = ap::player_records::Read(gImageBase, gRecordsLocation, name);
+	if (!records) {
+		return;
+	}
+	std::vector<std::string> activated;
+	{
+		std::lock_guard lock(gMutex);
+		if (!gInGame || gPlayerName != name) {
+			return;
+		}
+		for (size_t difficulty = 0; gRecords && difficulty < 3; ++difficulty) {
+			for (size_t index = 0; index < std::size(ap::data::Waypoints); ++index) {
+				if (ap::player_records::Has(records->waypoints[difficulty], index) && !ap::player_records::Has(gRecords->waypoints[difficulty], index)) {
+					activated.push_back(std::string(ap::data::Waypoints[index].name) + " (" + DifficultyNames[difficulty] + ")");
+				}
+			}
+		}
+		gRecords = records;
+	}
+	for (const auto& waypoint : activated) {
+		Log("Archipelago: waypoint activated: " + waypoint + ".");
+	}
+}
+
 void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* frame, void*) noexcept {
 	if (frame == nullptr || !gClient) {
 		return;
@@ -4552,6 +4597,17 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	if (readPlayer && !gPlayerReadQueued.exchange(true) && gThreads->runOnUiThread(gContext, PlayerWork, nullptr) != D2RL::Threads::Result::Success) {
 		gPlayerReadQueued = false;
 	}
+	bool readRecords = false;
+	{
+		std::lock_guard lock(gMutex);
+		readRecords = gRecordsLocation.clients != 0 && !gDebugNativeOff && gInGame && !gPlayerName.empty() && Clock::now() >= gNextRecordsRead;
+		if (readRecords) {
+			gNextRecordsRead = Clock::now() + std::chrono::seconds(1);
+		}
+	}
+	if (readRecords && !gRecordsReadQueued.exchange(true) && gThreads->runOnGameThread(gContext, RecordsWork, nullptr) != D2RL::Threads::Result::Success) {
+		gRecordsReadQueued = false;
+	}
 
 	bool work = false;
 	{
@@ -4624,6 +4680,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 				gQuestLogAtJoin.reset();
 				gQuestLogSeenBound = 0;
 				gQuestLogOtherSeed = 0;
+				gRecords.reset();
 				gQuestLogMissing = 0;
 				gHeldFallbacks.clear();
 				// A new game is a new walk into whichever act it starts in.
@@ -5802,6 +5859,17 @@ void LogState() {
 		lines.push_back("game client player: " + (gPlayerLocation.slot == 0 ? std::string("not found") : clientPlayer ? CharacterLabel(clientPlayer->name, clientPlayer->classId) : "none")
 		                + "; this game's: " + (gPlayerName.empty() ? std::string("not read") : gPlayerName) + "; the seed's: "
 		                + (gSave.characterName.empty() ? std::string("any of its class") : gSave.characterName) + ".");
+		std::string records = gRecordsLocation.clients == 0 ? "not found" : gRecords ? "" : "not read this game";
+		for (size_t difficulty = 0; gRecords && difficulty < 3; ++difficulty) {
+			size_t waypoints = 0;
+			for (size_t index = 0; index < std::size(ap::data::Waypoints); ++index) {
+				waypoints += ap::player_records::Has(gRecords->waypoints[difficulty], index) ? 1 : 0;
+			}
+			records += std::string(difficulty == 0 ? "" : ", ") + DifficultyNames[difficulty] + " " + std::to_string(waypoints) + "/"
+			         + std::to_string(std::size(ap::data::Waypoints)) + " waypoints and "
+			         + std::to_string(std::popcount(ap::quest_record::DoneMask(gRecords->quests[difficulty]))) + " quests";
+		}
+		lines.push_back("player records: " + records + ".");
 		lines.push_back(std::string("quest log: ") + (gQuestLogPointer == 0 ? "not found" : gQuestLogFailed ? "failed" : "found")
 		                + (QuestLogDecides() ? ", completes quests" : ", fallbacks complete quests") + baselines + ", "
 		                + std::to_string(gHeldFallbacks.size()) + " fallback completions held.");
@@ -5901,6 +5969,28 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 		}
 		Log("Archipelago: quest log states (quest=bits):" + (states.empty() ? std::string(" none") : states) + ".");
 		Log("Archipelago: quest log done: " + (done.empty() ? std::string("none") : done) + ".");
+		// The player's own records for every difficulty (#157), as last read this game.
+		std::optional<ap::player_records::Records> records;
+		{
+			std::lock_guard lock(gMutex);
+			records = gRecords;
+		}
+		for (size_t difficulty = 0; records && difficulty < 3; ++difficulty) {
+			std::string recordDone, waypoints;
+			const uint64_t recordMask = ap::quest_record::DoneMask(records->quests[difficulty]);
+			for (const auto& quest : ap::data::Quests) {
+				if ((recordMask >> quest.flag & 1) != 0) {
+					recordDone += (recordDone.empty() ? "" : ", ") + std::string(quest.name);
+				}
+			}
+			for (size_t index = 0; index < std::size(ap::data::Waypoints); ++index) {
+				if (ap::player_records::Has(records->waypoints[difficulty], index)) {
+					waypoints += (waypoints.empty() ? "" : ", ") + std::string(ap::data::Waypoints[index].name);
+				}
+			}
+			Log("Archipelago: " + std::string(DifficultyNames[difficulty]) + " player record: quests done: " + (recordDone.empty() ? std::string("none") : recordDone)
+			    + "; waypoints: " + (waypoints.empty() ? std::string("none") : waypoints) + ".");
+		}
 		Reply("ap-debug: the quest log is in the log.");
 		return D2RL::ConsoleCommandResult::Handled;
 	}
@@ -6327,6 +6417,14 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		Log("Archipelago: found the game's player (unit table at " + std::string(rva) + "); the character's class and name are known as a game begins.");
 	} else {
 		LogWarning(("Archipelago: can't find the game's player in this game build (" + gPlayerLocation.error + "); the class is learned from the first kill.").c_str());
+	}
+	gRecordsLocation = ap::player_records::Locate(reinterpret_cast<const uint8_t*>(context->exeBase));
+	if (gRecordsLocation.clients != 0) {
+		char rva[16];
+		std::snprintf(rva, sizeof(rva), "0x%X", gRecordsLocation.clients);
+		Log("Archipelago: found the game server's clients (at " + std::string(rva) + "); the player's waypoints and quests are read.");
+	} else {
+		LogWarning(("Archipelago: can't find the game server's clients in this game build (" + gRecordsLocation.error + "); waypoints aren't read.").c_str());
 	}
 	if (context->QueryService(&gTables) != D2RL::ServiceQueryResult::Success || !D2RL::HasDataTableServiceField(gTables, D2RL::DataTableServiceRequiredSize)) {
 		gTables = nullptr;

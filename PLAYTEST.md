@@ -621,6 +621,20 @@ has a "game client player" line with the seed's name.
       right away; with a same-class mule of a named seed, "This seed is SorkenTwo's".
 - [ ] `statusLine = false` in the config hides it at the menu too.
 
+## 2d5. The player's waypoints and quests on every difficulty (issue #157)
+
+The plugin now reads the character's own quest and waypoint records for all three difficulties from the game
+server inside the client (the startup log says "found the game server's clients"). For now it only logs them;
+waypoint checks (#65) will build on it.
+
+- [ ] **Read at all:** in a game, `ap-debug state` has "player records: Normal N/39 waypoints and M quests, ...",
+      not "not read this game". `ap-debug quests` logs each difficulty's quests done and waypoints by name.
+- [ ] **Activation:** on a fresh character, activate the Cold Plains waypoint: the log says "waypoint activated:
+      Cold Plains (Normal)" within a second. Walking past without clicking it says nothing.
+- [ ] **No burst on join:** join with a character that already has waypoints: no "waypoint activated" lines.
+- [ ] **Other difficulties:** on Nightmare, `ap-debug quests` still shows Normal's quests and waypoints.
+- [ ] **Leaving:** Save & Exit while it's reading, several times: no crash, and the next game reads again.
+
 ## 2e. Areas left before the difficulty is known (issue #130)
 
 Only happens now when the game's difficulty can't be read (`ap-debug native off`, or a game build where it
