@@ -55,7 +55,8 @@ shapeshifts. It turns on tree mode, so the shuffled tree is the one you unlock.
   Horadric Cube once.
 - Buying Archipelago Parcels (`shop_checks`, 3 per act by default) from each act's potion seller: Akara,
   Lysander, Ormus, Jamella and Malah. They cost 2,500 to 40,000 gold; one bought past the last check is
-  refunded.
+  refunded. `shop_vendor: blacksmith` moves them to Charsi, Fara, Hratli, Halbu and Larzuk, and
+  `parcel_price_multiplier` (10 to 500%, default 100) scales their price and the refund.
 - Filler-only extras: Pandemonium's six uber bosses with a Hell goal through Baal (`uber_checks`), killing 100,
   250 and 500 monsters in each act (`kill_count_checks`), and finding 1 to 50 uniques and 1 to 25 set items
   (`find_count_checks`).
@@ -99,6 +100,7 @@ Besides the hints you buy with hint points, the game hands some out:
 - Superuniques may drop a **torn page** the first time you kill them (`page_hint_chance`, 25%).
 - Every potion seller sells **Scrolls of Prophecy** (`prophecy_shop`). The vendor lists eight prices from
   1,000 to 100,000 gold; only the next one counts (a cheaper scroll is refunded), and the dearest repeats.
+  `prophecy_price_multiplier` (10 to 500%, default 100) scales every price.
 - Other players can send you a **Prophecy** (`prophecy_weight`).
 
 Most hints tell you where your own important items are, act keys first. `hint_balance` (30% by default) of

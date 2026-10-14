@@ -80,7 +80,17 @@ void Permute(std::vector<T>& values, std::mt19937& random) {
 auto Settings::Any() const -> bool {
 	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != PerDifficulty { 100, 100, 100 } || !itemLevelRequirements
 	    || !itemStatRequirements || monsterDensity != PerDifficulty { 100, 100, 100 } || championPacks != 100 || superUniqueMinions != 100
-	    || betterDrops != 100 || betterMagic != 100 || deathXpPenalty != 100 || SuperUniqueCopies() || !skillTree.empty() || treeMode;
+	    || betterDrops != 100 || betterMagic != 100 || deathXpPenalty != 100 || parcelPrice != 100 || prophecyPrice != 100
+	    || shopVendor != ShopVendor::PotionSeller || SuperUniqueCopies() || !skillTree.empty() || treeMode;
+}
+
+auto StampChangesShop(const std::string& stamp) -> bool {
+	for (const char* key : { " parcel_price=", " prophecy_price=", " shop_vendor=" }) {
+		if (stamp.find(key) != std::string::npos) {
+			return true;
+		}
+	}
+	return false;
 }
 
 auto Settings::SuperUniqueCopies() const -> bool {
@@ -119,6 +129,9 @@ auto Settings::Stamp() const -> std::string {
 	};
 	add(betterMagic != 100, "magic", betterMagic);
 	add(deathXpPenalty != 100, "death_xp", deathXpPenalty);
+	add(parcelPrice != 100, "parcel_price", parcelPrice);
+	add(prophecyPrice != 100, "prophecy_price", prophecyPrice);
+	add(shopVendor != ShopVendor::PotionSeller, "shop_vendor", static_cast<int>(shopVendor));
 	add(monsters == Shuffle::Anywhere && shuffleTolerance != 3, "tolerance", shuffleTolerance);
 	add(monsters != Shuffle::Off && shuffleCowLevel, "cows", 1);
 	add(superUniques == Shuffle::Nearby && superUniqueSpread != 6, "superunique_spread", superUniqueSpread);
@@ -932,7 +945,7 @@ void AddCodexUnique(Table& uniques, uint32_t record) {
 	}
 }
 
-auto AddShopParcels(Table& misc) -> int {
+auto AddShopParcels(Table& misc, int pricePercent, ShopVendor vendorChoice) -> int {
 	const int code = misc.Column("code");
 	if (code < 0) {
 		return 0;
@@ -952,9 +965,10 @@ auto AddShopParcels(Table& misc) -> int {
 	for (size_t act = 0; act < std::size(ParcelCodes); ++act) {
 		misc.Rows().push_back(misc.Rows()[*templateRow]);
 		const size_t row = misc.Rows().size() - 1;
-		const std::string vendor = ParcelVendors[act];
+		const std::string vendor = ShopVendors(vendorChoice)[act];
 		const std::pair<std::string, std::string> values[] = {
-			{ "name", ParcelName }, { "code", ParcelCodes[act] }, { "type", ShopItemType }, { "namestr", ParcelName }, { "cost", std::to_string(ParcelCosts[act]) },
+			{ "name", ParcelName }, { "code", ParcelCodes[act] }, { "type", ShopItemType }, { "namestr", ParcelName },
+			{ "cost", std::to_string(ShopPrice(ParcelCosts[act], pricePercent)) },
 			{ "gamble cost", "0" }, { "level", "0" }, { "levelreq", "0" }, { "unique", "0" }, { "spawnable", "1" }, { "PermStoreItem", "1" },
 			{ vendor + "Min", "1" }, { vendor + "Max", "1" }, { "multibuy", "0" },
 		};
@@ -1030,7 +1044,7 @@ auto PadMiscRows(Table& misc, const std::vector<std::string>& codes) -> int {
 	return added;
 }
 
-auto AddProphecyScrolls(Table& misc) -> int {
+auto AddProphecyScrolls(Table& misc, int pricePercent) -> int {
 	const int code = misc.Column("code");
 	if (code < 0) {
 		return 0;
@@ -1064,11 +1078,12 @@ auto AddProphecyScrolls(Table& misc) -> int {
 		misc.Rows().push_back(misc.Rows()[*templateRow]);
 		const size_t row = misc.Rows().size() - 1;
 		std::vector<std::pair<std::string, std::string>> values = {
-			{ "name", ProphecyName }, { "code", ProphecyCodes[tier] }, { "type", ShopItemType }, { "namestr", ProphecyName }, { "cost", std::to_string(ProphecyCosts[tier]) },
+			{ "name", ProphecyName }, { "code", ProphecyCodes[tier] }, { "type", ShopItemType }, { "namestr", ProphecyName },
+			{ "cost", std::to_string(ShopPrice(ProphecyCosts[tier], pricePercent)) },
 			{ "gamble cost", "0" }, { "level", "0" }, { "levelreq", "0" }, { "unique", "0" }, { "spawnable", "1" }, { "PermStoreItem", "1" },
 			{ "multibuy", "0" },
 		};
-		for (const char* vendor : ParcelVendors) {
+		for (const char* vendor : PotionSellers) {
 			values.emplace_back(std::string(vendor) + "Min", "1");
 			values.emplace_back(std::string(vendor) + "Max", "1");
 		}
@@ -1137,7 +1152,7 @@ auto AddRespecWrit(Table& misc) -> int {
 		{ "gamble cost", "0" }, { "level", "0" }, { "levelreq", "0" }, { "unique", "0" }, { "spawnable", "1" }, { "PermStoreItem", "1" },
 		{ "multibuy", "0" },
 	};
-	for (const char* vendor : ParcelVendors) {
+	for (const char* vendor : PotionSellers) {
 		values.emplace_back(std::string(vendor) + "Min", "1");
 		values.emplace_back(std::string(vendor) + "Max", "1");
 	}

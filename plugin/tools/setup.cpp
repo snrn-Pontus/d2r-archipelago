@@ -914,11 +914,16 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			if (!bank.empty()) {
 				rnd::PadMiscRows(t, rotwMisc);
 			}
-			parcels = rnd::AddShopParcels(t) + rnd::AddProphecyScrolls(t);
+			parcels = rnd::AddShopParcels(t, settings.parcelPrice, settings.shopVendor) + rnd::AddProphecyScrolls(t, settings.prophecyPrice);
 			rnd::AddEmblem(t);
 			rnd::AddRespecWrit(t);
 		});
-		std::printf("  %s: %s\n", label, parcels > 0 ? "each act's potion seller sells an Archipelago Parcel" : "couldn't add the shop parcels");
+		if (parcels > 0) {
+			std::printf("  %s: each act's %s sells an Archipelago Parcel (prices at %d%%, Scrolls of Prophecy at %d%%)\n", label,
+			            settings.shopVendor == rnd::ShopVendor::Blacksmith ? "blacksmith" : "potion seller", settings.parcelPrice, settings.prophecyPrice);
+		} else {
+			std::printf("  %s: couldn't add the shop parcels\n", label);
+		}
 		// UniqueItems gets the Codex charm, plus cleared requirements if asked.
 		PatchTable(storage, excel, bank, "uniqueitems.txt", [&](Table& t) {
 			if (clearRequirements) {

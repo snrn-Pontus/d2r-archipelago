@@ -211,6 +211,9 @@ auto ReadSlotData(const json& data) -> SlotData {
 	slots.randomizer.betterDrops = Get(randomizer, "better_drops", 100);
 	slots.randomizer.betterMagic = Get(randomizer, "better_magic", 100);
 	slots.randomizer.deathXpPenalty = std::clamp(Get(randomizer, "death_xp_penalty", 100), 0, 100);
+	slots.randomizer.parcelPrice = std::clamp(Get(randomizer, "parcel_price", 100), 10, 500);
+	slots.randomizer.prophecyPrice = std::clamp(Get(randomizer, "prophecy_price", 100), 10, 500);
+	slots.randomizer.shopVendor = Get(randomizer, "shop_vendor", 0) == 1 ? randomizer::ShopVendor::Blacksmith : randomizer::ShopVendor::PotionSeller;
 	for (const json& pair : Array(randomizer, "skill_tree")) {
 		if (pair.is_array() && pair.size() == 2 && pair[0].is_number_unsigned() && pair[1].is_number_unsigned()) {
 			slots.randomizer.skillTree.emplace_back(pair[0].get<uint32_t>(), pair[1].get<uint32_t>());

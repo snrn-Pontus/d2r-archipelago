@@ -19,6 +19,9 @@ namespace ap::randomizer {
 // Must match the apworld's MonsterShuffle and SuperUniqueShuffle choices.
 enum class Shuffle : int { Off = 0, Nearby = 1, Anywhere = 2 };
 
+// Who sells the Archipelago Parcels; must match the apworld's ShopVendor choices.
+enum class ShopVendor : int { PotionSeller = 0, Blacksmith = 1 };
+
 // One value for each difficulty: Normal, Nightmare, Hell.
 using PerDifficulty = std::array<int, 3>;
 
@@ -59,6 +62,10 @@ struct Settings {
 	int      betterMagic = 100;
 	// Experience lost on death (DeathExpPenalty), in percent of the game's own loss.
 	int      deathXpPenalty = 100;
+	// Archipelago Parcel and Scroll of Prophecy prices, in percent of ParcelCosts and ProphecyCosts.
+	int      parcelPrice = 100;
+	int      prophecyPrice = 100;
+	ShopVendor shopVendor = ShopVendor::PotionSeller;
 	// Field superuniques get monster rows of their own, so their kills are checks.
 	bool     superUniqueChecks = false;
 	// The skill tree shuffle: (skill id, id of the skill whose tree slot it takes).
@@ -78,6 +85,11 @@ struct Settings {
 	// tell whether the installed mod matches the connected seed.
 	auto Stamp() const -> std::string;
 };
+
+// Whether a mod stamp (Settings::Stamp) has changed shop prices or vendor. The
+// shop items are written for every seed, so a stale mod like that charges other
+// prices than the plugin refunds even when the connected seed changes nothing.
+auto StampChangesShop(const std::string& stamp) -> bool;
 
 // Locks the class skill trees: each class skill becomes its own prerequisite,
 // so no skill can take its first point (item skills don't count as points).
@@ -206,10 +218,25 @@ auto ShuffleRunewords(const std::vector<Table*>& banks, std::mt19937& random, in
 // received skills to it when it creates the charm.
 void AddCodexUnique(Table& uniques, uint32_t record);
 
-// The shop checks' items, one per act: bought from that act's potion seller,
+// Each act's potion seller and blacksmith, by their misc.txt column names.
+inline constexpr const char* PotionSellers[] = { "Akara", "Lysander", "Ormus", "Jamella", "Malah" };
+inline constexpr const char* Blacksmiths[] = { "Charsi", "Fara", "Hratli", "Halbu", "Larzuk" };
+
+// That vendor in every act, Act I first.
+inline auto ShopVendors(ShopVendor vendor) -> const char* const (&)[5] {
+	return vendor == ShopVendor::Blacksmith ? Blacksmiths : PotionSellers;
+}
+
+// A shop item's price at `percent` of its usual cost, at least 1 gold. The
+// setup tool writes it into misc.txt and the plugin refunds the same amount.
+inline constexpr auto ShopPrice(int cost, int percent) -> int {
+	const long long price = static_cast<long long>(cost) * percent / 100;
+	return price < 1 ? 1 : price > 0x7fffffff ? 0x7fffffff : static_cast<int>(price);
+}
+
+// The shop checks' items, one per act: bought from that act's shop vendor,
 // then the plugin sends a check and removes it.
 inline constexpr const char* ParcelCodes[] = { "ap1", "ap2", "ap3", "ap4", "ap5" };
-inline constexpr const char* ParcelVendors[] = { "Akara", "Lysander", "Ormus", "Jamella", "Malah" };
 inline constexpr int         ParcelCosts[] = { 2500, 7500, 15000, 25000, 40000 };
 inline constexpr char        ParcelName[] = "Archipelago Parcel";
 
@@ -229,9 +256,9 @@ inline constexpr char        EmblemCode[] = "ape";
 inline constexpr char        EmblemName[] = "Archipelago Emblem";
 
 // Appends the parcels to misc.txt as copies of the Standard of Heroes (an inert
-// 1x1 item), each always in stock at its act's vendor, unless the table
-// already has them. Returns how many it added.
-auto AddShopParcels(Table& misc) -> int;
+// 1x1 item), each always in stock at its act's `vendor` for `pricePercent` of
+// ParcelCosts, unless the table already has them. Returns how many it added.
+auto AddShopParcels(Table& misc, int pricePercent = 100, ShopVendor vendor = ShopVendor::PotionSeller) -> int;
 
 // Appends ShopItemType to itemtypes.txt, unless it's there. Returns 1 if it added it.
 auto AddShopItemType(Table& itemTypes) -> int;
@@ -242,8 +269,9 @@ auto AddShopItemType(Table& itemTypes) -> int;
 // Classic/LoD), so the items added after them line up in both banks.
 auto PadMiscRows(Table& misc, const std::vector<std::string>& codes) -> int;
 
-// Appends the Scrolls of Prophecy the same way, every tier at every potion seller.
-auto AddProphecyScrolls(Table& misc) -> int;
+// Appends the Scrolls of Prophecy the same way, every tier at every potion
+// seller, for `pricePercent` of ProphecyCosts.
+auto AddProphecyScrolls(Table& misc, int pricePercent = 100) -> int;
 
 // Appends the Emblem the same way, sold nowhere. Returns 1 if it added it.
 auto AddEmblem(Table& misc) -> int;
