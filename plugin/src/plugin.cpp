@@ -335,8 +335,16 @@ auto WaitingText(const LeftAreas& left) -> std::string {
 // Encounter requests logged this game (LogEncounter), as kind, area and difficulty.
 std::set<std::tuple<int, int, uint32_t>> gEncountersLogged;
 int                   gAct          = 0;
-// The player's class id seen in this game (from the killer of a monster), or -1.
+// The player's class id in this game (from the game client, or else the killer of a monster), or -1.
 int                   gPlayerClass  = -1;
+// The character's name, once the game client has said it this game (#155), with its class.
+std::string           gPlayerName;
+// Where the game client's local player is found from (#155), and the game image's base;
+// gPlayerLocation.slot is 0 if its patterns weren't found in this game build.
+ap::client_info::PlayerLocation gPlayerLocation;
+uintptr_t             gImageBase = 0;
+Clock::time_point     gNextPlayerRead {};
+std::atomic<bool>     gPlayerReadQueued { false };
 // The class this game's Codex charm or Emblem was made for, or -1: until a kill says, it
 // stands in for gPlayerClass (a Codex only goes to a character of its class).
 int                   gCodexClass   = -1;
@@ -355,6 +363,7 @@ bool                  gTableUnlock = false;
 void ForgetPlayer() {
 	gPlayerLevel  = 0;
 	gPlayerClass  = -1;
+	gPlayerName.clear();
 	gCodexClass   = -1;
 	gCharacterWarned = 0;
 	gCurrentLevel = -1;
@@ -373,8 +382,8 @@ auto ClassIndex(const std::string& name) -> int {
 	return -1;
 }
 
-// Rewards only go to the seed's character. D2RLoader doesn't say the character's
-// name, so it's told by class: the seed's (or, for "any", the first class that
+// Rewards only go to the seed's character: by name once the game client has said it
+// for both (#155), and by class: the seed's (or, for "any", the first class that
 // claimed it, or ap-claim's) against this game's. Call with gMutex held.
 auto SeedClass(const ap::SlotData& slots) -> int {
 	return gSave.playerClass >= 0 ? gSave.playerClass : ClassIndex(slots.characterClass);
@@ -385,11 +394,16 @@ auto GameClass() -> int {
 }
 
 auto CharacterVerdict(const ap::SlotData& slots) -> ap::character::Verdict {
-	return ap::character::Check(SeedClass(slots), GameClass());
+	return ap::character::Check(SeedClass(slots), GameClass(), gSave.characterName, gPlayerName);
 }
 
 auto ClassName(int playerClass) -> std::string {
 	return playerClass >= 0 && playerClass < static_cast<int>(std::size(ClassNames)) ? ClassNames[playerClass] : "character";
+}
+
+// "SorkenTwo (Sorceress)", or "Sorceress" without a name.
+auto CharacterLabel(const std::string& name, int playerClass) -> std::string {
+	return name.empty() ? ClassName(playerClass) : name + " (" + ClassName(playerClass) + ")";
 }
 
 Clock::time_point     gLastRoomWarning;
@@ -608,8 +622,37 @@ struct UnsavedState {
 std::map<std::filesystem::path, UnsavedState> gUnsaved;
 // ap-debug savefail on: every save fails as if the file were read-only.
 std::atomic<bool>     gDebugSaveFails = false;
-// ap-debug native off: what the game client knows (#154) isn't read, as if its patterns weren't found.
+// ap-debug native off: what the game client knows (#154, #155) isn't read, as if its patterns weren't found.
 std::atomic<bool>     gDebugNativeOff = false;
+
+// Reads the local player's class and name from the game client (#155), once per game,
+// as soon as it has them. UI thread, gMutex held.
+void ReadClientPlayer() {
+	if (!gInGame || !gPlayerName.empty() || gDebugNativeOff || gPlayerLocation.slot == 0) {
+		return;
+	}
+	// Only once this game's client state is up (its quest record is made as the game starts and
+	// freed as it ends), so the player read can't be the last game's.
+	ap::quest_record::Bits bits {};
+	if (gQuestLogPointer != 0 && ap::quest_record::Read(gQuestLogPointer, bits) != ap::quest_record::ReadResult::Ok) {
+		return;
+	}
+	const auto player = ap::client_info::ReadPlayer(gImageBase, gPlayerLocation);
+	if (!player) {
+		return;
+	}
+	gPlayerName  = player->name;
+	gPlayerClass = player->classId;
+	gCodexDirty  = true;
+	gRetryAt     = {};
+	Log("Archipelago: the game client says this is " + CharacterLabel(gPlayerName, gPlayerClass) + ".");
+}
+
+void __cdecl PlayerWork(const D2RL::PluginContext*, void*) noexcept {
+	gPlayerReadQueued = false;
+	std::lock_guard lock(gMutex);
+	ReadClientPlayer();
+}
 
 // Writes one copy of a save. True once it's on disk, or a newer one is.
 auto WriteSave(const ap::SaveState& state, const std::filesystem::path& path, uint64_t serial) -> bool {
@@ -2980,19 +3023,22 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 		}
 	}
 	std::string message;
-	bool banner = false;
+	std::string banner;
 	bool ready = false;
 	{
 		std::lock_guard lock(gMutex);
 		const int seedClass = SeedClass(slots);
 		const int gameClass = GameClass();
-		switch (ap::character::Check(seedClass, gameClass)) {
+		switch (CharacterVerdict(slots)) {
 			case ap::character::Verdict::Match:
 				ready = true;
-				if (gSave.playerClass != gameClass) {
+				if (gSave.playerClass != gameClass || (gSave.characterName.empty() && !gPlayerName.empty())) {
 					gSave.playerClass = gameClass;
+					if (!gPlayerName.empty()) {
+						gSave.characterName = gPlayerName;
+					}
 					SaveNow();
-					Log("Archipelago: this seed's character is a " + ClassName(gameClass) + ".");
+					Log("Archipelago: this seed's character is " + std::string(gSave.characterName.empty() ? "a " : "") + CharacterLabel(gSave.characterName, gameClass) + ".");
 				}
 				break;
 			case ap::character::Verdict::Unknown:
@@ -3002,14 +3048,20 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 					gCharacterWarned |= 1;
 					message = "Archipelago: rewards and locks wait until the plugin knows this is your " + ClassName(seedClass)
 					        + ": kill a monster, or type ap-claim (F9: Claim Character) if it is.";
-					banner = true;
+					banner = "Kill a monster or type ap-claim: rewards are waiting";
 				}
 				break;
 			case ap::character::Verdict::Mismatch:
 				if ((gCharacterWarned & 2) == 0) {
 					gCharacterWarned |= 2;
-					message = "Archipelago: this " + ClassName(gameClass) + " isn't this seed's " + ClassName(seedClass)
-					        + ", so rewards wait for that character. If this is your character now, type ap-claim.";
+					if (!gSave.characterName.empty() && !gPlayerName.empty()) {
+						message = "Archipelago: this seed belongs to " + CharacterLabel(gSave.characterName, seedClass) + ", not " + CharacterLabel(gPlayerName, gameClass)
+						        + ", so rewards wait for " + gSave.characterName + ". If this is your character now, type ap-claim.";
+						banner = "This seed is " + gSave.characterName + "'s: rewards wait for that character";
+					} else {
+						message = "Archipelago: this " + ClassName(gameClass) + " isn't this seed's " + ClassName(seedClass)
+						        + ", so rewards wait for that character. If this is your character now, type ap-claim.";
+					}
 				}
 				break;
 		}
@@ -3017,8 +3069,8 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 	if (!message.empty()) {
 		Feed(message);
 	}
-	if (banner) {
-		Banner("Kill a monster or type ap-claim: rewards are waiting", ap::notify::Style::Important);
+	if (!banner.empty()) {
+		Banner(banner, ap::notify::Style::Important);
 	}
 	return ready;
 }
@@ -4457,6 +4509,17 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	if (readQuestLog && !gQuestLogReadQueued.exchange(true) && gThreads->runOnUiThread(gContext, QuestLogWork, nullptr) != D2RL::Threads::Result::Success) {
 		gQuestLogReadQueued = false;
 	}
+	bool readPlayer = false;
+	{
+		std::lock_guard lock(gMutex);
+		readPlayer = gPlayerLocation.slot != 0 && !gDebugNativeOff && gInGame && gPlayerName.empty() && Clock::now() >= gNextPlayerRead;
+		if (readPlayer) {
+			gNextPlayerRead = Clock::now() + std::chrono::milliseconds(500);
+		}
+	}
+	if (readPlayer && !gPlayerReadQueued.exchange(true) && gThreads->runOnUiThread(gContext, PlayerWork, nullptr) != D2RL::Threads::Result::Success) {
+		gPlayerReadQueued = false;
+	}
 
 	bool work = false;
 	{
@@ -4557,6 +4620,8 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 					Log("Archipelago: the game client says the difficulty is " + std::string(DifficultyNames[*difficulty]) + ".");
 				}
 			}
+			// And who's playing (#155), if the client has the player yet; OnFrame retries until it does.
+			ReadClientPlayer();
 			break;
 		}
 		case Kind::PlayerResurrected: {
@@ -4968,10 +5033,10 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 			break;
 		}
 	}
-	// A player's kill tells us the player's class (single player: it's you). The
-	// next delivery pass checks it against the seed's (CharacterReady).
+	// A player's kill tells us the player's class (single player: it's you), unless the game
+	// client already has (#155). The next delivery pass checks it against the seed's (CharacterReady).
 	const int killerClass = static_cast<int>(event->killer.classId);
-	if (event->killer.type == D2RL::Lifecycle::UnitType::Player && killerClass >= 0 && killerClass < static_cast<int>(std::size(ClassNames))
+	if (gPlayerName.empty() && event->killer.type == D2RL::Lifecycle::UnitType::Player && killerClass >= 0 && killerClass < static_cast<int>(std::size(ClassNames))
 		&& killerClass != gPlayerClass) {
 		gPlayerClass = killerClass;
 		gCodexDirty = true;
@@ -5359,8 +5424,8 @@ auto CommandMissing(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
-// ap-claim: this game's character becomes the seed's, the one rewards go to (by class:
-// D2RLoader doesn't say the character's name).
+// ap-claim: this game's character becomes the seed's, the one rewards go to (by name if
+// the game client said it, #155, and by class).
 auto CommandClaim(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*) noexcept -> D2RL::ConsoleCommandResult {
 	std::string reply;
 	{
@@ -5381,13 +5446,16 @@ auto CommandClaim(D2R::Game::Client*, const D2RL::ConsoleCommandContext*, void*)
 			reply = "Kill a monster first, so the plugin can tell this character's class.";
 		} else {
 			gSave.playerClass = gameClass;
+			// By name too if the game client said it; otherwise every character of its class.
+			gSave.characterName = gPlayerName;
 			SaveNow();
 			// In tree mode this character gets an Emblem of its own on the next pass.
 			gEmblemRetryAt = {};
 			gCharacterWarned = 0;
 			gCodexDirty = true;
 			gRetryAt = {};
-			reply = "This seed's rewards go to your " + ClassName(gameClass) + " now.";
+			reply = gPlayerName.empty() ? "This seed's rewards go to your " + ClassName(gameClass) + " now."
+			                            : "This seed's rewards go to " + CharacterLabel(gPlayerName, gameClass) + " now.";
 		}
 	}
 	Reply(reply);
@@ -5698,6 +5766,10 @@ void LogState() {
 		const auto clientDifficulty = ap::client_info::ReadDifficulty(gDifficultyAddress);
 		lines.push_back(std::string("game client difficulty: ") + (gDifficultyAddress == 0 ? "not found" : clientDifficulty ? DifficultyNames[*clientDifficulty] : "unreadable")
 		                + (gDebugNativeOff ? " (ap-debug native off)" : "") + ".");
+		const auto clientPlayer = ap::client_info::ReadPlayer(gImageBase, gPlayerLocation);
+		lines.push_back("game client player: " + (gPlayerLocation.slot == 0 ? std::string("not found") : clientPlayer ? CharacterLabel(clientPlayer->name, clientPlayer->classId) : "none")
+		                + "; this game's: " + (gPlayerName.empty() ? std::string("not read") : gPlayerName) + "; the seed's: "
+		                + (gSave.characterName.empty() ? std::string("any of its class") : gSave.characterName) + ".");
 		lines.push_back(std::string("quest log: ") + (gQuestLogPointer == 0 ? "not found" : gQuestLogFailed ? "failed" : "found")
 		                + (QuestLogDecides() ? ", completes quests" : ", fallbacks complete quests") + baselines + ", "
 		                + std::to_string(gHeldFallbacks.size()) + " fallback completions held.");
@@ -5922,12 +5994,12 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 		                      : "ap-debug: saves work again; paused rewards should arrive.");
 		return D2RL::ConsoleCommandResult::Handled;
 	}
-	// ap-debug native on|off: off ignores what the game client knows (#154), to test the fallbacks.
+	// ap-debug native on|off: off ignores what the game client knows (#154, #155), to test the fallbacks.
 	if (args[0] == "native" && args.size() == 2 && (args[1] == "on" || args[1] == "off")) {
 		gDebugNativeOff = args[1] == "off";
 		Log("Archipelago: ap-debug native " + args[1] + ".");
-		Reply(args[1] == "off" ? "ap-debug: the game client's difficulty is ignored from the next game; a kill tells it."
-		                       : "ap-debug: the game client's difficulty is read again from the next game.");
+		Reply(args[1] == "off" ? "ap-debug: the game client's difficulty, class and name are ignored from the next game; a kill tells the difficulty and class."
+		                       : "ap-debug: the game client's difficulty, class and name are read again from the next game.");
 		return D2RL::ConsoleCommandResult::Handled;
 	}
 	// ap-debug crash: ends D2R at once, like a crash or Task Manager, for the "no normal
@@ -6214,6 +6286,15 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		Log("Archipelago: found the game's difficulty (at " + std::string(rva) + "); it's known as a game begins.");
 	} else {
 		LogWarning(("Archipelago: can't find the game's difficulty in this game build (" + difficulty.error + "); it's learned from the first kill.").c_str());
+	}
+	gImageBase      = context->exeBase;
+	gPlayerLocation = ap::client_info::LocatePlayer(reinterpret_cast<const uint8_t*>(context->exeBase));
+	if (gPlayerLocation.slot != 0) {
+		char rva[16];
+		std::snprintf(rva, sizeof(rva), "0x%X", gPlayerLocation.table);
+		Log("Archipelago: found the game's player (unit table at " + std::string(rva) + "); the character's class and name are known as a game begins.");
+	} else {
+		LogWarning(("Archipelago: can't find the game's player in this game build (" + gPlayerLocation.error + "); the class is learned from the first kill.").c_str());
 	}
 	if (context->QueryService(&gTables) != D2RL::ServiceQueryResult::Success || !D2RL::HasDataTableServiceField(gTables, D2RL::DataTableServiceRequiredSize)) {
 		gTables = nullptr;

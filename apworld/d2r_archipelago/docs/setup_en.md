@@ -131,12 +131,14 @@ items, or ordinary items among them arrive together before they become one "Chec
 Use a fresh character for each seed. The Codex charms (one for your class's skills, one for other
 classes') must stay in your inventory; if you lose one, `ap-codex` rebuilds it.
 
-Rewards only go to a character of the seed's class (with `character_class: any`, the first one that plays
-the seed claims it), so a mule of another class gets nothing. The game doesn't tell the plugin your class
-until you kill a monster or carry your Codex, so rewards may wait for your first kill. In tree mode, which
-has no Codex, your character gets an **Archipelago Emblem** after that first kill instead; keep it on your
-character (not the shared stash), and later games know your class at once. To move the seed to
-another class, kill something with that character and type `ap-claim`. If the game crashes before it saved
+Rewards only go to the seed's character: the first character of the seed's class that plays it (with
+`character_class: any`, the first one of any class) claims it by name, so a mule, even one of the same class,
+gets nothing. The plugin reads your character's name and class from the game as a game begins. If a game
+update stops that from working, it falls back to the class alone, learned when you kill a monster or carry
+your Codex, so rewards may wait for your first kill. In tree mode, which has no Codex, your character then
+gets an **Archipelago Emblem** after that first kill; keep it on your character (not the shared stash), and
+later games know your class at once. To move the seed to another character, type `ap-claim` with that
+character (kill something first if the plugin doesn't know its class yet). If the game crashes before it saved
 your character, the next connect offers `ap-redeliver` to hand out that game's rewards again.
 
 The status line at the top left shows how many checks you've done out of the total, and in the act you're

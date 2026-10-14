@@ -33,6 +33,9 @@ struct SaveState {
 	// The class of the seed's character (0 Amazon ... 7 Warlock), or -1 until one claims the seed.
 	// Rewards only go to a character of this class.
 	int playerClass = -1;
+	// The name of the seed's character, once the game client has said it (#155): then rewards
+	// only go to that character, not to every one of its class. Empty: the class decides.
+	std::string characterName;
 	// Monster kills per difficulty * 10 + act, for the kill-count checks.
 	std::map<int, int> kills;
 	// Secret Cow Level cow kills per difficulty.
