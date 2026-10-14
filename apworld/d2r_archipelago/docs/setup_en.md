@@ -141,8 +141,10 @@ later games know your class at once. To move the seed to another character, type
 character (kill something first if the plugin doesn't know its class yet). If the game crashes before it saved
 your character, the next connect offers `ap-redeliver` to hand out that game's rewards again.
 
-The status line at the top left shows how many checks you've done out of the total, and in the act you're
-in. `ap-missing` lists the checks left in the act you're in, and `ap-missing all` counts them for every act
+At the main menu, the status line at the top left says which character to play: the seed's own once it has
+one ("play SorkenTwo (Sorceress, level 12)"), or else your characters of the seed's class, or "not connected"
+if the plugin can't reach the server. In a game it shows how many checks you've done out of the total, and in
+the act you're in. `ap-missing` lists the checks left in the act you're in, and `ap-missing all` counts them for every act
 and outside any act.
 
 **F9** (or `ap-panel`) opens the Archipelago command panel, so you don't need the console for everyday

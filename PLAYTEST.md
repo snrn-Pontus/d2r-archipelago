@@ -608,6 +608,19 @@ has a "game client player" line with the seed's name.
 - [ ] **Fallback:** `ap-debug native off`, then a new game: no "the game client says" line, and the class comes
       from a kill (or the Codex) as before; a seed already bound by name still matches by class.
 
+## 2d4. Which character to play, at the main menu (issue #156)
+
+- [ ] **Connected, seed with a character:** the status line at the main menu says "play SorkenTwo (Sorceress,
+      level N)", with the level from its save. It switches to the checks line in a game, and back on leaving.
+- [ ] **Fresh seed of a class:** "play a Sorceress: ..." lists your Sorceresses, newest first; with none,
+      "create a Sorceress for this seed". `character_class: any`: "play any character: ...".
+- [ ] **Not connected:** a wrong server in the config (or the room closed): "not connected (<server>)".
+- [ ] **Does the line show on the menus at all?** Main menu, character select, the loading screen: note where it
+      shows and whether it's in the way.
+- [ ] **Wrong character:** join with another class: a banner "Wrong character: this seed needs its Sorceress"
+      right away; with a same-class mule of a named seed, "This seed is SorkenTwo's".
+- [ ] `statusLine = false` in the config hides it at the menu too.
+
 ## 2e. Areas left before the difficulty is known (issue #130)
 
 Only happens now when the game's difficulty can't be read (`ap-debug native off`, or a game build where it

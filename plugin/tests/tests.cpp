@@ -2,6 +2,7 @@
 
 #include "ap_client.h"
 #include "character.h"
+#include "character_saves.h"
 #include "client_info.h"
 #include "codex.h"
 #include "command_panel.h"
@@ -371,6 +372,57 @@ void TestClientPlayer() {
 
 	EXPECT(ap::client_info::ValidName("Al") && ap::client_info::ValidName("Sorken-Two") && !ap::client_info::ValidName("A")
 	       && !ap::client_info::ValidName("Bad\tName") && !ap::client_info::ValidName(std::string(48, 'a')));
+}
+
+// A D2R 3.x character file header for a character of the given class, level and name.
+auto CharacterHeader(uint8_t classId, uint8_t level, const std::string& name, uint8_t version = 0x69) -> std::vector<uint8_t> {
+	std::vector<uint8_t> header(ap::character_saves::HeaderSize + 16);
+	const uint8_t start[] = { 0x55, 0xAA, 0x55, 0xAA, version, 0, 0, 0 };
+	std::copy(std::begin(start), std::end(start), header.begin());
+	header[ap::character_saves::ClassAt] = classId;
+	header[ap::character_saves::LevelAt] = level;
+	std::copy(name.begin(), name.end(), header.begin() + static_cast<std::ptrdiff_t>(ap::character_saves::NameAt));
+	return header;
+}
+
+void TestCharacterSaves() {
+	using ap::character_saves::FromHeader;
+	const auto sorken = FromHeader(CharacterHeader(1, 12, "SorkenTwo"));
+	EXPECT(sorken && sorken->classId == 1 && sorken->level == 12 && sorken->name == "SorkenTwo");
+	EXPECT(!FromHeader(CharacterHeader(1, 12, "SorkenTwo", 0x60)));
+	EXPECT(!FromHeader(CharacterHeader(8, 12, "SorkenTwo")));
+	EXPECT(!FromHeader(CharacterHeader(1, 12, "")));
+	EXPECT(!FromHeader(CharacterHeader(1, 12, "Bad\nName")));
+	EXPECT(!FromHeader(std::vector<uint8_t>(0x40)));
+
+	const auto dir = std::filesystem::temp_directory_path() / "ap_character_saves_test";
+	std::filesystem::remove_all(dir);
+	std::filesystem::create_directories(dir);
+	const auto write = [&](const char* file, const std::vector<uint8_t>& bytes) {
+		std::ofstream out(dir / file, std::ios::binary);
+		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+	};
+	write("Barb.d2s", CharacterHeader(4, 6, "Barb"));
+	write("Sorken.d2s", CharacterHeader(1, 1, "Sorken"));
+	write("Broken.d2s", { 1, 2, 3 });
+	write("Notes.txt", CharacterHeader(1, 1, "Notes"));
+	std::filesystem::last_write_time(dir / "Barb.d2s", std::filesystem::file_time_type::clock::now() - std::chrono::hours(1));
+	const auto listed = ap::character_saves::List(dir);
+	EXPECT(listed.size() == 2 && listed[0].name == "Sorken" && listed[1].name == "Barb");
+	std::filesystem::remove_all(dir);
+
+	using ap::character_saves::Character;
+	using ap::character_saves::MenuLine;
+	const auto name = [](int c) { return std::string(c == 1 ? "Sorceress" : c == 4 ? "Barbarian" : "Amazon"); };
+	const std::vector<Character> mine { { "SorkenTwo", 1, 12 }, { "Barb", 4, 6 }, { "Sorken", 1, 1 } };
+	EXPECT(MenuLine(1, "SorkenTwo", mine, name) == "Archipelago: play SorkenTwo (Sorceress, level 12)");
+	EXPECT(MenuLine(1, "Gone", mine, name) == "Archipelago: play Gone (Sorceress), not in this mod's saves");
+	EXPECT(MenuLine(1, "", mine, name) == "Archipelago: play a Sorceress: SorkenTwo, Sorken");
+	EXPECT(MenuLine(0, "", mine, name) == "Archipelago: create an Amazon for this seed");
+	EXPECT(MenuLine(-1, "", mine, name) == "Archipelago: play any character: SorkenTwo, Barb, Sorken");
+	EXPECT(MenuLine(-1, "", {}, name) == "Archipelago: create a character for this seed");
+	const std::vector<Character> many { { "A1", 1, 1 }, { "A2", 1, 1 }, { "A3", 1, 1 }, { "A4", 1, 1 }, { "A5", 1, 1 }, { "A6", 1, 1 } };
+	EXPECT(MenuLine(1, "", many, name) == "Archipelago: play a Sorceress: A1, A2, A3, A4 and 2 more");
 }
 
 void TestConfigRoundTrip() {
@@ -2772,6 +2824,7 @@ int main() {
 	TestQuestRecord();
 	TestClientInfo();
 	TestClientPlayer();
+	TestCharacterSaves();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
 	TestConfigNumericIds();

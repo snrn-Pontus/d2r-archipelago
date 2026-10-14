@@ -6,6 +6,7 @@
 
 #include "ap_client.h"
 #include "character.h"
+#include "character_saves.h"
 #include "client_info.h"
 #include "codex.h"
 #include "command_panel.h"
@@ -3061,6 +3062,10 @@ bool CharacterReady(D2RL::PlayerHandle player, const ap::SlotData& slots, const 
 					} else {
 						message = "Archipelago: this " + ClassName(gameClass) + " isn't this seed's " + ClassName(seedClass)
 						        + ", so rewards wait for that character. If this is your character now, type ap-claim.";
+						// Said as the game begins when the game client named the character (#156), so worth a banner.
+						if (!gPlayerName.empty()) {
+							banner = "Wrong character: this seed needs its " + ClassName(seedClass) + ", rewards wait";
+						}
 					}
 				}
 				break;
@@ -4135,8 +4140,10 @@ void AnnounceItems() {
 }
 
 auto StatusLine() -> std::string;
+auto MenuStatusLine() -> std::string;
 
-// The always-on checks line, refreshed once a second while in a game.
+// The always-on status line, refreshed once a second: the checks while in a game, and
+// at the main menu which character plays the seed (#156).
 void UpdateStatusLine() {
 	static Clock::time_point next;
 	if (Clock::now() < next) {
@@ -4144,10 +4151,12 @@ void UpdateStatusLine() {
 	}
 	next = Clock::now() + std::chrono::seconds(1);
 	bool show = false;
+	bool inGame = false;
 	std::string position;
 	{
 		std::lock_guard lock(gMutex);
-		show = gInGame && gConfig.statusLine;
+		show = gConfig.statusLine;
+		inGame = gInGame;
 		position = gConfig.statusPosition;
 	}
 	using Corner = ap::notify::Corner;
@@ -4155,7 +4164,7 @@ void UpdateStatusLine() {
 		{ "top-left", Corner::TopLeft }, { "top", Corner::Top }, { "top-right", Corner::TopRight },
 		{ "bottom-left", Corner::BottomLeft }, { "bottom-right", Corner::BottomRight } };
 	const auto corner = corners.find(position);
-	ap::notify::SetStatus(show ? StatusLine() : std::string(), corner != corners.end() ? corner->second : Corner::TopLeft);
+	ap::notify::SetStatus(!show ? std::string() : inGame ? StatusLine() : MenuStatusLine(), corner != corners.end() ? corner->second : Corner::TopLeft);
 }
 
 // ap-debug overlay: test shapes for finding out why the overlay doesn't show.
@@ -4227,6 +4236,29 @@ auto SavesDirectory() -> std::filesystem::path {
 		directory /= std::filesystem::path(L"Mods") / std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(gContext->activeMod)));
 	}
 	return directory;
+}
+
+// The main menu's status line (#156): whether the plugin is connected, and which of the
+// mod's characters can play the seed. The saves are listed again every few seconds.
+auto MenuStatusLine() -> std::string {
+	static std::vector<ap::character_saves::Character> characters;
+	static Clock::time_point                            nextList;
+	switch (gClient->State()) {
+		case ap::ConnectionState::Connected: break;
+		case ap::ConnectionState::Connecting: return "Archipelago: connecting...";
+		default: {
+			std::lock_guard lock(gMutex);
+			return "Archipelago: not connected" + (gConfig.server.empty() ? std::string(" (ap-connect, or F9)") : " (" + gConfig.server + ")");
+		}
+	}
+	if (Clock::now() >= nextList) {
+		nextList   = Clock::now() + std::chrono::seconds(5);
+		characters = ap::character_saves::List(SavesDirectory());
+	}
+	std::lock_guard lock(gMutex);
+	const int         seedClass = SeedClass(gSlots);
+	const std::string seedName  = gBoundSession != 0 ? gSave.characterName : std::string();
+	return ap::character_saves::MenuLine(seedClass, seedName, characters, ClassName);
 }
 
 // Reads the difficulty of the game gLeftAreas came from out of the character's save (#130).
