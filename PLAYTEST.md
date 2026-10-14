@@ -55,6 +55,8 @@ Built, pushed and installed, still to check in game:
       kills the first Fallen with it. A tree-mode Barbarian with `starting_skills: 1` starts with Bash unlocked
       and his starting weapon gives +1 Bash (the skill page shows it at 1 before the first point). With
       `character_class: any`, a few seeds' starting Codex skills always include an attack or summon.
+  - [x] Tree-mode Sorceress with tree shuffle and `starting_skills: 2`: started with exactly Psychic Hammer
+        and Tiger Strike unlocked (shuffled into her tree), Psychic Hammer being the attack (2026-10-14).
 - [ ] Skill Blocklist (#16): put `Find Potion (Barbarian)` and `Teleport (Sorceress)` in `skill_blocklist`;
       neither shows up in the spoiler, and in tree mode a blocked skill stays padlocked for the whole game.
 - [ ] Codex tuning (#39, new seed needed): with `levels_per_copy: 3`, `levels_per_empowerment: 2` and
@@ -445,6 +447,8 @@ Prophecy at 200%)" for both banks.
       blacksmith choice then needs a different vendor list or goes.
 - [ ] A second parcel from Charsi refunds exactly 1,250 gold. Check one other act's blacksmith too (Fara
       3,750, Larzuk 20,000).
+- [x] With `shop_vendor: blacksmith` and prices at 100%: Charsi sells the Archipelago Parcel and Akara still
+      sells the Scrolls of Prophecy (2026-10-14). The 50%/200% prices above are still unchecked.
 - [ ] Akara still sells the Scrolls of Prophecy, now 2,000 to 200,000 gold, and the Writ of Absolution
       (1,000). A cheaper scroll than the next one refunds its doubled price, and the refund line names the
       next scroll's doubled price.
@@ -618,7 +622,7 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 - [x] Town Portal: D2RLoader doesn't report scroll use, so within 5 seconds every scroll and tome on the
       character crumbles, with a chat message (the starting scroll too).
 - [x] Town Portal Access brings a Tome of Town Portal, once.
-- [ ] Town Portal set aside (#37, new seed): within 5 seconds scrolls and tomes on the character (the
+- [x] Town Portal set aside (#37, new seed; works 2026-10-14): within 5 seconds scrolls and tomes on the character (the
       starting scroll, one from the debug panel, a bought tome with some charges) are set aside instead of
       crumbling, with a chat message; the log says how many charges. An empty tome goes too (the cow recipe takes one) and comes back empty, not with
       a default charge. **Log State** counts
@@ -630,7 +634,7 @@ Defaults (`act_keys` and `enforce_act_keys` on).
         set-aside ones.
   - [ ] A seed with `cow_level_checks` and `town_portal_lock` (goal past Normal): the spoiler log puts the cow
         checks after Town Portal Access.
-- [ ] Rejuvenation allowed (#37, `potion_lock_mode: rejuvenation_allowed`, new seed): a rejuvenation
+- [x] Rejuvenation allowed (#37, `potion_lock_mode: rejuvenation_allowed`, new seed; works 2026-10-14): a rejuvenation
       potion (`ap-debug give rvl 1`) stays in the inventory and drinks from the belt and the inventory; healing
       and mana potions are still set aside and blocked in the belt. The log's seed line says "(rejuvenation
       allowed)".
