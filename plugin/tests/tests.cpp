@@ -2181,8 +2181,8 @@ void TestPortalLock() {
 	// A scroll is one charge whatever its quantity says; a tome keeps its charges, at most 20.
 	EXPECT((SetAside(scroll, 0) == Held { scroll, 1 } && SetAside(scroll, 7) == Held { scroll, 1 }));
 	EXPECT((SetAside(tome, 13) == Held { tome, 13 } && SetAside(tome, 40) == Held { tome, MaxCharges }));
-	// An empty tome can't open a portal, so it stays.
-	EXPECT(!SetAside(tome, 0) && !SetAside(tome, -1));
+	// An empty tome goes too (the cow level recipe takes one), with no charges.
+	EXPECT((SetAside(tome, 0) == Held { tome, 0 } && SetAside(tome, -1) == Held { tome, 0 }));
 	EXPECT(!SetAside(CodeFromText("hp1"), 1));
 	// Town Portal Access brings its tome once, with the seed's charges, and none at 0.
 	EXPECT((AccessTome(false, 20) == Held { tome, 20 } && AccessTome(false, 5) == Held { tome, 5 }));

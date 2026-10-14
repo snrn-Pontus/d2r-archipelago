@@ -577,10 +577,12 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 - [x] Town Portal Access brings a Tome of Town Portal, once.
 - [ ] Town Portal set aside (#37, new seed): within 5 seconds scrolls and tomes on the character (the
       starting scroll, one from the debug panel, a bought tome with some charges) are set aside instead of
-      crumbling, with a chat message; the log says how many charges. An empty tome stays. **Log State** counts
+      crumbling, with a chat message; the log says how many charges. An empty tome goes too (the cow recipe takes one) and comes back empty, not with
+      a default charge. **Log State** counts
       them. `/send` Town Portal Access: they come back (a tome with the same charges; check the
       log's `set aside ... (n charges)` against the tooltip), plus a new tome with 20 charges. With a full
-      inventory they come back as you make room.
+      inventory they come back as you make room; with no 2x2 space left but some 1x1 cells, scrolls still
+      come back while the new tome waits.
   - [ ] With `tp_access_tome_charges: 5`, the new tome has 5 charges; with 0, no new tome comes, only the
         set-aside ones.
   - [ ] A seed with `cow_level_checks` and `town_portal_lock` (goal past Normal): the spoiler log puts the cow

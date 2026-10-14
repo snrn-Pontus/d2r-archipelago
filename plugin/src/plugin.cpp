@@ -2345,21 +2345,22 @@ void EnforceTownPortalLock(D2RL::PlayerHandle player) {
 			D2RL::ItemHandle item = D2RL::InvalidItemHandle;
 			auto result = gItems->createItem(gContext, player, &spec, &item);
 			// A full inventory: it waits for room (nothing goes to the ground, #109), said once.
+			// Set-aside scrolls may still fit where the tome doesn't, so they're tried anyway.
 			if (result != D2RL::Items::Result::Success) {
 				if (!gPortalTomeWaiting) {
 					gPortalTomeWaiting = true;
 					Log("Archipelago: couldn't give the Tome of Town Portal (" + std::to_string(static_cast<uint32_t>(result)) + "); it waits for room.");
 					Feed("Archipelago: Town Portal Access! Make room in your inventory for your Tome of Town Portal.");
 				}
-				return;
+			} else {
+				gPortalTomeWaiting = false;
+				{
+					std::lock_guard lock(gMutex);
+					gSave.portalTomeGiven = true;
+					SaveNow();
+				}
+				Feed("Archipelago: Town Portal Access! Here's a Tome of Town Portal with " + std::to_string(tome->charges) + " charges.");
 			}
-			gPortalTomeWaiting = false;
-			{
-				std::lock_guard lock(gMutex);
-				gSave.portalTomeGiven = true;
-				SaveNow();
-			}
-			Feed("Archipelago: Town Portal Access! Here's a Tome of Town Portal with " + std::to_string(tome->charges) + " charges.");
 		}
 		if (held.empty()) {
 			return;

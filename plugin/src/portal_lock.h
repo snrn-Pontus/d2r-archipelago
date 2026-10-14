@@ -31,8 +31,8 @@ struct Held {
 	bool operator==(const Held&) const = default;
 };
 
-// What's set aside for a scroll or tome with this quantity, or none for an
-// empty tome: it can't open a portal, so it stays where it is.
+// What's set aside for a scroll or tome with this quantity. An empty tome goes
+// too: the cow level recipe takes one whatever its charges.
 inline auto SetAside(uint32_t code, int quantity) -> std::optional<Held> {
 	if (!IsPortal(code)) {
 		return std::nullopt;
@@ -40,10 +40,7 @@ inline auto SetAside(uint32_t code, int quantity) -> std::optional<Held> {
 	if (!IsTome(code)) {
 		return Held { code, 1 };
 	}
-	if (quantity <= 0) {
-		return std::nullopt;
-	}
-	return Held { code, std::min(quantity, MaxCharges) };
+	return Held { code, std::clamp(quantity, 0, MaxCharges) };
 }
 
 // The tome Town Portal Access brings: once, and none at 0 charges.
