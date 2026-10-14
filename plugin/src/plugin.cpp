@@ -1035,12 +1035,16 @@ auto QuestName(uint32_t flag) -> std::string {
 
 // A fallback completion (source * 1000 + difficulty * 100 + flag, difficulty resolved)
 // while the quest log decides: logged once, for comparing the two, and kept in case
-// the log can't be read after all.
-void HoldFallback(int quest) {
+// the log can't be read after all. False if it no longer decides (it just failed),
+// so the caller completes the quest itself.
+auto HoldFallback(int quest) -> bool {
 	const auto source = static_cast<QuestSource>(quest / 1000);
 	bool first = false;
 	{
 		std::lock_guard lock(gMutex);
+		if (!QuestLogDecides()) {
+			return false;
+		}
 		first = std::ranges::find(gHeldFallbacks, quest) == gHeldFallbacks.end();
 		if (first) {
 			gHeldFallbacks.push_back(quest);
@@ -1050,6 +1054,7 @@ void HoldFallback(int quest) {
 		Log("Archipelago: " + std::string(DifficultyNames[quest % 1000 / 100]) + " " + QuestName(static_cast<uint32_t>(quest % 100)) + ": "
 		    + QuestSourceNames[static_cast<int>(source)] + " would complete it; the game's quest log decides.");
 	}
+	return true;
 }
 
 // The quest log can't be read after all: the fallbacks complete quests again, from the ones held. gMutex held.
@@ -1264,6 +1269,9 @@ void BindSession(uint64_t session) {
 		gSent.clear();
 		gGoalSent = false;
 		gWarnedActs.clear();
+		// The quest log reads again for this seed (its own baseline), and fallbacks held for another go.
+		gQuestLogQueued.clear();
+		gHeldFallbacks.clear();
 		gKeyItems = UINT64_MAX;
 		level = gPlayerLevel;
 		gBoundSession = session;
@@ -3975,14 +3983,12 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 
 	std::vector<int> quests;
 	int questDifficulty = -1;
-	bool questLogDecides = false;
 	{
 		std::lock_guard lock(gMutex);
 		quests.swap(gQuestQueue);
 		if (gDifficultyKnown) {
 			questDifficulty = std::clamp(gDifficulty, 0, 2);
 		}
-		questLogDecides = QuestLogDecides();
 	}
 	// An area trigger waiting for the difficulty holds back everything after it, to keep the order.
 	std::vector<int> waiting;
@@ -3995,8 +4001,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		if (difficulty == CurrentDifficulty) {
 			difficulty = questDifficulty;
 		}
-		if (IsFallback(static_cast<QuestSource>(quest / 1000)) && questLogDecides) {
-			HoldFallback(quest / 1000 * 1000 + difficulty * 100 + quest % 100);
+		if (IsFallback(static_cast<QuestSource>(quest / 1000)) && HoldFallback(quest / 1000 * 1000 + difficulty * 100 + quest % 100)) {
 			continue;
 		}
 		if (static_cast<QuestSource>(quest / 1000) == QuestSource::Event) {
