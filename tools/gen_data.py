@@ -310,9 +310,14 @@ def main() -> None:
     areas = []
     # The act of every level id, for counting kills per act.
     level_acts = {}
+    # The level id of each waypoint, by its index in the player's waypoint bits.
+    waypoints = {}
     for row in read_table(excel / "levels.txt"):
         if row.get("Id", "").isdigit() and row.get("Act", "").isdigit():
             level_acts[int(row["Id"])] = int(row["Act"])
+            if row.get("Waypoint", "") not in ("", "255"):
+                waypoints[int(row["Waypoint"])] = (int(row["Id"]), int(row["Act"]), row["*StringName"])
+    assert sorted(waypoints) == list(range(len(waypoints))), "waypoint indices have a gap"
     for row in read_table(excel / "levels.txt"):
         if not row.get("Id", "").isdigit():
             continue
@@ -549,6 +554,9 @@ def main() -> None:
     h += ["};", "", "// The act of each level id (0-4), 255 for none.", "inline constexpr uint8_t LevelActs[] = {"]
     acts_list = [level_acts.get(level, 255) for level in range(top + 1)]
     h += ["\t" + ", ".join(str(act) for act in acts_list[i:i + 20]) + "," for i in range(0, len(acts_list), 20)]
+    h += ["};", "", "// Each waypoint's area, in the order of the player's waypoint bits (Levels.txt Waypoint).",
+          "inline constexpr Area Waypoints[] = {"]
+    h += [f"\t{{ {lid}, {act}, {cstr(name)} }}," for lid, act, name in (waypoints[index] for index in range(len(waypoints)))]
     h += ["};", "", "// The Secret Cow Level and its monster rows.", "inline constexpr uint16_t CowLevel = 39;",
           f"inline constexpr uint16_t CowMonster = {cow};", f"inline constexpr uint16_t CowKingMonster = {cow_king};"]
     h += ["", "// Experience needed for character levels 1..99.", "inline constexpr uint32_t Experience[] = {"]

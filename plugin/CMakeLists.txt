@@ -19,6 +19,7 @@ add_library(ap_core STATIC
 	src/mapsense.cpp
 	src/native_scan.cpp
 	src/personalize.cpp
+	src/player_records.cpp
 	src/quest_record.cpp
 	src/randomizer.cpp
 	src/save_state.cpp
