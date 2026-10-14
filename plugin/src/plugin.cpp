@@ -1083,6 +1083,16 @@ auto HoldFallback(int quest) -> bool {
 	return true;
 }
 
+// ap-connect is unbinding the seed (UI thread, where the record is read): what the quest log
+// shows done now was that seed's, even what changed since the last read. gMutex held.
+void NoteQuestLogBeforeUnbind() {
+	ap::quest_record::Bits bits {};
+	if (gQuestLogPointer != 0 && gInGame && gBoundSession != 0 && gQuestLogAtJoin
+		&& ap::quest_record::Read(gQuestLogPointer, bits) == ap::quest_record::ReadResult::Ok) {
+		gQuestLogSeenBound |= ap::quest_record::DoneMask(bits) & ~*gQuestLogAtJoin;
+	}
+}
+
 // The quest log can't be read after all: the fallbacks complete quests again, from the ones held. gMutex held.
 auto FailQuestLog(const std::string& reason) -> std::string {
 	gQuestLogFailed = true;
@@ -4733,6 +4743,7 @@ auto CommandConnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 			if (!gPendingSeed && (!gPendingAreas.empty() || !gPendingQuestItems.empty())) {
 				gPendingSeed = gSavePath;
 			}
+			NoteQuestLogBeforeUnbind();
 		}
 		gBoundSession = 0;
 	}
