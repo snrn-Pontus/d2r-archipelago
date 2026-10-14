@@ -217,6 +217,8 @@ std::vector<int64_t>  gCollectionQueue;
 struct QueuedTrap {
 	ap::loot::Loot    loot;
 	int               level = 1;
+	// The save of the seed it came from: after ap-connect to another seed or slot it's let go.
+	std::filesystem::path save;
 	// When an area ambush first waited for its area's monsters.
 	Clock::time_point waiting {};
 };
@@ -3168,7 +3170,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			if (commands.trap) {
 				if (!again) {
 					std::lock_guard lock(gMutex);
-					gTrapQueue.push_back({ loot, characterLevel });
+					gTrapQueue.push_back({ loot, characterLevel, gSavePath });
 				}
 			} else {
 				for (auto& command : commands.commands) {
@@ -3399,8 +3401,13 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 			rewardSave = gSavePath;
 			gNextRewardCommandsAt = Clock::now() + CommandGap;
 		}
-		// Traps, like rewards, only go off on the seed's character.
-		if (!gTrapQueue.empty() && Clock::now() >= gNextTrapAt && !TrapsHeld(settings.waitForTown)
+		// Traps, like rewards, only go off on the seed's character, and only for the seed they came from.
+		if (gBoundSession != 0) {
+			if (const auto dropped = std::erase_if(gTrapQueue, [](const QueuedTrap& trap) { return trap.save != gSavePath; }); dropped > 0) {
+				Log("Archipelago: let go of " + std::to_string(dropped) + " traps queued for another seed or slot.");
+			}
+		}
+		if (!gTrapQueue.empty() && gBoundSession != 0 && Clock::now() >= gNextTrapAt && !TrapsHeld(settings.waitForTown)
 			&& CharacterVerdict(gSlots) == ap::character::Verdict::Match) {
 			traps.push_back(gTrapQueue.front());
 			gTrapQueue.erase(gTrapQueue.begin());
@@ -3512,8 +3519,14 @@ void __cdecl ApplyDeathLink(const D2RL::PluginContext*, void*) noexcept {
 			return;
 		}
 		if (slots.deathLinkMode == ap::death_link::Mode::RandomTrap) {
+			// Queued for the bound seed's save, so ap-connect to another one lets it go. Before the
+			// seed is bound there's no save to tie it to, and it's let go at once.
+			if (gBoundSession == 0) {
+				Log("Archipelago: DeathLink trap let go: the seed's save isn't bound yet.");
+				return;
+			}
 			std::mt19937 random(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
-			gTrapQueue.push_back({ ap::death_link::PickTrap(slots.deathLinkTraps, random), level });
+			gTrapQueue.push_back({ ap::death_link::PickTrap(slots.deathLinkTraps, random), level, gSavePath });
 			return;
 		}
 		if (slots.deathLinkMode == ap::death_link::Mode::Die) {
