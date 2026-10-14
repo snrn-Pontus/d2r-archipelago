@@ -25,7 +25,7 @@ before your rewards arrive. Keep it on your character (not the shared stash); a 
 
 `skill_tree_shuffle` deals every class's tree out of skills from all classes, each in a row of its own
 level, with icons and synergies to match: a synergy names a skill in the same tree. The Druid keeps its
-shapeshifts. It works in both modes; in tree mode, the shuffled tree is the one you unlock.
+shapeshifts. It turns on tree mode, so the shuffled tree is the one you unlock.
 
 ## What counts as a location?
 

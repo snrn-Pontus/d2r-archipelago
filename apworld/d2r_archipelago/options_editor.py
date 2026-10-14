@@ -17,7 +17,7 @@ from typing import Any
 
 from Options import Choice, NamedRange, Option, OptionSet, Range, Toggle, Visibility
 
-from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions
+from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions, SkillMode
 
 GAME = "Diablo II Resurrected"
 TITLE = f"{GAME} Options"
@@ -101,6 +101,16 @@ def default_value(option: type[Option]) -> Any:
     if value is not None:
         return value
     return option.range_start if issubclass(option, Range) else None
+
+
+def linked_changes(name: str, value: Any) -> dict[str, Any]:
+    """Other options a change settles, so the editor shows what the seed will do: Skill Tree Shuffle needs (and turns
+    on) Skill Mode tree."""
+    if name == "skill_tree_shuffle" and value:
+        return {"skill_mode": SkillMode.option_tree}
+    if name == "skill_mode" and value != SkillMode.option_tree:
+        return {"skill_tree_shuffle": False}
+    return {}
 
 
 def game_section(data: dict) -> dict:
@@ -341,6 +351,8 @@ def run_editor(path: str | None = None) -> None:
 
         def fill(self) -> None:
             self.list.clear_widgets()
+            # Sets an option's control from code, for linked_changes.
+            self.setters: dict[str, Any] = {}
             for group, names in grouped_options():
                 self.list.add_widget(wrapped(f"[b]{group}[/b]", markup=True, font_size=sp(19), color=(1, 0.8, 0.4, 1)))
                 for name in names:
@@ -361,18 +373,27 @@ def run_editor(path: str | None = None) -> None:
                     del self.kept[name]
                     for note in notes:
                         row.remove_widget(note)
+                for other, linked in linked_changes(name, value).items():
+                    if other in self.setters:
+                        self.setters[other](linked)
+
+            def set_control(widget, attribute: str, shown: Any, value: Any) -> None:
+                setattr(widget, attribute, shown)
+                changed(value)
 
             kind = option_kind(option)
             value = self.values[name]
             if kind == "toggle":
                 box = CheckBox(active=value, size_hint_x=None, width=dp(32))
                 box.bind(active=lambda _, active: changed(active))
+                self.setters[name] = lambda new: set_control(box, "active", bool(new), bool(new))
                 line.add_widget(box)
                 line.add_widget(Label())
             elif kind == "choice":
                 labels = {option.get_option_name(number): number for number in option.name_lookup}
                 spinner = Spinner(text=option.get_option_name(value), values=list(labels), size_hint_x=None, width=dp(220))
                 spinner.bind(text=lambda _, text: changed(labels[text]))
+                self.setters[name] = lambda new: set_control(spinner, "text", option.get_option_name(new), new)
                 line.add_widget(spinner)
                 line.add_widget(Label())
             elif kind == "range":

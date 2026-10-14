@@ -4,8 +4,8 @@ from Utils import parse_yaml
 
 from .. import GAME, options
 from ..options import OPTION_PRESETS, D2ROptions
-from ..options_editor import (OPTIONS, grouped_options, load_options, name_problem, option_kind, preset_values,
-                              read_value, render_yaml, save_options)
+from ..options_editor import (OPTIONS, grouped_options, linked_changes, load_options, name_problem, option_kind,
+                              preset_values, read_value, render_yaml, save_options)
 
 FILE = """# My settings.
 name: Old
@@ -39,6 +39,14 @@ class TestOptionsEditor(unittest.TestCase):
                     self.assertTrue(option.__doc__)
         listed = [name for _, names in grouped_options() for name in names]
         self.assertCountEqual(listed, OPTIONS)
+
+    def test_tree_shuffle_and_skill_mode_go_together(self) -> None:
+        tree, codex = options.SkillMode.option_tree, options.SkillMode.option_codex
+        self.assertEqual(linked_changes("skill_tree_shuffle", True), {"skill_mode": tree})
+        self.assertEqual(linked_changes("skill_tree_shuffle", False), {})
+        self.assertEqual(linked_changes("skill_mode", codex), {"skill_tree_shuffle": False})
+        self.assertEqual(linked_changes("skill_mode", tree), {})
+        self.assertEqual(linked_changes("goal", 2), {})
 
     def test_reads_plain_and_template_values(self) -> None:
         values, kept = load_options({GAME: {

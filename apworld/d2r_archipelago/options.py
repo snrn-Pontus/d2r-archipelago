@@ -55,7 +55,8 @@ class SkillMode(Choice):
     """How skills reach you.
     codex: every skill you receive goes on your Archipelago Codex charms, from any class, at a level set
     by copies, Codex Empowerments and your character level.
-    tree: the skills are the 30 in your class's skill tree (shuffled with Skill Tree Shuffle). Each one
+    tree: the skills are the 30 in your class's skill tree (shuffled with Skill Tree Shuffle, which
+    picks tree mode on its own). Each one
     stays locked until its item arrives; then you spend skill points on it as usual. Extra copies and
     Skill Points give skill points. Skill Pool Size, Skill Focus, Skill Classes, Skill Level Scaling and
     Codex Empowerments don't apply. With "any" class, the seed picks one."""
@@ -707,7 +708,7 @@ class BetterMagic(Range):
 class SkillTreeShuffle(Toggle):
     """Every class's skill tree is dealt skills from all classes, each in a row of its own level, with
     synergies pointing at skills in the same tree. The Druid's shapeshifts stay with the Druid, and the
-    Warlock's tree stays as it is. With Skill Mode tree, your tree's skills are the ones you find."""
+    Warlock's tree stays as it is. Turns on Skill Mode tree: your tree's skills are the ones you find."""
     display_name = "Skill Tree Shuffle"
 
 

@@ -134,7 +134,10 @@ class D2RWorld(World):
         self.skill_cap = 1 << 30
         self.skill_pool: list[str] = []
         self.starting: list[str] = []
-        self.tree_mode = self.options.skill_mode == self.options.skill_mode.option_tree
+        # Skill Tree Shuffle turns on tree mode: in Codex mode the class skills all stay locked, so a shuffled tree
+        # would only move locked icons around.
+        self.tree_mode = (self.options.skill_mode == self.options.skill_mode.option_tree
+                          or bool(self.options.skill_tree_shuffle))
         # Tree mode needs a class: with "any", the seed picks one (the Warlock only with Include Warlock).
         self.class_choice = self.options.character_class.value
         if self.tree_mode and self.class_choice == self.options.character_class.option_any:
