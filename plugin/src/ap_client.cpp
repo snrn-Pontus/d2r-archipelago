@@ -132,6 +132,9 @@ auto ReadSlotData(const json& data) -> SlotData {
 	slots.actKeys = Get(data, "act_keys", false);
 	slots.skillScaling = Get(data, "skill_scaling", 0);
 	slots.skillScalingCap = Get(data, "skill_scaling_cap", 0);
+	slots.levelsPerCopy = Get(data, "levels_per_copy", 1);
+	slots.levelsPerEmpowerment = Get(data, "levels_per_empowerment", 1);
+	slots.codexLevelCap = Get(data, "codex_level_cap", 60);
 	slots.goalQuest = Get(data, "goal_quest", 40);
 	slots.areaChecks = Get(data, "area_checks", true);
 	for (const int64_t location : Integers(data, "side_areas")) {

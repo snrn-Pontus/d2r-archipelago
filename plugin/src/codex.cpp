@@ -8,7 +8,7 @@
 
 namespace ap::codex {
 
-auto Entries(const std::vector<NetworkItem>& items, int characterLevel, int scaling, int cap) -> std::vector<Entry> {
+auto Entries(const std::vector<NetworkItem>& items, int characterLevel, const Leveling& leveling) -> std::vector<Entry> {
 	std::vector<Entry> entries;
 	std::unordered_map<uint32_t, size_t> position;
 	int empowerments = 0;
@@ -21,17 +21,16 @@ auto Entries(const std::vector<NetworkItem>& items, int characterLevel, int scal
 			if (added) {
 				entries.push_back({ skill, 0 });
 			}
-			++entries[found->second].level;
+			entries[found->second].level += leveling.perCopy;
 		}
 	}
-	int scaled = scaling > 0 ? std::max(characterLevel, 0) / scaling : 0;
-	if (cap > 0) {
-		scaled = std::min(scaled, cap);
+	int scaled = leveling.scaling > 0 ? std::max(characterLevel, 0) / leveling.scaling : 0;
+	if (leveling.scalingCap > 0) {
+		scaled = std::min(scaled, leveling.scalingCap);
 	}
-	const int bonus = empowerments + scaled;
+	const int bonus = empowerments * leveling.perEmpowerment + scaled;
 	for (auto& entry : entries) {
-		// D2 shows skill levels up to 99; stay well inside that.
-		entry.level = std::min(entry.level + bonus, 60);
+		entry.level = std::min(entry.level + bonus, leveling.levelCap);
 	}
 	return entries;
 }

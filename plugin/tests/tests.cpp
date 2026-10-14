@@ -63,19 +63,29 @@ void TestCodexLevels() {
 		{ ap::ids::LootBase + 1, 0, 1, 0 },      // a Perfect Gem, ignored
 	};
 	// Level 13 with +1 per 3 levels: 4 from scaling, 1 empowerment, plus copies.
-	const auto entries = ap::codex::Entries(items, 13, 3);
+	const auto entries = ap::codex::Entries(items, 13, { .scaling = 3 });
 	EXPECT(entries.size() == 2);
 	EXPECT((entries[0] == ap::codex::Entry { 54, 2 + 1 + 4 }));
 	EXPECT((entries[1] == ap::codex::Entry { 67, 1 + 1 + 4 }));
 	// No scaling, and the fingerprint follows the levels.
-	const auto flat = ap::codex::Entries(items, 13, 0);
+	const auto flat = ap::codex::Entries(items, 13, {});
 	EXPECT(flat[0].level == 3 && flat[1].level == 2);
 	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) != ap::codex::Fingerprint(flat, 0, 2, 4));
-	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) == ap::codex::Fingerprint(ap::codex::Entries(items, 14, 3), 0, 2, 4));
+	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) == ap::codex::Fingerprint(ap::codex::Entries(items, 14, { .scaling = 3 }), 0, 2, 4));
 	EXPECT(ap::codex::Fingerprint(entries, 0, 2, 4) != ap::codex::Fingerprint(entries, 0, 2, 3));
 	// Scaling stops at its cap: level 60 at +1 per 5 levels would be +12.
-	EXPECT(ap::codex::Entries(items, 60, 5, 10)[1].level == 1 + 1 + 10);
-	EXPECT(ap::codex::Entries(items, 60, 5, 0)[1].level == 1 + 1 + 12);
+	EXPECT(ap::codex::Entries(items, 60, { .scaling = 5, .scalingCap = 10 })[1].level == 1 + 1 + 10);
+	EXPECT(ap::codex::Entries(items, 60, { .scaling = 5 })[1].level == 1 + 1 + 12);
+	// Levels per copy and per empowerment: Teleport's 2 copies give 3 each, the empowerment 2.
+	const auto rich = ap::codex::Entries(items, 13, { .scaling = 3, .perCopy = 3, .perEmpowerment = 2 });
+	EXPECT((rich[0] == ap::codex::Entry { 54, 2 * 3 + 2 + 4 }));
+	EXPECT((rich[1] == ap::codex::Entry { 67, 3 + 2 + 4 }));
+	// The level cap: 60 by default, and whatever the seed sets.
+	std::vector<NetworkItem> many(items);
+	many.insert(many.end(), 70, { ap::ids::EmpowermentItem, 0, 1, 0 });
+	EXPECT(ap::codex::Entries(many, 1, {})[0].level == 60);
+	EXPECT(ap::codex::Entries(many, 1, { .levelCap = 99 })[0].level == 2 + 71);
+	EXPECT(ap::codex::Entries(items, 13, { .scaling = 3, .levelCap = 5 })[0].level == 5);
 
 	// Your class's skills get their own charm; other classes' go on charms from OtherClassChunk.
 	const std::vector<ap::codex::Entry> mixed = { { 54, 3 }, { 126, 2 }, { 67, 1 }, { 132, 1 } };

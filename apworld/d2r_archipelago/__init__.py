@@ -574,14 +574,15 @@ class D2RWorld(World):
         return starting[:weakest] + [self.random.choice(useful)] + starting[weakest + 1:]
 
     def pick_skill_pool(self, rest: list[str], count: int) -> list[str]:
-        """The pool's distinct skills. class_weighted takes half from the chosen class, and when either half
-        runs out, the other one makes up the difference."""
+        """The pool's distinct skills. class_weighted takes class_weight_percent of them from the chosen class,
+        and when either side runs out, the other one makes up the difference."""
         own = self.class_name()
         if self.options.skill_focus != self.options.skill_focus.option_class_weighted or not own or self.tree_mode:
             return self.random.sample(rest, count)
         mine = [name for name in rest if name in self.item_name_groups[own]]
         others = [name for name in rest if name not in self.item_name_groups[own]]
-        from_others = min(len(others), count - min(len(mine), count // 2))
+        share = count * self.options.class_weight_percent.value // 100
+        from_others = min(len(others), count - min(len(mine), share))
         from_class = min(len(mine), count - from_others)
         return self.random.sample(mine, from_class) + self.random.sample(others, from_others)
 
@@ -653,6 +654,9 @@ class D2RWorld(World):
             "act_keys": bool(self.options.act_keys),
             "skill_scaling": self.options.skill_level_scaling.value,
             "skill_scaling_cap": self.options.skill_scaling_cap.value,
+            "levels_per_copy": self.options.levels_per_copy.value,
+            "levels_per_empowerment": self.options.levels_per_empowerment.value,
+            "codex_level_cap": self.options.codex_level_cap.value,
             "goal_quest": BOSS_QUESTS[self.options.goal_act.value - 1],
             "area_checks": bool(self.options.area_checks),
             # The side areas this seed picked, as location ids; the plugin only sends these.

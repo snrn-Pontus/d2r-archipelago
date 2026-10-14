@@ -10,8 +10,10 @@ character level 6 for those, and on a shared charm they would switch off your ow
 
 A Codex skill's level is the number of copies of it you've found (`skill_copies`), plus your Codex
 Empowerments, plus one for every few character levels (`skill_level_scaling`, default every 5 levels, up to
-`skill_scaling_cap`, default +10), so skills found early keep up. `skill_focus` picks the pool: any skills, half from your class, or fewer skills
-with more copies each.
+`skill_scaling_cap`, default +10), so skills found early keep up. `levels_per_copy` and `levels_per_empowerment`
+make each copy or Empowerment worth more than +1, and `codex_level_cap` (default 60) is the most a skill gets.
+`skill_focus` picks the pool: any skills, a share from your class (`class_weight_percent`, default half), or fewer
+skills with more copies each.
 
 ### Tree mode
 
