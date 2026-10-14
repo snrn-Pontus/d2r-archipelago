@@ -4440,6 +4440,14 @@ auto CommandConnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 		// The bound seed's counters only reach the file every so often.
 		if (gBoundSession != 0) {
 			SaveNow();
+			// Areas and quest items still waiting for the difficulty were found for that seed,
+			// not for whichever this connects to.
+			if (!gPendingAreas.empty() || !gPendingQuestItems.empty()) {
+				Log("Archipelago: connecting elsewhere; letting go of " + std::to_string(gPendingAreas.size()) + " areas and "
+				    + std::to_string(gPendingQuestItems.size()) + " quest items still waiting for the difficulty.");
+				gPendingAreas.clear();
+				gPendingQuestItems.clear();
+			}
 		}
 		gBoundSession = 0;
 	}
