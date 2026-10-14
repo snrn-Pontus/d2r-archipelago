@@ -465,8 +465,10 @@ only log "... would complete it; the game's quest log decides." Use a seed-bound
 - [ ] An older character of the seed's class on a fresh seed: "quest log read for this seed; N quests done before
       it don't count", and none of those send.
 - [ ] Nightmare: the first game there reads its quest log; Nightmare quests count on Nightmare.
-- [ ] Debug panel "Complete Quests" (ap-core quests) on a fresh seed's character, a few seconds into its first
-      game, even before its first kill: every quest sends once the difficulty is known.
+- [ ] Debug panel "Complete Quests" (ap-core quests) on a fresh seed's character in its first game, even before
+      its first kill: every quest sends once the difficulty is known.
+- [x] Rejoining: the client's record is filled before the plugin hears of the join (2026-10-14: made at
+      16:23:53.777, filled 11 ms later, GameJoined at .915), so the game's first read already has it.
 - [ ] A mule (another class): nothing sends from its quest log.
 
 ## 2d. Difficulty and class before a kill (issue #126)

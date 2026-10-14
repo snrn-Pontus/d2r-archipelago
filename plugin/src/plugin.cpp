@@ -171,8 +171,8 @@ std::vector<int>      gHeldFallbacks;
 // and the ones its last read showed done: a quest must show done twice in a row to count.
 std::set<int>         gQuestLogQueued;
 uint64_t              gQuestLogLastDone = 0;
-// What the quest log showed done as this game began (its first read once the server has
-// sent it): a seed's baseline comes from this, so quests done later in the game are progress.
+// What the quest log showed done as this game began (its first read): a seed's baseline
+// comes from this, so quests done later in the game are progress.
 std::optional<uint64_t> gQuestLogAtJoin;
 // Quests done in this game while another seed was bound (ap-connect to a new seed in game):
 // they were that seed's, so they don't count for this one.
@@ -1110,8 +1110,9 @@ void __cdecl QuestLogWork(const D2RL::PluginContext*, void*) noexcept {
 			const uint64_t done      = ap::quest_record::DoneMask(bits);
 			const uint64_t confirmed = done & gQuestLogLastDone;
 			gQuestLogLastDone        = done;
-			// Right after joining, the server may not have sent the record yet.
-			if (!gQuestLogAtJoin && Clock::now() - gPlayerReadyAt > std::chrono::seconds(5)) {
+			// The server's record arrives before D2RLoader says the game was joined (measured 2026-10-14:
+			// filled 11 ms after the client made it, 127 ms before GameJoined), so the first read has it.
+			if (!gQuestLogAtJoin) {
 				gQuestLogAtJoin = done;
 			}
 			if (gDifficultyKnown && gBoundSession != 0 && CharacterVerdict(gSlots) == ap::character::Verdict::Match) {
