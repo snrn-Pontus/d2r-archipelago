@@ -174,6 +174,9 @@ uint64_t              gQuestLogLastDone = 0;
 // What the quest log showed done as this game began (its first read once the server has
 // sent it): a seed's baseline comes from this, so quests done later in the game are progress.
 std::optional<uint64_t> gQuestLogAtJoin;
+// Quests done in this game while another seed was bound (ap-connect to a new seed in game):
+// they were that seed's, so they don't count for this one.
+uint64_t              gQuestLogOtherSeed = 0;
 // Quest log completions waiting for the render thread, as (bound session, difficulty * 100 + flag):
 // one queued for a seed that's no longer bound is dropped, not given to the next.
 std::vector<std::pair<uint64_t, int>> gQuestLogCompletions;
@@ -889,7 +892,9 @@ void Banner(const std::string& text, ap::notify::Style style) {
 	ap::notify::Show(text, style);
 }
 
-void AddChecks(const std::vector<int64_t>& locations) {
+// session, if not 0, is the bound session the checks were found for: if another is bound
+// by now (or none), they're dropped, not given to it.
+void AddChecks(const std::vector<int64_t>& locations, uint64_t session = 0) {
 	bool added = false;
 	bool bound = false;
 	std::vector<int> locked;
@@ -899,6 +904,9 @@ void AddChecks(const std::vector<int64_t>& locations) {
 	const std::set<int> unlocked = gClient ? UnlockedActs() : std::set<int> { 0 };
 	{
 		std::lock_guard lock(gMutex);
+		if (session != 0 && gBoundSession != session) {
+			return;
+		}
 		bound = gBoundSession != 0;
 		for (const int64_t location : locations) {
 			if (gBoundSession != 0 ? gSave.checks.insert(location).second : gUnbound.insert(location).second) {
@@ -948,12 +956,12 @@ void AddChecks(const std::vector<int64_t>& locations) {
 	}
 }
 
-void ReachGoal() {
+void ReachGoal(uint64_t session = 0) {
 	{
 		std::lock_guard lock(gMutex);
 		// Unbound, the goal quest's check waits in gUnbound and BindSession tells
 		// from it whether the seed it binds to was won (the goal isn't known yet).
-		if (gBoundSession == 0) {
+		if (gBoundSession == 0 || (session != 0 && gBoundSession != session)) {
 			return;
 		}
 		gSave.goalReached = true;
@@ -981,9 +989,16 @@ auto QuestItemCheck(uint32_t code, int difficulty) -> std::optional<int64_t>;
 constexpr uint32_t BossQuestFlags[] = { 6, 14, 22, 26, 40 };
 constexpr uint32_t DenOfEvilFlag    = 1;
 
-void CompleteQuest(uint32_t difficulty, uint32_t flag, QuestSource source) {
+// session, if not 0, is the bound session the quest was found for (AddChecks).
+void CompleteQuest(uint32_t difficulty, uint32_t flag, QuestSource source, uint64_t session = 0) {
 	if (difficulty >= 3) {
 		return;
+	}
+	if (session != 0) {
+		std::lock_guard lock(gMutex);
+		if (gBoundSession != session) {
+			return;
+		}
 	}
 	for (const auto& quest : ap::data::Quests) {
 		if (quest.flag == flag) {
@@ -1014,15 +1029,15 @@ void CompleteQuest(uint32_t difficulty, uint32_t flag, QuestSource source) {
 				Feed("Archipelago: Akara's respec takes your Archipelago skills away. After it, use Relearn Skills (F9) and type ap-relearn confirm. "
 				     "A Writ of Absolution from any potion seller respecs and unlocks them again by itself.");
 			}
-			AddChecks({ location });
+			AddChecks({ location }, session);
 			const ap::SlotData slots = gClient->Slots();
 			if (flag == ap::quests::SearchForCainFlag && slots.questItemChecks) {
 				if (const auto scroll = QuestItemCheck(ap::quests::InifussScroll, static_cast<int>(difficulty))) {
-					AddChecks({ *scroll });
+					AddChecks({ *scroll }, session);
 				}
 			}
 			if (static_cast<int>(quest.flag) == slots.goalQuest && static_cast<int>(difficulty) == slots.goal) {
-				ReachGoal();
+				ReachGoal(session);
 			}
 		}
 	}
@@ -1117,7 +1132,8 @@ void __cdecl QuestLogWork(const D2RL::PluginContext*, void*) noexcept {
 				if (baseline != gSave.questBaseline.end()) {
 					for (const auto& quest : ap::data::Quests) {
 						const uint64_t bit = uint64_t { 1 } << quest.flag;
-						if ((confirmed & bit) != 0 && (baseline->second & bit) == 0 && gQuestLogQueued.insert(difficulty * 100 + quest.flag).second) {
+						if ((confirmed & bit) != 0 && (baseline->second & bit) == 0 && (gQuestLogOtherSeed & bit) == 0
+						    && gQuestLogQueued.insert(difficulty * 100 + quest.flag).second) {
 							gQuestLogCompletions.emplace_back(gBoundSession, difficulty * 100 + quest.flag);
 						}
 					}
@@ -1200,6 +1216,12 @@ void BindSession(uint64_t session) {
 	{
 		std::lock_guard lock(gMutex);
 		const std::filesystem::path path = SaveDirectory() / (SanitizeFileName(seed) + "_" + SanitizeFileName(slot) + ".txt");
+		// Another seed in the middle of a game: what this game's quest log already shows done was the
+		// other seed's, and it's where this one starts from.
+		if (path != gSavePath && gQuestLogAtJoin) {
+			gQuestLogOtherSeed |= gQuestLogLastDone;
+			gQuestLogAtJoin = *gQuestLogAtJoin | gQuestLogLastDone;
+		}
 		// What the old file hasn't got yet (kill counts the render thread hasn't written, or
 		// anything since saving started failing) goes there first. gSavePath stays set through an
 		// ap-connect's unbind, so this covers that too.
@@ -4023,15 +4045,13 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		gQuestQueue.insert(gQuestQueue.begin(), waiting.begin(), waiting.end());
 	}
 	std::vector<std::pair<uint64_t, int>> questLog;
-	uint64_t questLogSession = 0;
 	{
 		std::lock_guard lock(gMutex);
 		questLog.swap(gQuestLogCompletions);
-		questLogSession = gBoundSession;
 	}
 	for (const auto& [queuedFor, quest] : questLog) {
-		if (queuedFor == questLogSession && queuedFor != 0) {
-			CompleteQuest(static_cast<uint32_t>(quest / 100), static_cast<uint32_t>(quest % 100), QuestSource::QuestLog);
+		if (queuedFor != 0) {
+			CompleteQuest(static_cast<uint32_t>(quest / 100), static_cast<uint32_t>(quest % 100), QuestSource::QuestLog, queuedFor);
 		}
 	}
 	ReadLeftDifficulty(false);
@@ -4224,6 +4244,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 				gQuestLogQueued.clear();
 				gQuestLogLastDone = 0;
 				gQuestLogAtJoin.reset();
+				gQuestLogOtherSeed = 0;
 				gHeldFallbacks.clear();
 			}
 			gInGame = true;
