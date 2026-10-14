@@ -6,8 +6,10 @@ LOCATION_BASE = 2_420_000
 
 DIFFICULTIES = ("Normal", "Nightmare", "Hell")
 ACTS = ("Act I", "Act II", "Act III", "Act IV", "Act V")
-LEVEL_STEP = 5
 LEVEL_CAPS = (30, 60, 90)
+# Every character level from 2 to the last cap has its own location id (LOCATION_BASE + 2000 + level), so
+# level_check_step only picks which of them a seed has.
+FIRST_LEVEL_CHECK = 2
 
 # Loot ids are ITEM_BASE + 1000 + index; the plugin rolls the actual item, scaled to
 # the character's level, when it arrives. Append only: the index is the id.
@@ -102,8 +104,17 @@ def set_location_name(set_name: str) -> str:
     return f"Complete {set_name}"
 
 
-COW_CHECKS = ("Enter the Secret Cow Level", "Kill The Cow King", "Kill 100 Cows")
-COW_KILLS = 100
+# Count thresholds. Each count is a location of its own, its id from its index here, so a location means the
+# same count in every seed: cow_kill_count, kill_count_multiplier and find_count_multiplier only pick which
+# of them a seed has, and their names show the real count. Append only: the index is the id.
+# Cows: the cow check is 2 + the count's index here.
+COW_KILLS = (100, 50, 250, 500)
+COW_CHECKS = ("Enter the Secret Cow Level", "Kill The Cow King", *(f"Kill {count} Cows" for count in COW_KILLS))
+
+
+def cow_kill_check(count: int) -> int:
+    """The cow check (CowLocation's check index) for killing `count` cows."""
+    return 2 + COW_KILLS.index(count)
 
 
 def cow_location_name(difficulty: int, check: int) -> str:
@@ -119,9 +130,19 @@ def shop_location_name(act: int, number: int) -> str:
 
 
 MAX_SHOP_CHECKS = 5
-KILL_COUNTS = (100, 250, 500)
-UNIQUE_FINDS = (1, 5, 10, 25, 50)
-SET_FINDS = (1, 5, 10, 25)
+# Kills per act, uniques and set items found: every count any multiplier makes (see COW_KILLS).
+KILL_COUNTS = (100, 250, 500, 50, 125, 200, 1000)
+UNIQUE_FINDS = (1, 5, 10, 25, 50, 2, 12, 20, 100)
+SET_FINDS = (1, 5, 10, 25, 2, 12, 20, 50)
+# The counts at 100%, which the multipliers scale.
+BASE_KILL_COUNTS = (100, 250, 500)
+BASE_UNIQUE_FINDS = (1, 5, 10, 25, 50)
+BASE_SET_FINDS = (1, 5, 10, 25)
+
+
+def scaled_counts(counts: tuple[int, ...], percent: int) -> tuple[int, ...]:
+    """Counts times a multiplier in percent, rounded down but at least 1."""
+    return tuple(max(1, count * percent // 100) for count in counts)
 
 
 def kill_location_name(difficulty: int, act: int, count: int) -> str:
@@ -156,7 +177,7 @@ for difficulty in range(3):
 for difficulty in range(3):
     for level_id, _act, name in AREAS + SIDE_AREAS:
         location_name_to_id[area_location_name(difficulty, name)] = LOCATION_BASE + 1000 + difficulty * 200 + level_id
-for level in range(LEVEL_STEP, LEVEL_CAPS[-1] + 1, LEVEL_STEP):
+for level in range(FIRST_LEVEL_CHECK, LEVEL_CAPS[-1] + 1):
     location_name_to_id[level_location_name(level)] = LOCATION_BASE + 2000 + level
 # Superunique kills: LOCATION_BASE + 3000 + difficulty * 100 + superunique id.
 for difficulty in range(3):

@@ -844,16 +844,24 @@ auto CowsShuffled(const ap::SlotData& slots) -> bool {
 // The seed's options that decide what the plugin does, on one line for the log.
 auto SlotSummary(const ap::SlotData& slots) -> std::string {
 	const auto on = [](bool value) { return value ? "on" : "off"; };
+	const auto counts = [](const std::vector<uint32_t>& values) {
+		std::string text;
+		for (const uint32_t value : values) {
+			text += (text.empty() ? "" : "/") + std::to_string(value);
+		}
+		return " (" + text + ")";
+	};
 	const auto& r = slots.randomizer;
 	return "apworld " + (slots.worldVersion.empty() ? std::string("?") : slots.worldVersion) + ", class "
 	     + (slots.characterClass.empty() ? std::string("any") : slots.characterClass) + ", goal " + std::to_string(slots.goal) + "/act "
 	     + std::to_string(slots.goalAct) + "/quest " + std::to_string(slots.goalQuest) + ", act keys " + on(slots.actKeys) + " (enforced "
 	     + on(slots.enforceActKeys) + (slots.enforceActKeysMode == ap::act_lock::Mode::MessageOnly ? ", message only" : "") + "), checks: areas " + on(slots.areaChecks) + ", side areas " + std::to_string(slots.sideAreas.size())
 	     + ", levels " + on(slots.levelChecks) + " every " + std::to_string(slots.levelStep) + " to " + std::to_string(slots.levelCap)
-	     + ", superuniques " + on(slots.superUniqueChecks) + ", cows " + on(slots.cowLevelChecks) + ", runes " + std::to_string(slots.runeChecks)
+	     + ", superuniques " + on(slots.superUniqueChecks) + ", cows " + on(slots.cowLevelChecks) + " (" + std::to_string(slots.cowKills) + ")" + ", runes " + std::to_string(slots.runeChecks)
 	     + ", gems " + on(slots.gemChecks) + ", sets " + on(slots.setChecks) + ", specials " + on(slots.specialItemChecks) + ", quest items "
 	     + on(slots.questItemChecks) + ", shops " + std::to_string(slots.shopChecks) + ", ubers " + on(slots.uberChecks) + ", kill counts "
-	     + on(slots.killCountChecks) + ", find counts " + on(slots.findCountChecks) + "; locks: cube " + on(slots.locks.cube) + ", town portal "
+	     + on(slots.killCountChecks) + counts(slots.killCounts) + ", find counts " + on(slots.findCountChecks) + counts(slots.uniqueFinds)
+	     + counts(slots.setFinds) + "; locks: cube " + on(slots.locks.cube) + ", town portal "
 	     + on(slots.locks.townPortal) + " (tome " + std::to_string(slots.locks.portalTomeCharges) + " charges), potions " + on(slots.locks.potions)
 	     + (slots.locks.potionMode == ap::potion_lock::Mode::Drink                  ? " (drunk on pickup)"
 	        : slots.locks.potionMode == ap::potion_lock::Mode::RejuvenationAllowed ? " (rejuvenation allowed)"
@@ -1198,14 +1206,10 @@ void __cdecl QuestLogWork(const D2RL::PluginContext*, void*) noexcept {
 
 void CheckLevelMilestones(int level) {
 	const ap::SlotData slots = gClient->Slots();
-	if (!slots.levelChecks || slots.levelStep <= 0) {
+	if (!slots.levelChecks) {
 		return;
 	}
-	std::vector<int64_t> reached;
-	for (int milestone = slots.levelStep; milestone <= std::min(level, slots.levelCap); milestone += slots.levelStep) {
-		reached.push_back(ap::ids::LevelLocation(static_cast<uint32_t>(milestone)));
-	}
-	AddChecks(reached);
+	AddChecks(ap::milestones::LevelChecks(level, slots.levelStep, slots.levelCap));
 }
 
 // The game reads its tables at startup, so the skill lock and the seed's
@@ -1346,7 +1350,8 @@ void BindSession(uint64_t session) {
 		}
 		// Kill and cow counts saved at or past a threshold whose check never made
 		// it into the save (nor to the server), so no further kill is needed.
-		counted = ap::milestones::Missing(gSave, slots.killCountChecks, slots.cowLevelChecks);
+		counted = ap::milestones::Missing(gSave, slots.killCountChecks ? std::span<const uint32_t>(slots.killCounts) : std::span<const uint32_t>(),
+		                                  slots.cowLevelChecks ? slots.cowKills : 0);
 		gSent.clear();
 		gGoalSent = false;
 		gWarnedActs.clear();
@@ -2226,15 +2231,9 @@ void ScanItems(D2RL::PlayerHandle player) {
 	if (gSave.foundUniques.size() + gSave.foundSets.size() != before) {
 		SaveNow();
 	}
-	for (uint32_t index = 0; slots.findCountChecks && index < std::size(ap::ids::UniqueFinds); ++index) {
-		if (gSave.foundUniques.size() >= ap::ids::UniqueFinds[index]) {
-			checks.push_back(ap::ids::UniqueFindLocation(index));
-		}
-	}
-	for (uint32_t index = 0; slots.findCountChecks && index < std::size(ap::ids::SetFinds); ++index) {
-		if (gSave.foundSets.size() >= ap::ids::SetFinds[index]) {
-			checks.push_back(ap::ids::SetFindLocation(index));
-		}
+	if (slots.findCountChecks) {
+		const auto finds = ap::milestones::FindChecks(gSave.foundUniques.size(), gSave.foundSets.size(), slots.uniqueFinds, slots.setFinds);
+		checks.insert(checks.end(), finds.begin(), finds.end());
 	}
 	gCollectionQueue.insert(gCollectionQueue.end(), checks.begin(), checks.end());
 }
@@ -4878,7 +4877,7 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 			// Every threshold reached and not yet in the save, so a count saved past
 			// one without its check (the game stopped in between) still gets it.
 			bool milestone = false;
-			for (const int64_t location : ap::milestones::KillChecks(difficulty, act, count)) {
+			for (const int64_t location : ap::milestones::KillChecks(difficulty, act, count, gSlots.killCounts)) {
 				if (!gSave.checks.contains(location)) {
 					gCollectionQueue.push_back(location);
 					milestone = true;
@@ -4896,11 +4895,11 @@ void __cdecl OnMonsterDeath(const D2RL::PluginContext*, const D2RL::Lifecycle::M
 		gHeldCows.Kill(difficulty, event->levelId);
 	} else if (monster == ap::data::CowMonster) {
 		// Cows add up over the whole seed, per difficulty (see milestones.h).
-		const auto kill = ap::milestones::CountCow(gSave, difficulty, event->levelId, CowsShuffled(gSlots));
+		const auto kill = ap::milestones::CountCow(gSave, difficulty, event->levelId, CowsShuffled(gSlots), gSlots.cowKills);
 		// A seed without cow checks never saves the check, so don't queue (and save) it on every cow.
 		const bool milestone = gSlots.cowLevelChecks && !kill.reached.empty();
 		if (milestone) {
-			gCowQueue.insert(difficulty * 10 + 2);
+			gCowQueue.insert(difficulty * 10 + ap::ids::CowKillCheck(gSlots.cowKills));
 		}
 		// Written on the render thread (FlushSave), not with gMutex held on the server thread.
 		if (milestone || (kill.counted && gSave.cowKills[difficulty] % 25 == 0)) {
@@ -5830,7 +5829,8 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 			const int difficulty = std::clamp(gDifficulty, 0, 2);
 			const int act = std::clamp(gAct, 0, 4);
 			const std::string where = std::string(DifficultyNames[difficulty]) + (cows ? std::string() : std::string(" ") + ActNames[act]);
-			const int next = cows ? ap::milestones::CowsBeforeNext(gSave, difficulty) : ap::milestones::KillsBeforeNext(gSave, difficulty, act);
+			const int next = cows ? ap::milestones::CowsBeforeNext(gSave, difficulty, gSlots.cowKills)
+			                      : ap::milestones::KillsBeforeNext(gSave, difficulty, act, gSlots.killCounts);
 			if (session == 0 || gBoundSession != session) {
 				answer = "ap-debug: connect first; the counts are in the seed's save.";
 			} else if (!gInGame || !gDifficultyKnown) {

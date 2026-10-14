@@ -38,15 +38,17 @@ shapeshifts. It turns on tree mode, so the shuffled tree is the one you unlock.
 - Entering a few side areas, the bottom of optional dungeons you'd usually skip (the Mausoleum, the Ancient
   Tunnels, the Kurast temples, Abaddon and more): `side_area_checks` of them on each difficulty (5 by
   default), picked at random, so each difficulty sends you somewhere different.
-- Reaching every fifth character level. Past level 70 these only hold filler.
+- Reaching every fifth character level (`level_check_step`, 1 for every level from 2). Past level 70
+  (`grind_level`) these only hold filler.
 - Killing each of the 31 superuniques that roam the field (Bishibosh, Rakanishu, Pindleskin and the rest), on
   every difficulty up to your goal (`superunique_checks`). Quest bosses and the Chaos Sanctuary seal bosses
   don't count.
 - The Secret Cow Level, on each difficulty you finish before the goal (`cow_level_checks`): entering it,
-  killing The Cow King, and killing 100 cows. The cows add up per difficulty over the whole seed, so they
+  killing The Cow King, and killing 100 cows (`cow_kill_count`: 50, 100, 250 or 500). The cows add up per
+  difficulty over the whole seed, so they
   can take several games (cows killed before you connect count too, once you do). Only cows in the Cow Level
   count, unless `shuffle_cow_level` moved them to another area, where they count instead. The King closes the
-  portal, so kill him last; the 100 cows only hold filler, in case you don't.
+  portal, so kill him last; the cow count only holds filler, in case you don't.
 - Optional collections, which only ever hold filler: each rune up to `rune_checks`, every gem (`gem_checks`),
   every complete Lord of Destruction set (`set_checks`), and with a Hell goal through Baal the Pandemonium keys, organs,
   essences, Token of Absolution, Hellfire Torch and Annihilus (`special_item_checks`). Items count anywhere on
@@ -61,7 +63,8 @@ shapeshifts. It turns on tree mode, so the shuffled tree is the one you unlock.
   `parcel_price_multiplier` (10 to 500%, default 100) scales their price and the refund.
 - Filler-only extras: Pandemonium's six uber bosses with a Hell goal through Baal (`uber_checks`), killing 100,
   250 and 500 monsters in each act (`kill_count_checks`), and finding 1 to 50 uniques and 1 to 25 set items
-  (`find_count_checks`).
+  (`find_count_checks`). `kill_count_multiplier` and `find_count_multiplier` halve or double those counts;
+  the checks' names show the counts your seed has.
 
 ## Keeping track
 

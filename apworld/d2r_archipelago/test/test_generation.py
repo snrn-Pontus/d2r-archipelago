@@ -565,6 +565,107 @@ class TestEndgameChecks(D2RTestBase):
         self.assertIn("Hell: Find Hellforge Hammer", locations)
 
 
+class TestDefaultThresholds(D2RTestBase):
+    """The check thresholds from before they were options (#40)."""
+
+    def test_slot_data(self) -> None:
+        data = self.world.fill_slot_data()
+        self.assertEqual((data["level_step"], data["cow_kills"]), (5, 100))
+        self.assertEqual((data["kill_counts"], data["unique_finds"], data["set_finds"]),
+                         ([100, 250, 500], [1, 5, 10, 25, 50], [1, 5, 10, 25]))
+
+    def test_level_checks(self) -> None:
+        # Normal through Diablo: every fifth level up to 20 (the cap, 24, rounded down to the step).
+        levels = sorted(int(location.name.rsplit(" ", 1)[1]) for location in self.multiworld.get_locations(self.player)
+                        if location.name.startswith("Reach Character Level "))
+        self.assertEqual(levels, [5, 10, 15, 20])
+
+    def test_ids_stay_put(self) -> None:
+        # Every count any option makes has its own id; the counts from before keep theirs.
+        ids = self.world.location_name_to_id
+        self.assertEqual(len(set(ids.values())), len(ids))
+        self.assertEqual(ids["Reach Character Level 5"], LOCATION_BASE + 2005)
+        self.assertEqual(ids["Reach Character Level 2"], LOCATION_BASE + 2002)
+        self.assertEqual(ids["Reach Character Level 90"], LOCATION_BASE + 2090)
+        self.assertNotIn("Reach Character Level 1", ids)
+        self.assertNotIn("Reach Character Level 91", ids)
+        self.assertEqual(ids["Normal: Kill 100 Cows"], LOCATION_BASE + 5402)
+        self.assertEqual(ids["Normal: Kill 50 Cows"], LOCATION_BASE + 5403)
+        self.assertEqual(ids["Hell: Kill 500 Cows"], LOCATION_BASE + 5425)
+        self.assertEqual(ids["Normal: Kill 100 Monsters in Act I"], LOCATION_BASE + 6000)
+        self.assertEqual(ids["Normal: Kill 50 Monsters in Act I"], LOCATION_BASE + 6003)
+        self.assertEqual(ids["Hell: Kill 1000 Monsters in Act V"], LOCATION_BASE + 6246)
+        self.assertEqual(ids["Find 1 Unique Item"], LOCATION_BASE + 5800)
+        self.assertEqual(ids["Find 100 Unique Items"], LOCATION_BASE + 5808)
+        self.assertEqual(ids["Find 12 Set Items"], LOCATION_BASE + 5815)
+        self.assertEqual(ids["Find 50 Set Items"], LOCATION_BASE + 5817)
+
+    def test_every_choice_has_ids(self) -> None:
+        from ..ids import (BASE_KILL_COUNTS, BASE_SET_FINDS, BASE_UNIQUE_FINDS, COW_KILLS, KILL_COUNTS, SET_FINDS, UNIQUE_FINDS,
+                           scaled_counts)
+        from ..options import CowKillCount, FindCountMultiplier, KillCountMultiplier
+        # The plugin finds each count's id by its index (ids.h), so each catalog fits its ten slots.
+        for catalog in (KILL_COUNTS, UNIQUE_FINDS, SET_FINDS, COW_KILLS):
+            self.assertEqual(len(set(catalog)), len(catalog))
+            self.assertLessEqual(len(catalog), 10 if catalog is not COW_KILLS else 8)
+        for percent in KillCountMultiplier.options.values():
+            self.assertLessEqual(set(scaled_counts(BASE_KILL_COUNTS, percent)), set(KILL_COUNTS))
+            self.assertEqual(len(set(scaled_counts(BASE_KILL_COUNTS, percent))), len(BASE_KILL_COUNTS))
+        for percent in FindCountMultiplier.options.values():
+            for base, catalog in ((BASE_UNIQUE_FINDS, UNIQUE_FINDS), (BASE_SET_FINDS, SET_FINDS)):
+                self.assertLessEqual(set(scaled_counts(base, percent)), set(catalog))
+                self.assertEqual(len(set(scaled_counts(base, percent))), len(base))
+        self.assertLessEqual(set(CowKillCount.options.values()), set(COW_KILLS))
+
+
+class TestCheckThresholds(D2RTestBase):
+    options = {"goal": "hell", "goal_act": 5, "skill_pool_size": 40, "level_check_step": 3, "grind_level": 50,
+               "kill_count_checks": True, "kill_count_multiplier": "double", "find_count_checks": True,
+               "find_count_multiplier": "half", "cow_kill_count": 250}
+
+    def test_locations(self) -> None:
+        from BaseClasses import LocationProgressType
+        locations = {location.name: location for location in self.multiworld.get_locations(self.player)}
+        levels = sorted(int(name.rsplit(" ", 1)[1]) for name in locations if name.startswith("Reach Character Level "))
+        self.assertEqual(levels, list(range(3, 91, 3)))
+        self.assertEqual(locations["Reach Character Level 51"].progress_type, LocationProgressType.EXCLUDED)
+        self.assertNotEqual(locations["Reach Character Level 48"].progress_type, LocationProgressType.EXCLUDED)
+        # Names show the real counts.
+        for count in (200, 500, 1000):
+            self.assertIn(f"Nightmare: Kill {count} Monsters in Act III", locations)
+        self.assertNotIn("Nightmare: Kill 100 Monsters in Act III", locations)
+        self.assertEqual(sum(1 for name in locations if " Monsters in " in name), 15 * 3)
+        uniques = sorted(int(name.split()[1]) for name in locations if name.endswith(("Unique Item", "Unique Items")))
+        sets = sorted(int(name.split()[1]) for name in locations if name.endswith(("Set Item", "Set Items")))
+        self.assertEqual((uniques, sets), ([1, 2, 5, 12, 25], [1, 2, 5, 12]))
+        self.assertEqual(locations["Normal: Kill 250 Cows"].progress_type, LocationProgressType.EXCLUDED)
+        self.assertIn("Nightmare: Kill 250 Cows", locations)
+        self.assertNotIn("Normal: Kill 100 Cows", locations)
+        self.assertNotIn("Hell: Kill 250 Cows", locations)
+
+    def test_slot_data(self) -> None:
+        data = self.world.fill_slot_data()
+        self.assertEqual((data["level_step"], data["level_cap"], data["cow_kills"]), (3, 90, 250))
+        self.assertEqual((data["kill_counts"], data["unique_finds"], data["set_finds"]),
+                         ([200, 500, 1000], [1, 2, 5, 12, 25], [1, 2, 5, 12]))
+
+
+class TestEveryLevel(D2RTestBase):
+    options = {"goal": "normal", "goal_act": 1, "level_check_step": 1, "grind_level": 0, "kill_count_checks": True,
+               "kill_count_multiplier": "half"}
+
+    def test_locations(self) -> None:
+        from BaseClasses import LocationProgressType
+        locations = {location.name: location for location in self.multiworld.get_locations(self.player)}
+        levels = [location for name, location in locations.items() if name.startswith("Reach Character Level ")]
+        # Act I alone has a cap of 6; level 1 is where you start, so not a check.
+        self.assertEqual(sorted(location.name for location in levels), [f"Reach Character Level {level}" for level in range(2, 7)])
+        self.assertTrue(all(location.progress_type == LocationProgressType.EXCLUDED for location in levels))
+        self.assertEqual(sorted(name for name in locations if " Monsters in " in name),
+                         ["Normal: Kill 125 Monsters in Act I", "Normal: Kill 250 Monsters in Act I", "Normal: Kill 50 Monsters in Act I"])
+        self.assertEqual(self.world.fill_slot_data()["level_cap"], 6)
+
+
 class TestAct1Only(D2RTestBase):
     options = {"goal": "normal", "goal_act": 1, "level_checks": False}
 

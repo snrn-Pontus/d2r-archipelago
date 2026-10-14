@@ -115,6 +115,20 @@ auto Integers(const json& object, const char* key) -> std::vector<int64_t> {
 	return values;
 }
 
+// The positive counts in object[key] (a seed's thresholds), or `fallback` when it has no such list.
+auto Counts(const json& object, const char* key, std::vector<uint32_t> fallback) -> std::vector<uint32_t> {
+	if (!object.is_object() || !object.contains(key) || !object[key].is_array()) {
+		return fallback;
+	}
+	std::vector<uint32_t> counts;
+	for (const int64_t value : Integers(object, key)) {
+		if (value > 0 && value <= UINT32_MAX) {
+			counts.push_back(static_cast<uint32_t>(value));
+		}
+	}
+	return counts;
+}
+
 // A whole decimal number in text ("12", "-3"), as PrintJSON parts and slot_info keys carry them.
 auto ParseInteger(const std::string& text) -> std::optional<int64_t> {
 	int64_t value = 0;
@@ -166,6 +180,10 @@ auto ReadSlotData(const json& data) -> SlotData {
 	slots.uberChecks = Get(data, "uber_checks", false);
 	slots.killCountChecks = Get(data, "kill_count_checks", false);
 	slots.findCountChecks = Get(data, "find_count_checks", false);
+	slots.cowKills = static_cast<uint32_t>(std::max(Get(data, "cow_kills", 100), 0));
+	slots.killCounts = Counts(data, "kill_counts", slots.killCounts);
+	slots.uniqueFinds = Counts(data, "unique_finds", slots.uniqueFinds);
+	slots.setFinds = Counts(data, "set_finds", slots.setFinds);
 	slots.enforceActKeys = Get(data, "enforce_act_keys", false);
 	slots.enforceActKeysMode = act_lock::ModeFromKey(Get(data, "enforce_act_keys_mode", std::string("warp_to_town")));
 	for (const json& hint : Array(data, "hints")) {
