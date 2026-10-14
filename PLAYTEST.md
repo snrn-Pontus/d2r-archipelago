@@ -376,6 +376,12 @@ Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: 
 - [ ] Killing **Bishibosh** (Cold Plains) and **Rakanishu** (Stony Field) each sends a check. A plain
       monster of the same type doesn't.
 - [ ] Picking up the **Scroll of Inifuss** and **Wirt's Leg** each sends a check, once.
+- [ ] Scroll of Inifuss after a rejoin (#123), on Normal: pick up the scroll and Save & Exit within 5 seconds,
+      rejoin and hand it to Akara before killing anything. Nothing is sent in town; the first kill after
+      that sends Find Scroll of Inifuss (the debug panel's queues line counts it as 1 quest item meanwhile).
+- [ ] Holding the deciphered scroll (Key to the Cairn Stones, `ap-debug spawn bkd`) on a difficulty
+      whose scroll check isn't sent yet sends it. Entering Tristram sends it too, alongside The Search
+      for Cain.
 - [ ] Buying an **Archipelago Parcel** from Akara (2,500 gold) sends a check and the parcel disappears. The
       fourth one is refunded.
 - [ ] 100 kills in Act I sends "Kill 100 monsters" (**Kills to Next Check** on the debug panel, then one

@@ -116,6 +116,14 @@ void TestQuestTriggers() {
 		covered.insert(trigger.flag);
 	}
 	EXPECT(covered.size() == std::size(ap::data::Quests));
+	// Quest item checks: the deciphered scroll counts as the Scroll of Inifuss (#123).
+	using ap::quests::QuestItemIndex;
+	EXPECT(QuestItemIndex(ap::quests::Code("bks")) == 0U);
+	EXPECT(QuestItemIndex(ap::quests::Code("bkd")) == 0U);
+	EXPECT(QuestItemIndex(ap::quests::Code("leg")) == 1U);
+	EXPECT(QuestItemIndex(ap::quests::Code("tr2")) == std::size(ap::data::QuestItems) - 1);
+	EXPECT(!QuestItemIndex(ap::quests::Code("hp1")).has_value());
+	EXPECT(std::string_view(ap::data::Quests[3].name) == "The Search for Cain" && ap::data::Quests[3].flag == ap::quests::SearchForCainFlag);
 }
 
 void TestConfigRoundTrip() {

@@ -255,6 +255,8 @@ int                   gDifficulty   = 0;
 // before that wait in gPendingAreas, since the area events don't say.
 bool                  gDifficultyKnown = false;
 std::vector<int>      gPendingAreas;
+// Quest item codes found before then, for their checks (#123).
+std::set<uint32_t>    gPendingQuestItems;
 int                   gAct          = 0;
 // The player's class id seen in this game (from the killer of a monster), or -1.
 int                   gPlayerClass  = -1;
@@ -919,6 +921,8 @@ auto IsNewCheck(int64_t location) -> bool {
 	return gBoundSession != 0 && !gSave.checks.contains(location);
 }
 
+auto QuestItemCheck(uint32_t code, int difficulty) -> std::optional<int64_t>;
+
 constexpr uint32_t BossQuestFlags[] = { 6, 14, 22, 26, 40 };
 constexpr uint32_t DenOfEvilFlag    = 1;
 
@@ -957,6 +961,11 @@ void CompleteQuest(uint32_t difficulty, uint32_t flag, QuestSource source) {
 			}
 			AddChecks({ location });
 			const ap::SlotData slots = gClient->Slots();
+			if (flag == ap::quests::SearchForCainFlag && slots.questItemChecks) {
+				if (const auto scroll = QuestItemCheck(ap::quests::InifussScroll, static_cast<int>(difficulty))) {
+					AddChecks({ *scroll });
+				}
+			}
 			if (static_cast<int>(quest.flag) == slots.goalQuest && static_cast<int>(difficulty) == slots.goal) {
 				ReachGoal();
 			}
@@ -1912,13 +1921,23 @@ auto CollectionChecks(const ItemScan& scan, const ap::SlotData& slots) -> std::v
 // The check for finding a quest item on a difficulty, if the code is one
 // (the Horadric Cube counts once).
 auto QuestItemCheck(uint32_t code, int difficulty) -> std::optional<int64_t> {
-	for (uint32_t index = 0; index < std::size(ap::data::QuestItems); ++index) {
-		const auto& item = ap::data::QuestItems[index];
-		if (code == ap::loot::CodeFromText(item.code)) {
-			return ap::ids::QuestItemLocation(item.everyDifficulty ? static_cast<uint32_t>(std::clamp(difficulty, 0, 2)) : 0, index);
-		}
+	const auto index = ap::quests::QuestItemIndex(code);
+	if (!index) {
+		return std::nullopt;
 	}
-	return std::nullopt;
+	return ap::ids::QuestItemLocation(ap::data::QuestItems[*index].everyDifficulty ? static_cast<uint32_t>(std::clamp(difficulty, 0, 2)) : 0, *index);
+}
+
+// A quest item found before this game's difficulty is known: its check waits in
+// gPendingQuestItems until a kill tells it (#123). Call with gMutex held.
+void FindQuestItem(uint32_t code) {
+	if (gDifficultyKnown) {
+		if (const auto check = QuestItemCheck(code, gDifficulty)) {
+			gCollectionQueue.push_back(*check);
+		}
+	} else if (ap::quests::QuestItemIndex(code)) {
+		gPendingQuestItems.insert(code);
+	}
 }
 
 // Quest items and collections anywhere on the character (worn, inventory,
@@ -1946,9 +1965,8 @@ void ScanItems(D2RL::PlayerHandle player) {
 	}
 	// Quest items, on the difficulty you're on.
 	for (const uint32_t code : scan.codes) {
-		const auto check = slots.questItemChecks && gDifficultyKnown ? QuestItemCheck(code, gDifficulty) : std::nullopt;
-		if (check) {
-			checks.push_back(*check);
+		if (slots.questItemChecks) {
+			FindQuestItem(code);
 		}
 	}
 	// Uniques and set items found, counted across sessions.
@@ -3282,14 +3300,12 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 		return Decision::Continue;
 	}
 	bool townPortal = false, potions = false, questItems = false, respecs = false;
-	int difficulty = 0;
 	{
 		std::lock_guard lock(gMutex);
 		townPortal = gLocks.townPortal;
 		potions = gLocks.potions;
-		questItems = gSlots.questItemChecks && gDifficultyKnown;
+		questItems = gSlots.questItemChecks;
 		respecs = gSlots.randomizer.treeMode && gGameRules != nullptr && !gSave.unlockedSkills.empty();
-		difficulty = gDifficulty;
 	}
 	if (!townPortal && !potions && !questItems && !respecs) {
 		return Decision::Continue;
@@ -3309,10 +3325,8 @@ auto __cdecl OnItemActivate(const D2RL::PluginContext*, const D2RL::ItemInteract
 		return Decision::Continue;
 	}
 	if (questItems && !IsReward(info)) {
-		if (const auto check = QuestItemCheck(info.code, difficulty)) {
-			std::lock_guard lock(gMutex);
-			gCollectionQueue.push_back(*check);
-		}
+		std::lock_guard lock(gMutex);
+		FindQuestItem(info.code);
 	}
 	// A token only works from the inventory; anywhere else the click doesn't use it.
 	const bool token = info.code == ap::loot::CodeFromText("toa") || info.code == ap::loot::CodeFromText(ap::randomizer::RespecCode);
@@ -3697,6 +3711,9 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		if (gDifficultyKnown) {
 			areas.swap(gPendingAreas);
 			difficulty = std::clamp(gDifficulty, 0, 2);
+			for (const uint32_t code : std::exchange(gPendingQuestItems, {})) {
+				FindQuestItem(code);
+			}
 		}
 		bound = gBoundSession != 0;
 	}
@@ -3858,6 +3875,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gPlayerReadyAt = Clock::now();
 			gDifficultyKnown = false;
 			gPendingAreas.clear();
+			gPendingQuestItems.clear();
 			DropUnresolvedAreaQuests();
 			// The old game's item handles are stale, which would look like a used token.
 			gRespecToken = D2RL::InvalidItemHandle;
@@ -4908,7 +4926,7 @@ void LogState() {
 		                + ", held potions " + std::to_string(gSave.heldPotions.size()) + ", skill points given " + std::to_string(gSave.skillPointsGiven)
 		                + ", tree skills unlocked " + std::to_string(gSave.unlockedSkills.size()) + ", prophecies " + std::to_string(gSave.prophecies) + ".");
 		lines.push_back("locked: " + LocksText(gLocks) + "; queues: " + std::to_string(gQuestQueue.size()) + " quests, " + std::to_string(gPendingAreas.size())
-		                + " areas, " + std::to_string(gHintQueue.size()) + " hints, " + std::to_string(gConsoleQueue.size()) + " chat lines.");
+		                + " areas, " + std::to_string(gPendingQuestItems.size()) + " quest items, " + std::to_string(gHintQueue.size()) + " hints, " + std::to_string(gConsoleQueue.size()) + " chat lines.");
 	}
 	std::string acts;
 	for (const int act : UnlockedActs()) {
