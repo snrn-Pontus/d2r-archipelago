@@ -21,7 +21,7 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-constexpr auto   FadeIn  = std::chrono::milliseconds(200);
+constexpr auto   FadeIn   =std::chrono::milliseconds(200);
 constexpr auto   FadeOut  = std::chrono::milliseconds(600);
 constexpr BYTE   MaxAlpha = 235;
 constexpr BYTE   StatusAlpha = 200;
@@ -288,7 +288,7 @@ void TickBanner(const RECT& client, POINT origin, Clock::time_point now) {
 	std::vector<Style> shown;
 	{
 		std::lock_guard lock(gMutex);
-		while (gShowing.size() < gMaxLines &&!gWaiting.empty()) {
+		while (gShowing.size() < gMaxLines && !gWaiting.empty()) {
 			Line line = std::move(gWaiting.front());
 			gWaiting.pop_front();
 			line.shownAt = now;

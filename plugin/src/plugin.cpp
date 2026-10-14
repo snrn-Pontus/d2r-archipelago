@@ -3987,7 +3987,8 @@ void AnnounceItems() {
 	// locks, skills and traps each get a banner, and ordinary loot is summed up
 	// when many arrive together (summarize_items_over, summarize_loot_over).
 	if (items.size() - from > itemsOver) {
-		Banner("Received " + std::to_string(items.size() - from) + " items", ap::notify::Style::Info);
+		// A threshold of 0 can sum a single item.
+		Banner("Received " + std::to_string(items.size() - from) + (items.size() - from == 1 ? " item" : " items"), ap::notify::Style::Info);
 	} else {
 		std::vector<std::pair<std::string, ap::notify::Style>> ordinary;
 		for (size_t i = from; i < items.size(); ++i) {
@@ -4009,7 +4010,7 @@ void AnnounceItems() {
 			}
 		}
 		if (ordinary.size() > lootOver) {
-			Banner("Received " + std::to_string(ordinary.size()) + " more items", ap::notify::Style::Info);
+			Banner("Received " + std::to_string(ordinary.size()) + (ordinary.size() == 1 ? " more item" : " more items"), ap::notify::Style::Info);
 		} else {
 			for (const auto& [text, style] : ordinary) {
 				Banner(text, style);
