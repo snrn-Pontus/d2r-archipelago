@@ -3498,8 +3498,14 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	if (!traps.empty()) {
 		std::lock_guard lock(gMutex);
 		gNextTrapAt = Clock::now() + TrapGap;
-		// A death from a DeathLink's trap is DeathLink's doing, so it isn't sent back.
-		if (std::ranges::any_of(traps, &QueuedTrap::fromDeathLink)) {
+		// A death from a DeathLink's trap is DeathLink's doing, so it isn't sent back. Only the
+		// ones that can kill: after a Mana Drain a death is the player's own.
+		const auto lethal = [](const QueuedTrap& trap) {
+			return trap.fromDeathLink
+			    && (trap.loot == ap::loot::Loot::AmbushTrap || trap.loot == ap::loot::Loot::PoisonCloudTrap
+			        || trap.loot == ap::loot::Loot::FirestormTrap);
+		};
+		if (std::ranges::any_of(traps, lethal)) {
 			gLinkKillAt = Clock::now();
 		}
 	}
