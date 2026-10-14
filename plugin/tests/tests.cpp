@@ -9,6 +9,7 @@
 #include "game_data.h"
 #include "ids.h"
 #include "loot.h"
+#include "mapsense.h"
 #include "milestones.h"
 #include "native_scan.h"
 #include "personalize.h"
@@ -2031,6 +2032,41 @@ void TestPersonalization() {
 	EXPECT(HexDump(std::span(data).first(18)).find("\n0010: ") != std::string::npos);
 }
 
+void TestMapSenseExport() {
+	using namespace ap::mapsense;
+	using ap::ids::AreaLocation;
+	// Mausoleum on Normal and Hell, Abaddon on Nightmare, a waypoint area and a quest that aren't side areas.
+	const std::set<int64_t> sideAreas { AreaLocation(2, 19), AreaLocation(0, 19), AreaLocation(1, 125), AreaLocation(0, 38),
+		ap::ids::QuestLocation(0, 1) };
+	const auto destinations = Destinations(sideAreas);
+	EXPECT(destinations.size() == 2);
+	EXPECT(destinations[0].area->id == 19 && destinations[0].difficulties == (std::array<bool, 3> { true, false, true }));
+	EXPECT(destinations[1].area->id == 125 && destinations[1].difficulties == (std::array<bool, 3> { false, true, false }));
+	// The slot data's ids, as the apworld sends them.
+	EXPECT(Destinations({ 2421019, 2421325 }).size() == 2);
+
+	const std::string text = FormatTargets(destinations, "12345", "Bob");
+	EXPECT(text.find("targets = [\n  { level_id = 19 },    # Mausoleum (Act I; Normal, Hell)\n"
+	                 "  { level_id = 125 },   # Abaddon (Act V; Nightmare)\n]\n") != std::string::npos);
+	EXPECT(text.find("# Diablo II: Resurrected Archipelago side area checks for Bob, seed 12345.") == 0);
+	EXPECT(text.find("MapSense 2.2.0 (config schema_version 21)") != std::string::npos);
+	EXPECT(text.find("restart D2R") != std::string::npos && text.find("not checks") != std::string::npos);
+	// Each line outside the list is a comment.
+	const std::string header = text.substr(0, text.find("\ntargets = [") + 1);
+	EXPECT(header.size() > 1 && header.ends_with('\n'));
+	for (size_t start = 0; header.ends_with('\n') && start < header.size(); start = header.find('\n', start) + 1) {
+		EXPECT(header[start] == '#');
+	}
+
+	// A slot name can't break out of its comment.
+	EXPECT(CommentText("Bob\ntargets = []\r\t") == "Bob targets = []  ");
+	const std::string sneaky = FormatTargets(destinations, "1", "Bob\n[general]\nenabled = false");
+	EXPECT(sneaky.find("\n[general]") == std::string::npos && sneaky.find("\nenabled") == std::string::npos);
+
+	EXPECT(Destinations({}).empty());
+	EXPECT(FormatTargets({}, "1", "Bob").ends_with("# This seed has no side area checks.\ntargets = []\n"));
+}
+
 void TestDeferredPanelScope() {
 	const ap::panel::SessionScope confirmed { 1, 2, 3, 0, 0, true };
 	EXPECT(ap::panel::SameReadyScope(confirmed, confirmed));
@@ -2270,6 +2306,7 @@ int main() {
 	TestIdsMatchApworld();
 	TestGameData();
 	TestPersonalization();
+	TestMapSenseExport();
 	std::printf(failures == 0 ? "all tests passed\n" : "%d failure(s)\n", failures);
 	return failures == 0 ? 0 : 1;
 }

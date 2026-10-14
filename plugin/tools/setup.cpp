@@ -9,6 +9,7 @@
 //   d2r-ap-setup --dump <game path> <file>         copy one game file, e.g. data\hd\items\items.json
 //   d2r-ap-setup --sounds                          only write the banner sounds
 //   d2r-ap-setup --find <text>                     list the game files whose names contain the text
+//   d2r-ap-setup --mapsense [--connect ...]        write the seed's side areas as MapSense destinations
 //
 // Options for all of them: --game <D2R folder>, --mod <name>, --out <mods folder>.
 // Writing the mod needs D2RLoader in the game folder; it installs the plugin
@@ -19,6 +20,7 @@
 #include "ap_client.h"
 #include "config.h"
 #include "game_data.h"
+#include "mapsense.h"
 #include "randomizer.h"
 #include "sounds.h"
 #include "sprite.h"
@@ -84,6 +86,7 @@ struct Options {
 	bool offline = false;
 	bool soundsOnly = false;
 	bool play = false;
+	bool mapsense = false;
 };
 
 auto FindGameFolder() -> std::string {
@@ -393,6 +396,8 @@ auto ParseArgs(int argc, char** argv) -> Options {
 			options.plugin = next();
 		} else if (arg == "--play") {
 			options.play = true;
+		} else if (arg == "--mapsense") {
+			options.mapsense = true;
 		}
 	}
 	return options;
@@ -422,6 +427,7 @@ struct Seed {
 	std::string name, slot;
 	rnd::Settings settings;
 	std::vector<std::pair<std::string, std::string>> loaderSettings;
+	std::set<int64_t> sideAreas;
 };
 
 // Connects to the server just long enough to read the slot's settings.
@@ -438,7 +444,7 @@ auto FetchSeed(const Options& options, Seed& seed) -> bool {
 		std::printf("%s\n", client.StatusText().c_str());
 		return false;
 	}
-	seed = { client.Seed(), client.Slot(), client.Slots().randomizer, client.Slots().loaderSettings };
+	seed = { client.Seed(), client.Slot(), client.Slots().randomizer, client.Slots().loaderSettings, client.Slots().sideAreas };
 	client.Disconnect();
 	return true;
 }
@@ -998,6 +1004,60 @@ auto Play(const Options& options) -> bool {
 	return true;
 }
 
+// Without --connect, use what the plugin saved after ap-connect: in the mod,
+// or in the game's d2rloader folder before the plugin moved into the mod.
+void UseSavedConnection(Options& options) {
+	if (!options.server.empty()) {
+		return;
+	}
+	const fs::path modConfig = ModRoot(options) / "d2rloader" / "config" / ConfigFile;
+	const auto config = ap::ParseConfig(ReadFile(fs::exists(modConfig) ? modConfig : fs::path(options.game) / "d2rloader" / "config" / ConfigFile));
+	options.server = config.server;
+	options.slot = config.slot;
+	options.password = config.password;
+}
+
+// MapSense's file name, never written: the player pastes the export into it.
+constexpr const char* MapSenseConfig = "ruffneckk-mapsense.toml";
+constexpr const char* MapSenseExport = "mapsense-destinations.toml";
+
+// --mapsense: writes the seed's side areas as a MapSense targets list next to
+// the mod and shows it in Explorer. MapSense stays the player's own business:
+// this neither installs it nor edits its config.
+int ExportMapSense(Options options) {
+	UseSavedConnection(options);
+	if (options.server.empty()) {
+		std::printf("No server to connect to. Use --connect <server> <slot>, or connect once in game with ap-connect.\n");
+		return 1;
+	}
+	Seed seed;
+	if (!FetchSeed(options, seed)) {
+		std::printf("Couldn't read the seed from %s as %s.\n", options.server.c_str(), options.slot.c_str());
+		return 1;
+	}
+	const auto destinations = ap::mapsense::Destinations(seed.sideAreas);
+	const fs::path path = ModRoot(options) / MapSenseExport;
+	std::error_code error;
+	fs::create_directories(path.parent_path(), error);
+	std::ofstream file(path, std::ios::binary | std::ios::trunc);
+	file << ap::mapsense::FormatTargets(destinations, seed.name, seed.slot);
+	file.close();
+	if (!file) {
+		std::printf("Couldn't write %s.\n", path.string().c_str());
+		return 1;
+	}
+	if (destinations.empty()) {
+		std::printf("This seed has no side area checks (side_area_checks is 0), so the list in %s is empty.\n", path.string().c_str());
+		return 0;
+	}
+	std::printf("Wrote %zu MapSense destinations to %s\n"
+	            "Paste its targets list into MapSense's %s under [navigation.custom_levels] (MapSense %s),\n"
+	            "turn on Custom Levels in the MapSense menu and restart D2R. This tool doesn't change MapSense's files.\n",
+		destinations.size(), path.string().c_str(), MapSenseConfig, ap::mapsense::Version);
+	ShellExecuteW(nullptr, L"open", L"explorer.exe", (L"/select,\"" + path.wstring() + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
+	return 0;
+}
+
 int Run(Options options) {
 	std::printf("Diablo II: Resurrected folder: %s\n", options.game.c_str());
 
@@ -1055,14 +1115,8 @@ int Run(Options options) {
 		InstallPlugin(options);
 	}
 
-	// Without --connect, use what the plugin saved after ap-connect: in the mod,
-	// or in the game's d2rloader folder before the plugin moved into the mod.
-	if (!options.offline && options.server.empty()) {
-		const fs::path modConfig = ModRoot(options) / "d2rloader" / "config" / ConfigFile;
-		const auto config = ap::ParseConfig(ReadFile(fs::exists(modConfig) ? modConfig : fs::path(options.game) / "d2rloader" / "config" / ConfigFile));
-		options.server = config.server;
-		options.slot = config.slot;
-		options.password = config.password;
+	if (!options.offline) {
+		UseSavedConnection(options);
 	}
 	Seed seed;
 	bool haveSeed = false;
@@ -1099,6 +1153,9 @@ int Run(Options options) {
 
 int main(int argc, char** argv) {
 	const Options options = ParseArgs(argc, argv);
+	if (options.mapsense) {
+		return ExportMapSense(options);
+	}
 	const int result = Run(options);
 	if (!options.play) {
 		return result;
