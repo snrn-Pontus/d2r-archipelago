@@ -86,6 +86,11 @@ struct Settings {
 	auto Stamp() const -> std::string;
 };
 
+// Whether a mod stamp (Settings::Stamp) has changed shop prices or vendor. The
+// shop items are written for every seed, so a stale mod like that charges other
+// prices than the plugin refunds even when the connected seed changes nothing.
+auto StampChangesShop(const std::string& stamp) -> bool;
+
 // Locks the class skill trees: each class skill becomes its own prerequisite,
 // so no skill can take its first point (item skills don't count as points).
 // Level requirements drop to 0, because an item granting a skill inherits

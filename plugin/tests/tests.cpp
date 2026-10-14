@@ -1625,6 +1625,11 @@ void TestSuperUniqueShuffle() {
 	shop = {};
 	shop.shopVendor = ap::randomizer::ShopVendor::Blacksmith;
 	EXPECT(shop.Any() && shop.Stamp().find(" shop_vendor=1") != std::string::npos);
+	// A mod left with changed shop prices is stale even for a seed that changes nothing.
+	EXPECT(ap::randomizer::StampChangesShop(shop.Stamp()) && !ap::randomizer::StampChangesShop(ap::randomizer::Settings {}.Stamp()));
+	shop = {};
+	shop.prophecyPrice = 50;
+	EXPECT(ap::randomizer::StampChangesShop(shop.Stamp()) && !ap::randomizer::StampChangesShop(settings.Stamp()));
 	// Tuning for a shuffle that's off leaves the stamp alone.
 	ap::randomizer::Settings quiet;
 	quiet.shuffleTolerance = 9;

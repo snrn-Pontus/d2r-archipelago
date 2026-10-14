@@ -1212,7 +1212,7 @@ void CheckInstalledMod(const std::string& seed) {
 	}
 	if (directory.empty() || stamp.empty()) {
 		Feed("Archipelago: the Archipelago mod isn't running, so the skill trees aren't locked. Run d2r-ap-setup and start D2R with it.");
-	} else if (settings.Any() && !matches) {
+	} else if (!matches && (settings.Any() || (stamp.size() >= 3 && ap::randomizer::StampChangesShop(stamp[2])))) {
 		Feed("Archipelago: the Archipelago mod was set up for another seed. Quit, run d2r-ap-setup, and restart.");
 	}
 }

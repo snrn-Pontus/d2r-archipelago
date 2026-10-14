@@ -84,6 +84,15 @@ auto Settings::Any() const -> bool {
 	    || shopVendor != ShopVendor::PotionSeller || SuperUniqueCopies() || !skillTree.empty() || treeMode;
 }
 
+auto StampChangesShop(const std::string& stamp) -> bool {
+	for (const char* key : { " parcel_price=", " prophecy_price=", " shop_vendor=" }) {
+		if (stamp.find(key) != std::string::npos) {
+			return true;
+		}
+	}
+	return false;
+}
+
 auto Settings::SuperUniqueCopies() const -> bool {
 	// Level 0 on unshuffled superuniques is their own level already.
 	const bool level = mainPathSuperUniqueLevel.has_value() && (superUniques != Shuffle::Off || *mainPathSuperUniqueLevel != 0);
