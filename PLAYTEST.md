@@ -453,6 +453,21 @@ that registered ("encounter logging provider: result 0").
       Tree Shuffle (tree mode) and without. Is only your own class's skill allowed? (A Warlock isn't asked,
       so it shows every other class refused.)
 
+## 2e. Areas left before the difficulty is known (issue #130)
+
+Areas entered before the first kill wait for the difficulty; leaving the game now reads it from the
+character's save instead of dropping them. Watch the log for "left with N areas entered before the
+difficulty was known" and then "the save says the last game was on ...".
+
+- [ ] **Normal:** join, walk into a new area (Cold Plains) without killing anything, Save & Exit. The
+      area's check arrives within a second or two of leaving (before or as the next game starts).
+- [ ] **Nightmare / Hell:** the same on a character with Nightmare (or Hell): the check is that
+      difficulty's, and the log names it. (The save layout was only seen on Normal characters.)
+- [ ] **Switching difficulty:** leave a Normal game that way, then make a Nightmare game straight away:
+      the Normal check still goes to Normal.
+- [ ] **Quit to desktop** right after leaving: nothing breaks (the visits may be lost, as before).
+- [ ] **A kill first:** with a kill before leaving, there's no "left with ... areas" line (nothing waited).
+
 ## 3. Act keys
 
 Defaults (`act_keys` and `enforce_act_keys` on).

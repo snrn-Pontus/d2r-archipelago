@@ -15,6 +15,7 @@
 #include "randomizer.h"
 #include "table.h"
 #include "save_state.h"
+#include "saved_difficulty.h"
 #include "session_log.h"
 #include "skill_table.h"
 #include "sounds.h"
@@ -718,6 +719,50 @@ void TestCharacterCheck() {
 	EXPECT(ap::character::Check(4, 1) == Verdict::Mismatch);
 	// A seed with no class yet goes to the first character that shows its class.
 	EXPECT(ap::character::Check(-1, 7) == Verdict::Match);
+}
+
+// A D2R 3.x character file header with the given difficulty bytes (Fontanellen's: 80 00 00, Normal act 1).
+auto SaveHeader(uint8_t normal, uint8_t nightmare, uint8_t hell, uint8_t version = 0x69) -> std::vector<uint8_t> {
+	std::vector<uint8_t> header(ap::saved_difficulty::HeaderSize + 8);
+	const uint8_t start[] = { 0x55, 0xAA, 0x55, 0xAA, version, 0, 0, 0 };
+	std::ranges::copy(start, header.begin());
+	header[ap::saved_difficulty::DifficultyBase]     = normal;
+	header[ap::saved_difficulty::DifficultyBase + 1] = nightmare;
+	header[ap::saved_difficulty::DifficultyBase + 2] = hell;
+	return header;
+}
+
+void TestSavedDifficulty() {
+	using ap::saved_difficulty::FromHeader;
+	EXPECT(FromHeader(SaveHeader(0x80, 0, 0)) == 0);
+	EXPECT(FromHeader(SaveHeader(0x04, 0x81, 0)) == 1); // Nightmare act 2, after Normal's act 5
+	EXPECT(FromHeader(SaveHeader(0x04, 0x04, 0x80)) == 2);
+	EXPECT(!FromHeader(SaveHeader(0, 0, 0)));
+	EXPECT(!FromHeader(SaveHeader(0x80, 0x80, 0)));
+	EXPECT(!FromHeader(SaveHeader(0x80, 0, 0, 0x62))); // an older layout
+	const std::vector<uint8_t> whole = SaveHeader(0x80, 0, 0);
+	EXPECT(!FromHeader(std::span(whole).first(ap::saved_difficulty::HeaderSize - 1)));
+
+	const auto directory = std::filesystem::temp_directory_path() / "d2rl-ap-test-saves";
+	std::filesystem::remove_all(directory);
+	std::filesystem::create_directories(directory);
+	auto write = [&](const char* name, const std::vector<uint8_t>& bytes) {
+		std::ofstream file(directory / name, std::ios::binary);
+		file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+	};
+	const auto now = std::filesystem::file_time_type::clock::now();
+	// A character played earlier doesn't count.
+	write("Old.d2s", SaveHeader(0, 0, 0x80));
+	std::filesystem::last_write_time(directory / "Old.d2s", now - std::chrono::hours(1));
+	write("Played.d2s", SaveHeader(0x01, 0x80, 0));
+	write("Played.ma0", SaveHeader(0x80, 0, 0)); // not a character
+	EXPECT(ap::saved_difficulty::Find(directory, now - std::chrono::minutes(1)) == std::set<int> { 1 });
+	EXPECT(ap::saved_difficulty::Find(directory, now + std::chrono::minutes(1)).empty());
+	// Two characters saved since then that disagree can't tell it.
+	write("Other.d2s", SaveHeader(0x80, 0, 0));
+	EXPECT(ap::saved_difficulty::Find(directory, now - std::chrono::minutes(1)) == (std::set<int> { 0, 1 }));
+	EXPECT(ap::saved_difficulty::Find(directory / "missing", now - std::chrono::minutes(1)).empty());
+	std::filesystem::remove_all(directory);
 }
 
 // Mirrors apworld/d2r_archipelago/test/test_generation.py.
@@ -1955,6 +2000,7 @@ int main() {
 	TestDebugCounts();
 	TestSkillTablePrerequisite();
 	TestCharacterCheck();
+	TestSavedDifficulty();
 	TestIdsMatchApworld();
 	TestGameData();
 	TestPersonalization();
