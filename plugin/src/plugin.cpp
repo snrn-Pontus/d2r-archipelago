@@ -3303,6 +3303,9 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		}
 		if (!startingGiven.empty()) {
 			Feed("Archipelago: your starting items: " + ap::starting::Describe(startingGiven) + ".");
+			// The locks ran earlier in this pass: a locked potion or scroll is set aside now, not at the next scan.
+			EnforceTownPortalLock(player);
+			EnforcePotionLock(player);
 		}
 	}
 	// Then the rewards ap-redeliver asked for again, then the new ones.
