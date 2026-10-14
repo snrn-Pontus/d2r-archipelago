@@ -10,7 +10,9 @@
 #include "ids.h"
 #include "loot.h"
 #include "milestones.h"
+#include "native_scan.h"
 #include "personalize.h"
+#include "quest_record.h"
 #include "quest_triggers.h"
 #include "randomizer.h"
 #include "table.h"
@@ -131,6 +133,95 @@ void TestQuestTriggers() {
 	}
 	EXPECT(ap::quests::QuestItemParts[0].part == ap::quests::Code("g34"));
 	EXPECT(std::string_view(ap::data::Quests[3].name) == "The Search for Cain" && ap::data::Quests[3].flag == ap::quests::SearchForCainFlag);
+}
+
+void TestNativeScan() {
+	using ap::native::FindPattern;
+	using ap::native::ParsePattern;
+	EXPECT((ParsePattern("48 8b ?? 0D") == std::vector<int16_t> { 0x48, 0x8B, -1, 0x0D }));
+	EXPECT(ParsePattern("4").empty() && ParsePattern("GG").empty() && ParsePattern("123").empty() && ParsePattern("48 ?").empty());
+	const std::vector<uint8_t> haystack { 1, 0x48, 0x8B, 7, 0x48, 0x8B, 9, 0x48 };
+	const auto pattern = ParsePattern("48 8B ??");
+	EXPECT((FindPattern(haystack, pattern) == std::vector<size_t> { 1, 4 }));
+	EXPECT((FindPattern(haystack, pattern, 1) == std::vector<size_t> { 1 }));
+	EXPECT(FindPattern(haystack, ParsePattern("48 8B 08")).empty());
+	// A pattern can't start with a wildcard (it would match anywhere first).
+	EXPECT(FindPattern(haystack, ParsePattern("?? 8B")).empty());
+}
+
+// A tiny PE image: .text at 0x1000, .data at 0x2000, with the quest record's two
+// patterns pointing at 0x2010 (as D2R 3.3's do at 0x2A48778).
+auto FakeImage(uint32_t copyTarget, uint32_t freeTarget, uint32_t clearTarget, bool copyTwice) -> std::vector<uint8_t> {
+	std::vector<uint8_t> image(0x3000, 0xCC);
+	const auto put32 = [&](size_t at, uint32_t value) { std::memcpy(&image[at], &value, 4); };
+	const auto put16 = [&](size_t at, uint16_t value) { std::memcpy(&image[at], &value, 2); };
+	const auto bytes = [&](size_t at, std::initializer_list<uint8_t> list) { std::copy(list.begin(), list.end(), image.begin() + static_cast<std::ptrdiff_t>(at)); };
+	bytes(0, { 'M', 'Z' });
+	put32(0x3C, 0x80);
+	bytes(0x80, { 'P', 'E', 0, 0 });
+	put16(0x86, 2);
+	put16(0x94, 0xF0);
+	const size_t table = 0x80 + 24 + 0xF0;
+	put32(table + 8, 0x1000);
+	put32(table + 12, 0x1000);
+	put32(table + 36, 0x60000020);
+	put32(table + 40 + 8, 0x1000);
+	put32(table + 40 + 12, 0x2000);
+	put32(table + 40 + 36, 0xC0000040);
+	const auto copy = [&](size_t at) {
+		bytes(at, { 0x80, 0xFB, 0x06, 0x75, 0x1D, 0x48, 0x8B, 0x0D, 0, 0, 0, 0, 0x41, 0xB8, 0x60, 0x00, 0x00, 0x00, 0x45, 0x33, 0xC9 });
+		put32(at + 8, copyTarget - static_cast<uint32_t>(at + 12));
+	};
+	copy(0x1100);
+	if (copyTwice) {
+		copy(0x1400);
+	}
+	bytes(0x1200, { 0x48, 0x8B, 0x0D, 0, 0, 0, 0, 0xE8, 1, 2, 3, 4, 0x48, 0x8B, 0x0D, 5, 6, 7, 8, 0xE8, 1, 2, 3, 4,
+	                0x48, 0x8B, 0x0D, 9, 9, 9, 9, 0x33, 0xDB, 0x48, 0x89, 0x1D, 0, 0, 0, 0, 0x48, 0x89, 0x1D, 1, 1, 1, 1 });
+	put32(0x1203, freeTarget - 0x1207);
+	put32(0x1224, clearTarget - 0x1228);
+	return image;
+}
+
+void TestQuestRecord() {
+	using ap::quest_record::Locate;
+	EXPECT(Locate(FakeImage(0x2010, 0x2010, 0x2010, false).data()).rva == 0x2010);
+	const auto twice = Locate(FakeImage(0x2010, 0x2010, 0x2010, true).data());
+	EXPECT(twice.rva == 0 && twice.error.find("more than once") != std::string::npos);
+	EXPECT(Locate(FakeImage(0x2010, 0x2010, 0x2018, false).data()).error.find("disagree") != std::string::npos);
+	EXPECT(Locate(FakeImage(0x1010, 0x1010, 0x1010, false).data()).error.find("data") != std::string::npos);
+	std::vector<uint8_t> notAnImage(0x3000);
+	EXPECT(Locate(notAnImage.data()).error.find("not found") != std::string::npos);
+
+	// Quest 1 (Den of Evil) waits for its reward, quest 40 (Eve of Destruction) gave it;
+	// quest 2 is only started and quest 7 (Act I's completion) isn't a quest with a check.
+	ap::quest_record::Bits bits {};
+	bits[2] = 0x02;
+	bits[80] = 0x01;
+	bits[4] = 0x04;
+	bits[14] = 0x01;
+	EXPECT(ap::quest_record::State(bits, 1, ap::quest_record::RewardPending) && !ap::quest_record::State(bits, 1, ap::quest_record::RewardGranted));
+	EXPECT(ap::quest_record::DoneMask(bits) == ((uint64_t { 1 } << 1) | (uint64_t { 1 } << 40)));
+	EXPECT(ap::quest_record::Baseline(0b110, false) == 0b110 && ap::quest_record::Baseline(0b110, true) == 0);
+
+	// Reading: the pointer, the record (bytes, bit count) and its bytes.
+	struct Record {
+		const uint8_t* bytes;
+		uint64_t       bitCount;
+	};
+	ap::quest_record::Bits source {};
+	source[2] = 0x03;
+	Record record { source.data(), ap::quest_record::Bytes * 8 };
+	const Record* pointer = &record;
+	ap::quest_record::Bits read {};
+	using ap::quest_record::ReadResult;
+	EXPECT(ap::quest_record::Read(reinterpret_cast<uintptr_t>(&pointer), read) == ReadResult::Ok && read == source);
+	record.bitCount = 64;
+	EXPECT(ap::quest_record::Read(reinterpret_cast<uintptr_t>(&pointer), read) == ReadResult::Invalid);
+	pointer = nullptr;
+	EXPECT(ap::quest_record::Read(reinterpret_cast<uintptr_t>(&pointer), read) == ReadResult::NoRecord);
+	pointer = reinterpret_cast<const Record*>(uintptr_t { 0x10 });
+	EXPECT(ap::quest_record::Read(reinterpret_cast<uintptr_t>(&pointer), read) == ReadResult::Fault);
 }
 
 void TestConfigRoundTrip() {
@@ -308,6 +399,7 @@ void TestSaveStateRoundTrip() {
 	state.playerClass = 4;
 	state.kills = { { 3, 120 }, { 24, 7 } };
 	state.cowKills = { { 1, 64 } };
+	state.questBaseline = { { 0, (uint64_t { 1 } << 1) | (uint64_t { 1 } << 40) }, { 2, 0 } };
 	state.foundUniques = { 11, 4000000000U };
 	state.foundSets = { 5 };
 	state.ownHints = { 0, 3 };
@@ -331,6 +423,7 @@ void TestSaveStateRoundTrip() {
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12);
 	EXPECT(loaded.heldPotions == state.heldPotions);
 	EXPECT(loaded.rewardCopies == state.rewardCopies);
+	EXPECT(loaded.questBaseline == state.questBaseline);
 	EXPECT(loaded.commands.empty() && loaded.checkpoint == 0 && !loaded.redeliver);
 	// A save that can't be written says so (the plugin pauses rewards on it): here the
 	// folder it would go in is a file.
@@ -2053,6 +2146,8 @@ int main() {
 	TestOtherSends();
 	TestClientReconnect();
 	TestConnectionEndReasons();
+	TestNativeScan();
+	TestQuestRecord();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
 	TestConfigNumericIds();

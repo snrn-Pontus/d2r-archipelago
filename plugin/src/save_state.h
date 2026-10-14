@@ -35,6 +35,9 @@ struct SaveState {
 	std::map<int, int> kills;
 	// Secret Cow Level cow kills per difficulty.
 	std::map<int, int> cowKills;
+	// Per difficulty, the quests (bit n for flag n) the game's quest log already showed
+	// done when the seed first read it there; they don't count (quest_record::Baseline).
+	std::map<int, uint64_t> questBaseline;
 	// Item seeds of the uniques and set items you found (not rewards), for the find-count checks.
 	std::set<uint32_t> foundUniques;
 	std::set<uint32_t> foundSets;

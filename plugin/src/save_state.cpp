@@ -9,7 +9,8 @@
 namespace ap {
 
 // One "key value" pair per line: "check <id>", "fillers <count>", "goal 1", "level <n>",
-// "kills_<difficulty * 10 + act> <count>", "cows_<difficulty> <count>", "unique <seed>", "set <seed>",
+// "kills_<difficulty * 10 + act> <count>", "cows_<difficulty> <count>", "questbase_<difficulty> <quest mask>",
+// "unique <seed>", "set <seed>",
 // "rewardcopies <code> <count>",
 // "command <item> <text>" (the text runs to the end of the line).
 bool SaveState::Load(const std::filesystem::path& path) {
@@ -45,6 +46,8 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			kills[std::atoi(key.c_str() + 6)] = static_cast<int>(value);
 		} else if (key.rfind("cows_", 0) == 0) {
 			cowKills[std::atoi(key.c_str() + 5)] = static_cast<int>(value);
+		} else if (key.rfind("questbase_", 0) == 0) {
+			questBaseline[std::atoi(key.c_str() + 10)] = static_cast<uint64_t>(value);
 		} else if (key == "unique") {
 			foundUniques.insert(static_cast<uint32_t>(value));
 		} else if (key == "set") {
@@ -113,6 +116,9 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		}
 		for (const auto& [difficulty, count] : cowKills) {
 			file << "cows_" << difficulty << " " << count << "\n";
+		}
+		for (const auto& [difficulty, quests] : questBaseline) {
+			file << "questbase_" << difficulty << " " << quests << "\n";
 		}
 		for (const uint32_t seed : foundUniques) {
 			file << "unique " << seed << "\n";
