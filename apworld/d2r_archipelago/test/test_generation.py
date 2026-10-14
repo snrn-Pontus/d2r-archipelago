@@ -468,6 +468,27 @@ class TestTreeMode(D2RTestBase):
         self.assertEqual(data["skill_mode"], "tree")
         self.assertTrue(data["randomizer"]["tree_mode"])
         self.assertEqual(data["randomizer"]["skill_tree"], [])
+        # The Barbarian's level-1 skills don't attack on their own; one of them still goes on the weapon.
+        from ..data import SKILLS, STARTER_SKILLS
+        start = data["randomizer"]["start_skill"]
+        self.assertEqual(start["class"], "Barbarian")
+        self.assertIn(start["skill"], STARTER_SKILLS)
+        self.assertIn(next(f"{name} (Barbarian)" for sid, name, _cls in SKILLS if sid == start["skill"]), self.world.starting)
+
+
+class TestTreeModeStartSkill(D2RTestBase):
+    options = {"skill_mode": "tree", "character_class": "sorceress", "starting_skills": 2}
+
+    def test_starting_weapon_gets_an_attack(self) -> None:
+        from ..data import START_ATTACK_SKILLS
+        start = self.world.fill_slot_data()["randomizer"]["start_skill"]
+        self.assertEqual(start["class"], "Sorceress")
+        # Fire Bolt, Charged Bolt or Ice Bolt, never Frozen Armor.
+        self.assertIn(start["skill"], START_ATTACK_SKILLS)
+
+    def test_no_starting_skills_clears_it(self) -> None:
+        self.world.starting = []
+        self.assertEqual(self.world.fill_slot_data()["randomizer"]["start_skill"], {"class": "Sorceress", "skill": -1})
 
 
 class TestTreeShuffle(D2RTestBase):
@@ -501,6 +522,7 @@ class TestTreeShuffleTurnsOnTreeMode(D2RTestBase):
         self.assertEqual(data["skill_mode"], "tree")
         self.assertTrue(data["randomizer"]["tree_mode"])
         self.assertNotIn("Codex Empowerment", [item.name for item in self.multiworld.itempool])
+        self.assertEqual(data["randomizer"]["start_skill"]["class"], "Necromancer")
 
 
 class TestUnusableSkills(D2RTestBase):

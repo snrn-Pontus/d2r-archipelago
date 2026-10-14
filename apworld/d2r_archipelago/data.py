@@ -249,6 +249,9 @@ SKILLS = [
 # Active skills with a vanilla level requirement of 1.
 STARTER_SKILLS = frozenset([6, 7, 8, 10, 36, 38, 39, 40, 66, 67, 68, 70, 96, 97, 98, 99, 100, 126, 130, 131, 221, 222, 223, 225, 251, 253, 254, 255, 373, 385, 395])
 
+# Starter skills that deal damage of their own or summon, for the starting weapon's skill in tree mode.
+START_ATTACK_SKILLS = frozenset([6, 7, 36, 38, 39, 67, 70, 221, 222, 225, 251, 253, 373, 385, 395])
+
 # Skills only these classes can use (claws, two weapons, animations, Druid forms, engine class skills).
 SKILL_USERS = {
     10: ('ama',),

@@ -129,7 +129,8 @@ auto Settings::Stamp() const -> std::string {
 	// The count, so a mod written for an older superunique list doesn't
 	// match: the plugin finds each copy by its distance from the end.
 	return stamp + (superUniqueChecks ? " superunique_checks=" + std::to_string(std::size(data::SuperUniques)) : "")
-	     + (skillTree.empty() ? "" : " skill_tree=" + TreeStamp(skillTree)) + (treeMode ? " tree_mode=1" : "");
+	     + (skillTree.empty() ? "" : " skill_tree=" + TreeStamp(skillTree)) + (treeMode ? " tree_mode=1" : "")
+	     + (startClass.empty() ? "" : " start_skill=" + startClass + ":" + std::to_string(startSkill));
 }
 
 auto BlockClassSkills(Table& skills, bool keepLevels) -> int {
@@ -262,6 +263,30 @@ void RemapSynergies(Table& skills, Table& skilldesc, const std::map<std::string,
 			}
 		}
 	}
+}
+
+auto SetStartSkill(Table& charstats, const Table& skills, const std::string& className, int skill) -> bool {
+	const int classColumn = charstats.Column("class");
+	const int startSkill = charstats.Column("StartSkill");
+	const int id = skills.Column("*Id");
+	const int name = skills.Column("skill");
+	if (classColumn < 0 || startSkill < 0 || id < 0 || name < 0) {
+		return false;
+	}
+	std::string skillName;
+	for (size_t row = 0; skill >= 0 && row < skills.Rows().size(); ++row) {
+		if (skills.Cell(row, id) == std::to_string(skill)) {
+			skillName = skills.Cell(row, name);
+			break;
+		}
+	}
+	for (size_t row = 0; row < charstats.Rows().size(); ++row) {
+		if (charstats.Cell(row, classColumn) == className) {
+			charstats.Set(row, startSkill, skillName);
+			return true;
+		}
+	}
+	return false;
 }
 
 auto ApplySkillTrees(Table& skills, Table& skilldesc, const SkillTree& tree) -> TreeShuffle {

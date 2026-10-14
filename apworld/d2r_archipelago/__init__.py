@@ -8,7 +8,7 @@ from worlds.generic.Rules import add_item_rule, add_rule
 
 from . import client  # noqa: F401  (adds the Launcher button)
 from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SIDE_AREAS, SKILL_FORMS, SKILL_SLOTS, SKILL_USERS, SKILLS,
-                   SPECIAL_ITEMS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
+                   SPECIAL_ITEMS, START_ATTACK_SKILLS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
 from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, KILL_COUNTS, LEVEL_CAPS,
                   LEVEL_STEP, LOCKS, MERCHANT_ACCESS, SET_FINDS, SKILL_POINT, TRAPS, UNIQUE_FINDS, UNIQUE_LOOT, act_key_name, area_location_name,
                   cow_location_name, find_count_location_name, find_location_name, item_name_to_id, kill_location_name,
@@ -492,7 +492,8 @@ class D2RWorld(World):
                 if slot_class[self.skill_tree.get(skill_id, skill_id)] == code]
 
     def pick_tree_starting_skills(self, count: int, candidates: list[str]) -> list[str]:
-        """Tree mode: starting skills from the tree's top row, active level-1 skills first."""
+        """Tree mode: starting skills from the tree's top row, active level-1 skills first, led by one that
+        attacks (it goes on the starting weapon, see start_skill)."""
         row_of = {skill_id: row for skill_id, _page, row, _column, _pinned in SKILL_SLOTS}
         id_of = {skill_item_name(skill_id, name, cls): skill_id for skill_id, name, cls in SKILLS}
         top = [name for name in candidates if row_of.get(self.skill_tree.get(id_of[name], id_of[name])) == 1]
@@ -500,7 +501,19 @@ class D2RWorld(World):
         rest = [name for name in candidates if name not in active]
         self.random.shuffle(active)
         self.random.shuffle(rest)
+        attack = next((name for name in active if id_of[name] in START_ATTACK_SKILLS), None)
+        if attack:
+            active.remove(attack)
+            active.insert(0, attack)
         return (active + rest)[:count]
+
+    def start_skill(self) -> int | None:
+        """Tree mode: the starting skill the class's starting weapon gives +1 to, like the Sorceress's Fire Bolt in
+        the real game, so a new character has a skill to use before its first point. An attack if one was dealt,
+        else any active starting skill; None for none."""
+        ids = [skill_id for skill_id, name, cls in SKILLS if skill_item_name(skill_id, name, cls) in self.starting]
+        return (next((skill_id for skill_id in ids if skill_id in START_ATTACK_SKILLS), None)
+                or next((skill_id for skill_id in ids if skill_id in STARTER_SKILLS), None))
 
     def pick_starting_skills(self, count: int, candidates: list[str]) -> list[str]:
         """Starting skills: the chosen class's level-1 skills first, then the rest of its skills.
@@ -656,6 +669,9 @@ class D2RWorld(World):
                 "skill_tree": sorted([skill, slot] for skill, slot in self.skill_tree.items() if skill != slot),
                 # Tree mode keeps the trees' level requirements (the Codex needs them at 0).
                 "tree_mode": self.tree_mode,
+                # Tree mode: the class's starting weapon gives +1 to this skill (charstats StartSkill); -1 clears the
+                # vanilla one, which may sit in another class's tree or be locked.
+                "start_skill": {"class": self.class_name(), "skill": self.start_skill() or -1} if self.tree_mode else None,
                 # Nightmare and Hell resolved here: "same" (0) takes the Normal value.
                 "xp_multiplier": self.options.experience_multiplier.value,
                 "xp_multiplier_nightmare": self.options.experience_multiplier_nightmare.value or self.options.experience_multiplier.value,
