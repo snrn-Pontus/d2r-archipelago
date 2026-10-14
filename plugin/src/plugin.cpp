@@ -15,6 +15,7 @@
 #include "milestones.h"
 #include "notify.h"
 #include "personalize.h"
+#include "quest_record.h"
 #include "quest_triggers.h"
 #include "randomizer.h"
 #include "repairs.h"
@@ -34,6 +35,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <deque>
 #include <cstring>
@@ -140,10 +142,14 @@ uint64_t              gCodexItems   = UINT64_MAX;
 // What completed a quest. Each quest logs once per source, so a playtest log
 // shows whether D2RLoader's QuestCompleted event fires and how it lines up
 // with the fallbacks in quest_triggers.h (issue #20).
-enum class QuestSource : uint8_t { Event, Kill, Item, Area, DenKills };
-constexpr const char* QuestSourceNames[] = { "the quest event", "a boss kill", "a quest item", "reaching its area", "Den of Evil kills" };
-// Quests completed by kills (server thread), item scans (game thread) or the
-// quest event (UI thread), as source * 1000 + difficulty * 100 + flag, in the
+enum class QuestSource : uint8_t { Event, Kill, Item, Area, DenKills, QuestLog };
+constexpr const char* QuestSourceNames[] = { "the quest event", "a boss kill", "a quest item", "reaching its area", "Den of Evil kills", "the game's quest log" };
+// The guesses in quest_triggers.h, which the game's quest log replaces when it can be read.
+constexpr auto IsFallback(QuestSource source) -> bool {
+	return source == QuestSource::Kill || source == QuestSource::Item || source == QuestSource::Area || source == QuestSource::DenKills;
+}
+// Quests completed by kills (server thread), item scans (game thread), the quest
+// event or the game's quest log (UI thread), as source * 1000 + difficulty * 100 + flag, in the
 // order they happened; the render thread sends them, off the game threads.
 // Area triggers queue difficulty 3, the one you're on once it's known.
 std::vector<int>      gQuestQueue;
@@ -154,6 +160,23 @@ void DropUnresolvedAreaQuests() {
 }
 // Den of Evil kills per difficulty this session.
 uint32_t              gDenKills[3] = {};
+// The game's quest log (#138): the address of the client's quest record pointer, or 0 if
+// its patterns weren't found in this game build. While it works and a seed is bound, it
+// alone completes quests: fallback completions wait in gHeldFallbacks, and go back to
+// the queue if reading it fails (gQuestLogFailed) after all.
+uintptr_t             gQuestLogPointer = 0;
+bool                  gQuestLogFailed  = false;
+std::vector<int>      gHeldFallbacks;
+// Quests the quest log queued this game, as difficulty * 100 + flag, so each goes once,
+// and the ones its last read showed done: a quest must show done twice in a row to count.
+std::set<int>         gQuestLogQueued;
+uint64_t              gQuestLogLastDone = 0;
+std::atomic<bool>     gQuestLogReadQueued { false };
+Clock::time_point     gNextQuestLogRead {};
+// Whether the quest log is what completes quests now. Call with gMutex held.
+auto QuestLogDecides() -> bool {
+	return gQuestLogPointer != 0 && !gQuestLogFailed && gBoundSession != 0;
+}
 // Field superunique kills (server thread), as difficulty * 100 + superunique id.
 std::set<int>         gSuperUniqueQueue;
 // MonStats row of the first superunique copy d2r-ap-setup appended, per bank
@@ -996,6 +1019,99 @@ void CompleteQuest(uint32_t difficulty, uint32_t flag, QuestSource source) {
 				ReachGoal();
 			}
 		}
+	}
+}
+
+// ---- The game's quest log (#138) ----------------------------------------------
+
+auto QuestName(uint32_t flag) -> std::string {
+	for (const auto& quest : ap::data::Quests) {
+		if (quest.flag == flag) {
+			return quest.name;
+		}
+	}
+	return "quest " + std::to_string(flag);
+}
+
+// A fallback completion (source * 1000 + difficulty * 100 + flag, difficulty resolved)
+// while the quest log decides: logged once, for comparing the two, and kept in case
+// the log can't be read after all.
+void HoldFallback(int quest) {
+	const auto source = static_cast<QuestSource>(quest / 1000);
+	bool first = false;
+	{
+		std::lock_guard lock(gMutex);
+		first = std::ranges::find(gHeldFallbacks, quest) == gHeldFallbacks.end();
+		if (first) {
+			gHeldFallbacks.push_back(quest);
+		}
+	}
+	if (first) {
+		Log("Archipelago: " + std::string(DifficultyNames[quest % 1000 / 100]) + " " + QuestName(static_cast<uint32_t>(quest % 100)) + ": "
+		    + QuestSourceNames[static_cast<int>(source)] + " would complete it; the game's quest log decides.");
+	}
+}
+
+// The quest log can't be read after all: the fallbacks complete quests again, from the ones held. gMutex held.
+auto FailQuestLog(const std::string& reason) -> std::string {
+	gQuestLogFailed = true;
+	gQuestQueue.insert(gQuestQueue.begin(), gHeldFallbacks.begin(), gHeldFallbacks.end());
+	gHeldFallbacks.clear();
+	return "Archipelago: can't read the game's quest log (" + reason + "); quests complete from kills, items and areas again.";
+}
+
+// Reads the client's quest record (UI thread, where the client keeps it) and queues the
+// quests it shows done. They only count once the difficulty is known, for a bound seed's
+// own character, past the baseline the seed took on that difficulty (quest_record::Baseline).
+void __cdecl QuestLogWork(const D2RL::PluginContext*, void*) noexcept {
+	gQuestLogReadQueued = false;
+	ap::quest_record::Bits bits {};
+	const auto result = ap::quest_record::Read(gQuestLogPointer, bits);
+	std::string message;
+	{
+		std::lock_guard lock(gMutex);
+		if (!gInGame || gQuestLogFailed) {
+			return;
+		}
+		if (result != ap::quest_record::ReadResult::Ok) {
+			// The client makes the record as the game starts, so it's there by now.
+			if (result != ap::quest_record::ReadResult::NoRecord || Clock::now() - gPlayerReadyAt > std::chrono::seconds(15)) {
+				message = FailQuestLog(result == ap::quest_record::ReadResult::NoRecord ? "no record in the game"
+				                       : result == ap::quest_record::ReadResult::Invalid ? "the record doesn't look right"
+				                                                                          : "reading it faulted");
+			}
+		} else {
+			const uint64_t done      = ap::quest_record::DoneMask(bits);
+			const uint64_t confirmed = done & gQuestLogLastDone;
+			gQuestLogLastDone        = done;
+			if (gDifficultyKnown && gBoundSession != 0 && CharacterVerdict(gSlots) == ap::character::Verdict::Match) {
+				const int difficulty = std::clamp(gDifficulty, 0, 2);
+				auto baseline = gSave.questBaseline.find(difficulty);
+				// Right after joining, the server may not have sent the record yet.
+				if (baseline == gSave.questBaseline.end() && Clock::now() - gPlayerReadyAt > std::chrono::seconds(5)) {
+					bool played = false;
+					for (const auto& quest : ap::data::Quests) {
+						played |= gSave.checks.contains(ap::ids::QuestLocation(static_cast<uint32_t>(difficulty), quest.flag));
+					}
+					baseline = gSave.questBaseline.emplace(difficulty, ap::quest_record::Baseline(confirmed, played)).first;
+					SaveNow();
+					const int before = std::popcount(baseline->second);
+					message = "Archipelago: " + std::string(DifficultyNames[difficulty]) + " quest log read for this seed"
+					        + (before > 0 ? "; " + std::to_string(before) + " quests done before it don't count." : ".");
+				}
+				if (baseline != gSave.questBaseline.end()) {
+					for (const auto& quest : ap::data::Quests) {
+						const uint64_t bit = uint64_t { 1 } << quest.flag;
+						if ((confirmed & bit) != 0 && (baseline->second & bit) == 0 && gQuestLogQueued.insert(difficulty * 100 + quest.flag).second) {
+							gQuestQueue.push_back(static_cast<int>(QuestSource::QuestLog) * 1000 + difficulty * 100 + quest.flag);
+						}
+					}
+				}
+			}
+		}
+	}
+	if (!message.empty()) {
+		Log(message);
 	}
 }
 
@@ -3858,12 +3974,14 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 
 	std::vector<int> quests;
 	int questDifficulty = -1;
+	bool questLogDecides = false;
 	{
 		std::lock_guard lock(gMutex);
 		quests.swap(gQuestQueue);
 		if (gDifficultyKnown) {
 			questDifficulty = std::clamp(gDifficulty, 0, 2);
 		}
+		questLogDecides = QuestLogDecides();
 	}
 	// An area trigger waiting for the difficulty holds back everything after it, to keep the order.
 	std::vector<int> waiting;
@@ -3875,6 +3993,10 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		}
 		if (difficulty == CurrentDifficulty) {
 			difficulty = questDifficulty;
+		}
+		if (IsFallback(static_cast<QuestSource>(quest / 1000)) && questLogDecides) {
+			HoldFallback(quest / 1000 * 1000 + difficulty * 100 + quest % 100);
+			continue;
 		}
 		if (static_cast<QuestSource>(quest / 1000) == QuestSource::Event) {
 			Log("Archipelago: quest event for row " + std::to_string(quest % 100) + " on difficulty " + std::to_string(difficulty) + ".");
@@ -3994,6 +4116,17 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	if (kill && !gKillQueued.exchange(true) && gThreads->runOnUiThread(gContext, KillPlayer, nullptr) != D2RL::Threads::Result::Success) {
 		gKillQueued = false;
 	}
+	bool readQuestLog = false;
+	{
+		std::lock_guard lock(gMutex);
+		readQuestLog = gQuestLogPointer != 0 && !gQuestLogFailed && gInGame && Clock::now() >= gNextQuestLogRead;
+		if (readQuestLog) {
+			gNextQuestLogRead = Clock::now() + std::chrono::seconds(1);
+		}
+	}
+	if (readQuestLog && !gQuestLogReadQueued.exchange(true) && gThreads->runOnUiThread(gContext, QuestLogWork, nullptr) != D2RL::Threads::Result::Success) {
+		gQuestLogReadQueued = false;
+	}
 
 	bool work = false;
 	{
@@ -4061,6 +4194,9 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 				ForgetPlayer();
 				gEncountersLogged.clear();
 				gGameBegan = std::filesystem::file_time_type::clock::now();
+				gQuestLogQueued.clear();
+				gQuestLogLastDone = 0;
+				gHeldFallbacks.clear();
 			}
 			gInGame = true;
 			gRepairOffer.Cancel();
@@ -5208,6 +5344,13 @@ void LogState() {
 		                + ", lost to a crash " + std::to_string(gSave.lostFrom) + "-" + std::to_string(gSave.lostTo) + (gSave.redeliver ? " (redelivering)" : "")
 		                + ", held potions " + std::to_string(gSave.heldPotions.size()) + ", skill points given " + std::to_string(gSave.skillPointsGiven)
 		                + ", tree skills unlocked " + std::to_string(gSave.unlockedSkills.size()) + ", prophecies " + std::to_string(gSave.prophecies) + ".");
+		std::string baselines;
+		for (const auto& [difficulty, quests] : gSave.questBaseline) {
+			baselines += ", " + std::string(DifficultyNames[std::clamp(difficulty, 0, 2)]) + " baseline " + std::to_string(std::popcount(quests)) + " quests";
+		}
+		lines.push_back(std::string("quest log: ") + (gQuestLogPointer == 0 ? "not found" : gQuestLogFailed ? "failed" : "found")
+		                + (QuestLogDecides() ? ", completes quests" : ", fallbacks complete quests") + baselines + ", "
+		                + std::to_string(gHeldFallbacks.size()) + " fallback completions held.");
 		lines.push_back("locked: " + LocksText(gLocks) + "; queues: " + std::to_string(gQuestQueue.size()) + " quests, " + std::to_string(gPendingAreas.size())
 		                + " areas, " + std::to_string(gPendingQuestItems.size()) + " quest items, " + std::to_string(gHintQueue.size()) + " hints, " + std::to_string(gConsoleQueue.size()) + " chat lines.");
 	}
@@ -5273,6 +5416,38 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 			text += (text.empty() ? "" : " ") + args[i];
 		}
 		ap::notify::Show(text.empty() ? "Archipelago banner test" : text, style == styles.end() ? ap::notify::Style::Info : style->second);
+		return D2RL::ConsoleCommandResult::Handled;
+	}
+	// ap-debug quests: the game's quest log as it stands, in the log (#138).
+	if (args[0] == "quests") {
+		if (gQuestLogPointer == 0) {
+			Reply("ap-debug: the game's quest log wasn't found in this game build.");
+			return D2RL::ConsoleCommandResult::Failed;
+		}
+		ap::quest_record::Bits bits {};
+		if (ap::quest_record::Read(gQuestLogPointer, bits) != ap::quest_record::ReadResult::Ok) {
+			Reply("ap-debug: no quest log to read; join a game first.");
+			return D2RL::ConsoleCommandResult::Failed;
+		}
+		std::string states;
+		std::string done;
+		for (unsigned quest = 0; quest < ap::quest_record::Bytes / 2; ++quest) {
+			const unsigned value = bits[quest * 2] | bits[quest * 2 + 1] << 8;
+			if (value != 0) {
+				char text[16];
+				std::snprintf(text, sizeof(text), " %u=%04X", quest, value);
+				states += text;
+			}
+		}
+		const uint64_t mask = ap::quest_record::DoneMask(bits);
+		for (const auto& quest : ap::data::Quests) {
+			if ((mask >> quest.flag & 1) != 0) {
+				done += (done.empty() ? "" : ", ") + std::string(quest.name);
+			}
+		}
+		Log("Archipelago: quest log states (quest=bits):" + (states.empty() ? std::string(" none") : states) + ".");
+		Log("Archipelago: quest log done: " + (done.empty() ? std::string("none") : done) + ".");
+		Reply("ap-debug: the quest log is in the log.");
 		return D2RL::ConsoleCommandResult::Handled;
 	}
 	if (args[0] == "overlay") {
@@ -5422,7 +5597,7 @@ auto CommandDebug(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command
 		return D2RL::ConsoleCommandResult::Handled;
 	}
 	gContext->WriteConsoleMessage("Usage: ap-debug [on|off], ap-debug kit, ap-debug give <item code> [count] [sockets], ap-debug spawn <item code> [unique], "
-	                              "ap-debug mark [text], ap-debug state, ap-debug probe, ap-debug kills [n], ap-debug cows [n], ap-debug savefail on|off, ap-debug crash, "
+	                              "ap-debug mark [text], ap-debug state, ap-debug quests, ap-debug probe, ap-debug kills [n], ap-debug cows [n], ap-debug savefail on|off, ap-debug crash, "
 	                              "ap-debug banner [important|trap|check] <text>, ap-debug overlay");
 	return D2RL::ConsoleCommandResult::InvalidArguments;
 }
@@ -5664,6 +5839,14 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 	}
 	if (!Query(gGameRules, D2RL::HasGameRuleServiceField, D2RL::GameRuleServiceRequiredSize)) {
 		gGameRules = nullptr;
+	}
+	if (const auto questLog = ap::quest_record::Locate(reinterpret_cast<const uint8_t*>(context->exeBase)); questLog.rva != 0) {
+		gQuestLogPointer = context->exeBase + questLog.rva;
+		char rva[16];
+		std::snprintf(rva, sizeof(rva), "0x%X", questLog.rva);
+		Log("Archipelago: found the game's quest log (pointer at " + std::string(rva) + "); it completes quests.");
+	} else {
+		LogWarning(("Archipelago: can't find the game's quest log in this game build (" + questLog.error + "); quests complete from kills, items and areas.").c_str());
 	}
 	if (context->QueryService(&gTables) != D2RL::ServiceQueryResult::Success || !D2RL::HasDataTableServiceField(gTables, D2RL::DataTableServiceRequiredSize)) {
 		gTables = nullptr;

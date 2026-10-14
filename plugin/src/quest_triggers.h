@@ -1,6 +1,7 @@
 #pragma once
 
-// Fallback quest detection. D2RLoader's QuestCompleted event didn't fire in
+// Fallback quest detection, for when the game's own quest log (quest_record.h)
+// can't be read; while it can, these only log. D2RLoader's QuestCompleted event didn't fire in
 // testing (Den of Evil on 1.3.1-beta), so quests also complete from signals
 // the plugin can see: the quest's boss dying, its quest item turning up in
 // your inventory, or reaching the area the quest leads to. The plugin logs

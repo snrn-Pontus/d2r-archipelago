@@ -445,6 +445,28 @@ Quest checks use fallbacks (boss kill, quest item, reaching an area, 20 Den kill
 - [ ] Rejoin a character with finished quests: no events for them (they're baselined), and nothing is lost.
 - [ ] Nightmare: the event's difficulty is 1.
 
+## 2c2. The game's quest log (issue #138)
+
+The plugin now reads the game's own quest log (found by byte pattern; the startup log says "found the game's
+quest log"). A quest counts when the game marks it done or its reward waiting. While the log works, the fallbacks
+only log "... would complete it; the game's quest log decides." Use a seed-bound character; `ap-debug quests`
+(debug tools on) writes the log's raw state.
+
+- [ ] Fresh character, new seed: clear the Den of Evil. "completed by the game's quest log" comes when the last
+      monster dies (reward pending) or when you talk to Akara. Note which.
+- [ ] Sisters' Burial Grounds, The Search for Cain, Tools of the Trade, The Forgotten Tower: each completes once,
+      by the quest log, at the right moment. Walking into Tristram before freeing Cain completes nothing.
+- [ ] One quest in each later act, and Hell's Forge and Rescue on Mount Arreat (the fallbacks guessed those).
+- [ ] Malah's Potion picked up before handing it in: Prison of Ice waits for Anya.
+- [ ] Save & Exit right after finishing a quest, before any kill in the next game: the check still goes
+      (the quest log keeps it), once the next game knows the difficulty.
+- [ ] An older character of the seed's class on a fresh seed: "quest log read for this seed; N quests done before
+      it don't count", and none of those send.
+- [ ] Nightmare: the first game there reads its quest log; Nightmare quests count on Nightmare.
+- [ ] Debug panel "Complete Quests" (ap-core quests) on a fresh seed's character, after its first kill (before it,
+      the seed hasn't read the log yet and takes them as done before the seed): every quest sends.
+- [ ] A mule (another class): nothing sends from its quest log.
+
 ## 2d. Difficulty and class before a kill (issue #126)
 
 The plugin only learns the difficulty, and usually the class, from a kill; until then area checks, quest
