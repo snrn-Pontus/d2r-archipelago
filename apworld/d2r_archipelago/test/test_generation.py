@@ -229,6 +229,36 @@ class TestClassWeighted(D2RTestBase):
         self.assertEqual(sum(1 for name in self.world.skill_pool if name in sorceress), 10)
         self.assertEqual(self.world.fill_slot_data()["skill_scaling"], 5)
         self.assertEqual(self.world.fill_slot_data()["skill_scaling_cap"], 10)
+        self.assertEqual(self.world.fill_slot_data()["levels_per_copy"], 1)
+        self.assertEqual(self.world.fill_slot_data()["levels_per_empowerment"], 1)
+        self.assertEqual(self.world.fill_slot_data()["codex_level_cap"], 60)
+
+
+class TestClassWeightPercent(D2RTestBase):
+    options = {"skill_focus": "class_weighted", "character_class": "sorceress", "skill_pool_size": 20,
+               "class_weight_percent": 75}
+
+    def test_share_from_class(self) -> None:
+        sorceress = self.world.item_name_groups["Sorceress"]
+        self.assertEqual(sum(1 for name in self.world.skill_pool if name in sorceress), 15)
+
+
+class TestClassWeightPercentNone(D2RTestBase):
+    options = {"skill_focus": "class_weighted", "character_class": "sorceress", "skill_pool_size": 20,
+               "class_weight_percent": 0}
+
+    def test_none_from_class(self) -> None:
+        sorceress = self.world.item_name_groups["Sorceress"]
+        self.assertEqual(sum(1 for name in self.world.skill_pool if name in sorceress), 0)
+
+
+class TestCodexLevels(D2RTestBase):
+    options = {"levels_per_copy": 3, "levels_per_empowerment": 2, "codex_level_cap": 99}
+
+    def test_slot_data(self) -> None:
+        slot_data = self.world.fill_slot_data()
+        self.assertEqual((slot_data["levels_per_copy"], slot_data["levels_per_empowerment"], slot_data["codex_level_cap"]),
+                         (3, 2, 99))
 
 
 class TestShortGame(D2RTestBase):

@@ -54,6 +54,13 @@ Built, pushed and installed, still to check in game:
       `character_class: any`, a few seeds' starting Codex skills always include an attack or summon.
 - [ ] Skill Blocklist (#16): put `Find Potion (Barbarian)` and `Teleport (Sorceress)` in `skill_blocklist`;
       neither shows up in the spoiler, and in tree mode a blocked skill stays padlocked for the whole game.
+- [ ] Codex tuning (#39, new seed needed): with `levels_per_copy: 3`, `levels_per_empowerment: 2` and
+      `skill_level_scaling: 0`, a starting skill shows +3 on the Codex; `/send` a second copy and it goes to +6,
+      a Codex Empowerment (debug panel) puts every skill up by 2. With `codex_level_cap: 10` and a few
+      empowerments no skill passes +10; with `codex_level_cap: 99` a skill can pass +60 and the game still shows
+      and casts it. The log's seed options line shows the three values. `class_weight_percent: 100` on a
+      class_weighted seed puts only your class's skills in the pool (starting skills aside, as long as there are
+      enough); with 0, none of them.
 - [ ] S1 skills (#117, new seed needed): a Barbarian or Amazon seed never gets Smite, a Paladin never gets
       Dodge, Avoid or Evade, and a Barbarian no longer gets Assassin traps (its S2 animation only exists with a
       one-handed thrusting weapon). A Sorceress, Necromancer, Druid or Assassin with Smite and a shield can

@@ -51,6 +51,10 @@ struct SlotData {
 	int  skillScaling = 0;
 	// The most levels scaling adds (0 = no cap).
 	int  skillScalingCap = 0;
+	// Codex levels per copy of a skill and per Codex Empowerment, and the most a skill gets.
+	int  levelsPerCopy = 1;
+	int  levelsPerEmpowerment = 1;
+	int  codexLevelCap = 60;
 	int  goalQuest   = 40;
 	bool areaChecks  = true;
 	// Side Area Checks: the location ids of the side areas this seed picked.

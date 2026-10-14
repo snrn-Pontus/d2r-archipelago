@@ -851,7 +851,9 @@ auto SlotSummary(const ap::SlotData& slots) -> std::string {
 	     + ", stash " + on(slots.locks.stash) + ", merchants "
 	     + on(slots.locks.merchants) + ", waypoints " + on(slots.locks.waypoints) + "; hints: " + std::to_string(slots.hints.size()) + ", Cain "
 	     + on(slots.cainHints) + ", pages " + std::to_string(slots.pageHintChance) + "%, prophecy shop " + on(slots.prophecyShop)
-	     + "; skill scaling " + std::to_string(slots.skillScaling) + " (cap " + std::to_string(slots.skillScalingCap) + "), tree mode "
+	     + "; skill scaling " + std::to_string(slots.skillScaling) + " (cap " + std::to_string(slots.skillScalingCap) + "), codex levels +"
+	     + std::to_string(slots.levelsPerCopy) + " per copy, +" + std::to_string(slots.levelsPerEmpowerment) + " per empowerment, cap "
+	     + std::to_string(slots.codexLevelCap) + ", tree mode "
 	     + on(r.treeMode) + ", tree shuffle " + std::to_string(r.skillTree.size()) + " skills, monsters " + std::to_string(static_cast<int>(r.monsters))
 	     + ", superunique shuffle " + std::to_string(static_cast<int>(r.superUniques)) + ", runewords " + on(r.runewords) + "; DeathLink "
 	     + on(slots.deathLink) + ", traps wait for town " + on(slots.traps.waitForTown) + ".";
@@ -3077,7 +3079,12 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			return;
 		}
 	}
-	auto skills = ap::codex::Entries(items, EffectiveLevel(), slots.skillScaling, slots.skillScalingCap);
+	auto skills = ap::codex::Entries(items, EffectiveLevel(),
+	                                 { .scaling = slots.skillScaling,
+	                                   .scalingCap = slots.skillScalingCap,
+	                                   .perCopy = slots.levelsPerCopy,
+	                                   .perEmpowerment = slots.levelsPerEmpowerment,
+	                                   .levelCap = slots.codexLevelCap });
 	{
 		// Lord of Destruction characters have no Warlock skills (D2R asserts on them).
 		std::vector<std::string> dropped;

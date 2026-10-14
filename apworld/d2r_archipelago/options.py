@@ -59,8 +59,8 @@ class SkillMode(Choice):
     tree: the skills are the 30 in your class's skill tree (shuffled with Skill Tree Shuffle, which
     picks tree mode on its own). Each one
     stays locked until its item arrives; then you spend skill points on it as usual. Extra copies and
-    Skill Points give skill points. Skill Pool Size, Skill Focus, Skill Classes, Skill Level Scaling and
-    Codex Empowerments don't apply. With "any" class, the seed picks one."""
+    Skill Points give skill points. Skill Pool Size, Skill Focus, Skill Classes, Skill Level Scaling, the
+    Codex levels and Codex Empowerments don't apply. With "any" class, the seed picks one."""
     display_name = "Skill Mode"
     option_codex = 0
     option_tree = 1
@@ -93,7 +93,8 @@ class SkillPoolSize(Range):
 
 
 class SkillCopies(Range):
-    """How many times each skill is in the pool. Every copy you find adds +1 to that skill."""
+    """How many times each skill is in the pool. Every copy you find adds Levels Per Copy (+1 by default) to
+    that skill."""
     display_name = "Skill Copies"
     range_start = 1
     range_end = 5
@@ -103,13 +104,22 @@ class SkillCopies(Range):
 class SkillFocus(Choice):
     """Which skills go in the pool.
     any_skills: any skills from the allowed classes.
-    class_weighted: half of them from your Character Class.
+    class_weighted: Class Weight Percent of them (half by default) from your Character Class.
     few_but_deep: a third as many different skills, each with at least 3 copies."""
     display_name = "Skill Focus"
     option_any_skills = 0
     option_class_weighted = 1
     option_few_but_deep = 2
     default = 1
+
+
+class ClassWeightPercent(Range):
+    """With Skill Focus class_weighted: the share of the pool's skills (in percent) from your Character Class.
+    When either side runs out of skills, the other one makes up the difference."""
+    display_name = "Class Weight Percent"
+    range_start = 0
+    range_end = 100
+    default = 50
 
 
 class SkillLevelScaling(Range):
@@ -128,6 +138,31 @@ class SkillScalingCap(Range):
     range_start = 0
     range_end = 30
     default = 10
+
+
+class LevelsPerCopy(Range):
+    """How many levels each copy of a skill you find adds to it on the Codex."""
+    display_name = "Levels Per Copy"
+    range_start = 1
+    range_end = 5
+    default = 1
+
+
+class LevelsPerEmpowerment(Range):
+    """How many levels each Codex Empowerment adds to every skill on the Codex."""
+    display_name = "Levels Per Empowerment"
+    range_start = 1
+    range_end = 5
+    default = 1
+
+
+class CodexLevelCap(Range):
+    """The highest level a Codex skill can reach, from copies, Codex Empowerments and Skill Level Scaling
+    together. Diablo II shows skill levels up to 99."""
+    display_name = "Codex Level Cap"
+    range_start = 10
+    range_end = 99
+    default = 60
 
 
 class StartingSkills(Range):
@@ -442,7 +477,7 @@ class ScaleWithLength(DefaultOnToggle):
 
 class CodexEmpowerments(Range):
     """How many Codex Empowerments are in the pool, for a four-act game (more for longer games with Scale
-    With Length). Each one adds +1 to every skill in your Codex."""
+    With Length). Each one adds Levels Per Empowerment (+1 by default) to every skill in your Codex."""
     display_name = "Codex Empowerments"
     range_start = 0
     range_end = 10
@@ -947,8 +982,12 @@ class D2ROptions(PerGameCommonOptions):
     skill_pool_size: SkillPoolSize
     skill_copies: SkillCopies
     skill_focus: SkillFocus
+    class_weight_percent: ClassWeightPercent
     skill_level_scaling: SkillLevelScaling
     skill_scaling_cap: SkillScalingCap
+    levels_per_copy: LevelsPerCopy
+    levels_per_empowerment: LevelsPerEmpowerment
+    codex_level_cap: CodexLevelCap
     scale_with_length: ScaleWithLength
     starting_skills: StartingSkills
     useful_starting_skills: UsefulStartingSkills
@@ -1051,8 +1090,10 @@ class D2ROptions(PerGameCommonOptions):
 # Sections for the Options Creator, the options web page and the template YAML.
 OPTION_GROUPS = [
     OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, EnforceActKeysMode, ActKeyWindow, SkillsPerAct]),
-    OptionGroup("Skills and Codex", [CharacterClass, SkillMode, SkillTreeShuffle, SkillPoints, SkillPoolSize, SkillCopies, SkillFocus, ScaleWithLength, StartingSkills,
-                                     UsefulStartingSkills, SkillBlocklist, SkillClasses, IncludeWarlock, SkillLevelScaling, SkillScalingCap, CodexEmpowerments]),
+    OptionGroup("Skills and Codex", [CharacterClass, SkillMode, SkillTreeShuffle, SkillPoints, SkillPoolSize, SkillCopies, SkillFocus, ClassWeightPercent,
+                                     ScaleWithLength, StartingSkills, UsefulStartingSkills, SkillBlocklist, SkillClasses, IncludeWarlock,
+                                     SkillLevelScaling, SkillScalingCap, CodexEmpowerments, LevelsPerCopy, LevelsPerEmpowerment,
+                                     CodexLevelCap]),
     OptionGroup("Checks", [AreaChecks, SideAreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, ShopVendor,
                            ParcelPriceMultiplier, CowLevelChecks]),
     OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,

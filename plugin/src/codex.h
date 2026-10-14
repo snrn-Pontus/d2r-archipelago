@@ -18,10 +18,21 @@ struct Entry {
 	auto operator==(const Entry&) const -> bool = default;
 };
 
-// The Codex's skills, in the order they were first received: each gets one
-// level per copy found, plus one per Codex Empowerment, plus one for every
-// `scaling` character levels (0 turns scaling off), at most `cap` of them (0 = no cap).
-auto Entries(const std::vector<NetworkItem>& items, int characterLevel, int scaling, int cap = 0) -> std::vector<Entry>;
+// How Codex skill levels add up; the seed's options, defaults as the apworld's.
+struct Leveling {
+	// +1 for every this many character levels (0 = off), at most scalingCap of them (0 = no cap).
+	int scaling        = 0;
+	int scalingCap     = 0;
+	int perCopy        = 1;
+	int perEmpowerment = 1;
+	// No skill goes past this level (D2 shows skill levels up to 99).
+	int levelCap       = 60;
+};
+
+// The Codex's skills, in the order they were first received: each gets
+// perCopy levels per copy found, plus perEmpowerment per Codex Empowerment,
+// plus the character level scaling, at most levelCap in all.
+auto Entries(const std::vector<NetworkItem>& items, int characterLevel, const Leveling& leveling) -> std::vector<Entry>;
 
 // A 16-bit fingerprint of a run of entries, stored in the Codex charm's seed
 // so the plugin can tell whether a charm is up to date.
