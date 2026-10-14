@@ -860,7 +860,8 @@ auto SlotSummary(const ap::SlotData& slots) -> std::string {
 	     + "%, levels -" + std::to_string(slots.rewards.levelBelow) + "/+" + std::to_string(slots.rewards.levelAbove) + ", rare jewels "
 	     + std::to_string(slots.rewards.rareJewelPercent) + "%, high rune curve " + std::to_string(slots.rewards.highRuneCurve) + ", shrines "
 	     + (slots.rewards.shrines.empty() ? std::string("none") : std::to_string(slots.rewards.shrines.size())) + "; DeathLink "
-	     + on(slots.deathLink) + ", traps wait for town " + on(slots.traps.waitForTown) + ".";
+	     + on(slots.deathLink) + " (mode " + std::to_string(static_cast<int>(slots.deathLinkMode)) + ", every "
+	     + std::to_string(slots.deathLinkAmnesty) + " deaths), traps wait for town " + on(slots.traps.waitForTown) + ".";
 }
 
 // Sends every recorded check (and the goal) that isn't held behind a key.
@@ -3495,21 +3496,39 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	}
 }
 
-// D2RCore's killme console command kills the player through the game's own
-// death code.
-void __cdecl KillPlayer(const D2RL::PluginContext*, void*) noexcept {
+// Another player's death, by the seed's death_link_mode: D2RCore's killme
+// console command kills the player through the game's own death code;
+// depletehealth leaves 1 life; gold takes gold like a Tax Collector; a random
+// trap joins the trap queue, so it waits for town like any other.
+void __cdecl ApplyDeathLink(const D2RL::PluginContext*, void*) noexcept {
 	gKillQueued = false;
+	const ap::SlotData slots = gClient->Slots();
+	const int level = EffectiveLevel();
 	{
 		std::lock_guard lock(gMutex);
-		const bool kill = gDeathPending && gInGame && !gPlayerDead;
+		const bool apply = gDeathPending && gInGame && !gPlayerDead;
 		gDeathPending = false;
-		if (!kill) {
+		if (!apply) {
 			return;
 		}
-		gLinkKillAt = Clock::now();
+		if (slots.deathLinkMode == ap::death_link::Mode::RandomTrap) {
+			std::mt19937 random(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
+			gTrapQueue.push_back({ ap::death_link::PickTrap(slots.deathLinkTraps, random), level });
+			return;
+		}
+		if (slots.deathLinkMode == ap::death_link::Mode::Die) {
+			gLinkKillAt = Clock::now();
+		}
 	}
-	if (!ExecuteCommand("killme")) {
-		Feed("Archipelago: DeathLink couldn't kill your character (D2RCore refused killme).");
+	const auto penalty = ap::death_link::PenaltyFor(slots.deathLinkMode, level, slots.traps.taxPerLevel);
+	for (const auto& command : penalty.commands) {
+		if (!ExecuteCommand(command)) {
+			Feed("Archipelago: DeathLink couldn't reach your character (D2RCore refused \"" + command + "\").");
+			return;
+		}
+	}
+	if (!penalty.message.empty()) {
+		Feed("Archipelago: " + penalty.message);
 	}
 }
 
@@ -3529,6 +3548,22 @@ void PlayerDied(const std::string& how) {
 	}
 	Log("Archipelago: you died (" + how + ").");
 	if (echo || !gClient || !gClient->Slots().deathLink) {
+		return;
+	}
+	// death_link_amnesty: only every Nth death goes out; the count is kept in the seed's save
+	// (before the seed's save is bound, a death just goes out).
+	const int every = gClient->Slots().deathLinkAmnesty;
+	int unsent = 0;
+	bool send = true;
+	if (std::lock_guard lock(gMutex); every > 1 && gBoundSession != 0) {
+		send = ap::death_link::CountDeath(gSave.unsentDeaths, every);
+		unsent = gSave.unsentDeaths;
+		gSaveDue = true;
+	}
+	if (!send) {
+		const int left = every - unsent;
+		Feed("Archipelago: you died; DeathLink spares the others this time (" + std::to_string(left) + " more "
+		     + (left == 1 ? "death sends" : "deaths send") + " one).");
 		return;
 	}
 	gClient->SendDeath(gClient->Slot() + " died in Diablo II: Resurrected.");
@@ -4312,7 +4347,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		std::lock_guard lock(gMutex);
 		kill = gDeathPending && gInGame;
 	}
-	if (kill && !gKillQueued.exchange(true) && gThreads->runOnUiThread(gContext, KillPlayer, nullptr) != D2RL::Threads::Result::Success) {
+	if (kill && !gKillQueued.exchange(true) && gThreads->runOnUiThread(gContext, ApplyDeathLink, nullptr) != D2RL::Threads::Result::Success) {
 		gKillQueued = false;
 	}
 	bool readQuestLog = false;
@@ -5550,7 +5585,8 @@ void LogState() {
 		                + ", lost to a crash " + std::to_string(gSave.lostFrom) + "-" + std::to_string(gSave.lostTo) + (gSave.redeliver ? " (redelivering)" : "")
 		                + ", held potions " + std::to_string(gSave.heldPotions.size()) + ", held Town Portal scrolls and tomes "
 		                + std::to_string(gSave.heldPortals.size()) + ", skill points given " + std::to_string(gSave.skillPointsGiven)
-		                + ", tree skills unlocked " + std::to_string(gSave.unlockedSkills.size()) + ", prophecies " + std::to_string(gSave.prophecies) + ".");
+		                + ", tree skills unlocked " + std::to_string(gSave.unlockedSkills.size()) + ", prophecies " + std::to_string(gSave.prophecies)
+		                + ", deaths not sent to DeathLink " + std::to_string(gSave.unsentDeaths) + ".");
 		std::string baselines;
 		for (const auto& [difficulty, quests] : gSave.questBaseline) {
 			baselines += ", " + std::string(DifficultyNames[std::clamp(difficulty, 0, 2)]) + " baseline " + std::to_string(std::popcount(quests)) + " quests";

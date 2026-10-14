@@ -308,6 +308,8 @@ class TestShortGame(D2RTestBase):
                           data["randomizer"]["shop_vendor"]), (100, 100, 0))
         self.assertTrue(data["superunique_checks"])
         self.assertFalse(data["death_link"])
+        # DeathLink defaults to what it always did: die, and send every death.
+        self.assertEqual((data["death_link_mode"], data["death_link_amnesty"]), ("die", 1))
         self.assertEqual(data["hint_sources"], {"cain": True, "page_chance": 25, "prophecy_shop": True})
 
     def test_hint_list(self) -> None:
@@ -332,6 +334,18 @@ class TestNoSuperUniqueChecks(D2RTestBase):
         data = self.world.fill_slot_data()
         self.assertFalse(data["superunique_checks"])
         self.assertTrue(data["death_link"])
+
+
+class TestDeathLinkModes(D2RTestBase):
+    options = {"death_link": True, "death_link_mode": "random_trap", "death_link_amnesty": 3,
+               "ambush_weight": 5, "poison_cloud_weight": 0, "firestorm_weight": 0, "mana_drain_weight": 0,
+               "tax_collector_weight": 0, "mercenary_down_weight": 2, "junk_backpack_weight": 50}
+
+    def test_slot_data(self) -> None:
+        data = self.world.fill_slot_data()
+        self.assertEqual((data["death_link_mode"], data["death_link_amnesty"]), ("random_trap", 3))
+        # Only the traps with a weight, and never the Junk Backpack, by their LOOT index (the plugin's Loot enum).
+        self.assertEqual(data["death_link_traps"], [[17, 5], [22, 2]])
 
 
 class TestHellSuperUniques(D2RTestBase):

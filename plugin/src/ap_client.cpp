@@ -145,6 +145,17 @@ auto ReadSlotData(const json& data) -> SlotData {
 	slots.levelCap = Get(data, "level_cap", 30);
 	slots.superUniqueChecks = Get(data, "superunique_checks", false);
 	slots.deathLink = Get(data, "death_link", false);
+	slots.deathLinkMode = death_link::ModeFromKey(Get(data, "death_link_mode", std::string("die")));
+	slots.deathLinkAmnesty = std::max(Get(data, "death_link_amnesty", 1), 1);
+	// [loot index, weight] pairs; anything that isn't a command trap is left out.
+	for (const json& pair : Array(data, "death_link_traps")) {
+		if (pair.is_array() && pair.size() == 2 && pair[0].is_number_integer() && pair[1].is_number_integer()) {
+			const auto trap = static_cast<loot::Loot>(pair[0].get<int>());
+			if (death_link::IsCommandTrap(trap)) {
+				slots.deathLinkTraps.push_back({ trap, pair[1].get<int>() });
+			}
+		}
+	}
 	slots.cowLevelChecks = Get(data, "cow_level_checks", false);
 	slots.runeChecks = Get(data, "rune_checks", 0);
 	slots.gemChecks = Get(data, "gem_checks", false);

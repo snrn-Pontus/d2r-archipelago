@@ -9,7 +9,7 @@ from worlds.generic.Rules import add_item_rule, add_rule
 from . import client  # noqa: F401  (adds the Launcher button)
 from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SIDE_AREAS, SKILL_FORMS, SKILL_ROLES, SKILL_SLOTS, SKILL_USERS,
                    SKILLS, SPECIAL_ITEMS, START_ATTACK_SKILLS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
-from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, KILL_COUNTS, LEVEL_CAPS,
+from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, KILL_COUNTS, LEVEL_CAPS, LOOT,
                   LEVEL_STEP, LOCKS, MERCHANT_ACCESS, SET_FINDS, SKILL_POINT, TOWN_PORTAL_ACCESS, TRAPS, UNIQUE_FINDS, UNIQUE_LOOT, act_key_name, area_location_name,
                   cow_location_name, find_count_location_name, find_location_name, item_name_to_id, kill_location_name,
                   level_location_name, location_name_to_id, quest_item_location_name, quest_location_name,
@@ -708,6 +708,11 @@ class D2RWorld(World):
                 "shrines": sorted(ShrinePool.shrines[name] for name in self.options.shrine_pool.value),
             },
             "death_link": bool(self.options.death_link),
+            "death_link_mode": self.options.death_link_mode.current_key,
+            "death_link_amnesty": self.options.death_link_amnesty.value,
+            # random_trap: [loot index, weight] for the traps a DeathLink can set off (a Junk Backpack can't).
+            "death_link_traps": [[LOOT.index(name), getattr(self.options, option).value] for name, option in TRAPS.items()
+                                 if name != "Junk Backpack" and getattr(self.options, option).value > 0],
             # d2r-ap-setup writes these into the mod's d2rloader.toml, overriding the player's D2RLoader settings.
             "loader_settings": loader_settings(self.options),
             # d2r-ap-setup reads this and writes the matching game tables.

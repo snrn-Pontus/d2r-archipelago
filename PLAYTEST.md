@@ -47,6 +47,9 @@ two Ral runes or `ap-debug give lsd 1 3` for a 3-socket Long Sword to try a shuf
 
 Built, pushed and installed, still to check in game:
 
+- [ ] DeathLink modes and amnesty (#41, new seed needed): `death_link_mode` one_hp / lose_gold / random_trap
+      and `death_link_amnesty`, see 7a. Most of all, that D2RCore's `depletehealth 1` really leaves 1 life.
+
 - [ ] Useful starting skills (#16, new seed needed, `useful_starting_skills` on by default): a Necromancer seed
       with `starting_skills: 1` starts with Teeth or Raise Skeleton, never only Amplify Damage or Bone Armor, and
       kills the first Fallen with it. A tree-mode Barbarian with `starting_skills: 1` starts with Bash unlocked
@@ -760,6 +763,26 @@ on `death_link: true` in both.
       in chat.
 - [ ] The death that DeathLink caused isn't sent back out.
 - [ ] Dying once sends one death, not one per frame or per resurrection.
+
+### 7a. DeathLink modes and amnesty (issue #41)
+
+New seed with `death_link: true` in both slots; change Snrn's `death_link_mode` per test (the log's seed line
+says "DeathLink on (mode N, every M deaths)": 0 die, 1 one_hp, 2 lose_gold, 3 random_trap). Send each death
+with `ap_probe localhost:38281 Probe --death`, standing outside town.
+
+- [ ] `one_hp`: life drops to 1 without dying; the log shows `console command "cheat depletehealth 1" accepted`
+      and chat says "DeathLink leaves you with 1 life." (`depletehealth` is a D2RCore cheat that
+      ExecuteConsoleCommand accepts even if it did nothing, so check the life orb.) A monster finishing you off
+      right after is a real death and is sent.
+- [ ] `lose_gold` with `tax_collector_gold: 250` at level 30: you lose 7,500 gold (or all you carry if less) and
+      chat says "DeathLink takes up to 7500 gold."
+- [ ] `random_trap`: a trap goes off ("it's a trap! ..."); in town it waits until you leave (with
+      `traps_wait_for_town` on). With only `ambush_weight` above 0 it's always an Ambush; with every trap weight
+      at 0 it's one of Ambush, Poison Cloud, Firestorm, Mana Drain or Tax Collector, never a Junk Backpack.
+- [ ] `die` (the default) still kills, as in 7.
+- [ ] `death_link_amnesty: 3`: the first two deaths say "DeathLink spares the others this time (2 more deaths
+      send one)" and "(1 more death sends one)" and the Probe gets nothing; the third sends one. Die twice, quit
+      D2R, relaunch: **Log State** shows "deaths not sent to DeathLink 2", and the next death sends one.
 
 ### 7b. Death experience penalty (issue #58)
 

@@ -95,6 +95,10 @@ auto GoldAmount(int level, const RewardSettings& rewards = {}) -> int;
 // needs to level up (0 at level 99).
 auto ExperienceAmount(int level, const RewardSettings& rewards = {}) -> int64_t;
 
+// Gold a Tax Collector trap (or a lose_gold DeathLink) takes: goldPerLevel per
+// character level.
+auto TaxAmount(int level, int goldPerLevel) -> int;
+
 // A Shrines.txt row for a Random Shrine, from pool (see RewardSettings::shrines).
 auto ShrineId(std::mt19937& random, std::span<const int> pool = {}) -> int;
 

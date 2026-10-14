@@ -155,6 +155,10 @@ auto ExperienceAmount(int level, const RewardSettings& rewards) -> int64_t {
 	return (static_cast<int64_t>(data::Experience[level]) - data::Experience[level - 1]) * std::clamp(rewards.experiencePercent, 0, 100) / 100;
 }
 
+auto TaxAmount(int level, int goldPerLevel) -> int {
+	return std::clamp(level, 1, 99) * std::max(goldPerLevel, 0);
+}
+
 auto ShrineId(std::mt19937& random, std::span<const int> pool) -> int {
 	std::vector<int> shrines;
 	for (const int id : pool) {
@@ -193,7 +197,7 @@ auto CommandsFor(Loot loot, int level, int act, std::mt19937& random, const Trap
 		case Loot::FirestormTrap:    return { { "fstorm" }, "it's a trap! Firestorm!", true };
 		case Loot::ManaDrainTrap:    return { { "depletemana 0" }, "it's a trap! Your mana drains away.", true };
 		case Loot::TaxCollectorTrap: {
-			const int amount = std::clamp(level, 1, 99) * std::max(traps.taxPerLevel, 0);
+			const int amount = TaxAmount(level, traps.taxPerLevel);
 			return { { "gold -" + std::to_string(amount) }, "it's a trap! The tax collector takes up to " + std::to_string(amount) + " gold.", true };
 		}
 		case Loot::MercenaryDownTrap: return { { "killhirable" }, "it's a trap! Your mercenary falls.", true };
