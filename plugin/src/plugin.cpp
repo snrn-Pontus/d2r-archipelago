@@ -171,6 +171,12 @@ std::vector<int>      gHeldFallbacks;
 // and the ones its last read showed done: a quest must show done twice in a row to count.
 std::set<int>         gQuestLogQueued;
 uint64_t              gQuestLogLastDone = 0;
+// What the quest log showed done as this game began (its first read once the server has
+// sent it): a seed's baseline comes from this, so quests done later in the game are progress.
+std::optional<uint64_t> gQuestLogAtJoin;
+// Quest log completions waiting for the render thread, as (bound session, difficulty * 100 + flag):
+// one queued for a seed that's no longer bound is dropped, not given to the next.
+std::vector<std::pair<uint64_t, int>> gQuestLogCompletions;
 std::atomic<bool>     gQuestLogReadQueued { false };
 Clock::time_point     gNextQuestLogRead {};
 // Whether the quest log is what completes quests now. Call with gMutex held.
@@ -1089,17 +1095,20 @@ void __cdecl QuestLogWork(const D2RL::PluginContext*, void*) noexcept {
 			const uint64_t done      = ap::quest_record::DoneMask(bits);
 			const uint64_t confirmed = done & gQuestLogLastDone;
 			gQuestLogLastDone        = done;
+			// Right after joining, the server may not have sent the record yet.
+			if (!gQuestLogAtJoin && Clock::now() - gPlayerReadyAt > std::chrono::seconds(5)) {
+				gQuestLogAtJoin = done;
+			}
 			if (gDifficultyKnown && gBoundSession != 0 && CharacterVerdict(gSlots) == ap::character::Verdict::Match) {
 				const int difficulty = std::clamp(gDifficulty, 0, 2);
 				auto baseline = gSave.questBaseline.find(difficulty);
-				// Right after joining, the server may not have sent the record yet.
-				if (baseline == gSave.questBaseline.end() && Clock::now() - gPlayerReadyAt > std::chrono::seconds(5)) {
+				if (baseline == gSave.questBaseline.end() && gQuestLogAtJoin) {
 					bool played = false;
 					for (const auto& quest : ap::data::Quests) {
 						played |= gSave.checks.contains(ap::ids::QuestLocation(static_cast<uint32_t>(difficulty), quest.flag));
 					}
-					// From this read alone: leaving a quest out of the baseline could hand it to the seed.
-					baseline = gSave.questBaseline.emplace(difficulty, ap::quest_record::Baseline(done, played)).first;
+					// As the game began, not now: a quest done before the difficulty was known is this game's progress.
+					baseline = gSave.questBaseline.emplace(difficulty, ap::quest_record::Baseline(*gQuestLogAtJoin, played)).first;
 					SaveNow();
 					const int before = std::popcount(baseline->second);
 					message = "Archipelago: " + std::string(DifficultyNames[difficulty]) + " quest log read for this seed"
@@ -1109,7 +1118,7 @@ void __cdecl QuestLogWork(const D2RL::PluginContext*, void*) noexcept {
 					for (const auto& quest : ap::data::Quests) {
 						const uint64_t bit = uint64_t { 1 } << quest.flag;
 						if ((confirmed & bit) != 0 && (baseline->second & bit) == 0 && gQuestLogQueued.insert(difficulty * 100 + quest.flag).second) {
-							gQuestQueue.push_back(static_cast<int>(QuestSource::QuestLog) * 1000 + difficulty * 100 + quest.flag);
+							gQuestLogCompletions.emplace_back(gBoundSession, difficulty * 100 + quest.flag);
 						}
 					}
 				}
@@ -4013,6 +4022,18 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 		std::lock_guard lock(gMutex);
 		gQuestQueue.insert(gQuestQueue.begin(), waiting.begin(), waiting.end());
 	}
+	std::vector<std::pair<uint64_t, int>> questLog;
+	uint64_t questLogSession = 0;
+	{
+		std::lock_guard lock(gMutex);
+		questLog.swap(gQuestLogCompletions);
+		questLogSession = gBoundSession;
+	}
+	for (const auto& [queuedFor, quest] : questLog) {
+		if (queuedFor == questLogSession && queuedFor != 0) {
+			CompleteQuest(static_cast<uint32_t>(quest / 100), static_cast<uint32_t>(quest % 100), QuestSource::QuestLog);
+		}
+	}
 	ReadLeftDifficulty(false);
 	std::vector<int> areas;
 	int difficulty = 0;
@@ -4202,6 +4223,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 				gGameBegan = std::filesystem::file_time_type::clock::now();
 				gQuestLogQueued.clear();
 				gQuestLogLastDone = 0;
+				gQuestLogAtJoin.reset();
 				gHeldFallbacks.clear();
 			}
 			gInGame = true;

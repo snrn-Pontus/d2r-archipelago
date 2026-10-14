@@ -47,7 +47,9 @@ inline constexpr auto DoneMask(const Bits& bits) -> uint64_t {
 	return done;
 }
 
-// What a difficulty's quest log held when the seed first read it for its character.
+// What a difficulty's quest log held as the game began, in the game where the seed first
+// read it for its character (a quest done later in that game is progress, even one done
+// before the plugin knew the difficulty).
 // A character that already played the seed there (it has quest checks there) keeps
 // everything; otherwise what it had done before is its own, not the seed's: an
 // older character doesn't hand the seed all its quests at once.

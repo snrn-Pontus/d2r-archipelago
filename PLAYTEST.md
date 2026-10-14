@@ -453,7 +453,8 @@ only log "... would complete it; the game's quest log decides." Use a seed-bound
 (debug tools on) writes the log's raw state.
 
 - [ ] Fresh character, new seed: clear the Den of Evil. "completed by the game's quest log" comes when the last
-      monster dies (reward pending) or when you talk to Akara. Note which.
+      monster dies. (2026-10-14, unbound: clearing the Den set reward pending, bit 1, with 4 "entered" and 13
+      "goal done", before talking to Akara; the record read live had 0x300 bits. Still to see with a seed bound.)
 - [ ] Sisters' Burial Grounds, The Search for Cain, Tools of the Trade, The Forgotten Tower: each completes once,
       by the quest log, at the right moment. Walking into Tristram before freeing Cain completes nothing.
 - [ ] One quest in each later act, and Hell's Forge and Rescue on Mount Arreat (the fallbacks guessed those).
@@ -463,8 +464,8 @@ only log "... would complete it; the game's quest log decides." Use a seed-bound
 - [ ] An older character of the seed's class on a fresh seed: "quest log read for this seed; N quests done before
       it don't count", and none of those send.
 - [ ] Nightmare: the first game there reads its quest log; Nightmare quests count on Nightmare.
-- [ ] Debug panel "Complete Quests" (ap-core quests) on a fresh seed's character, after its first kill (before it,
-      the seed hasn't read the log yet and takes them as done before the seed): every quest sends.
+- [ ] Debug panel "Complete Quests" (ap-core quests) on a fresh seed's character, a few seconds into its first
+      game, even before its first kill: every quest sends once the difficulty is known.
 - [ ] A mule (another class): nothing sends from its quest log.
 
 ## 2d. Difficulty and class before a kill (issue #126)
