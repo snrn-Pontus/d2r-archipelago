@@ -6,6 +6,7 @@
 #include <D2RLPlugin/item.h>
 
 #include <cstdint>
+#include <iterator>
 #include <random>
 #include <span>
 #include <string>
@@ -76,9 +77,10 @@ struct RewardSettings {
 	// High rune n (Pul 21 .. Zod 33) weighs (34 - n) to this power: 0 makes
 	// them all alike, 2 makes Zod 169 times rarer than Pul.
 	int highRuneCurve = 2;
-	// The HelpfulShrines a Random Shrine picks from; empty (or none helpful)
-	// means all of them.
-	std::vector<int> shrines;
+	// The HelpfulShrines a Random Shrine picks from. Empty means the seed has
+	// none in its filler; one that arrives anyway (or a pool with none helpful)
+	// picks from all of them.
+	std::vector<int> shrines { std::begin(HelpfulShrines), std::end(HelpfulShrines) };
 };
 
 // Rolls one item. For JunkBackpack it returns one piece of junk; the caller

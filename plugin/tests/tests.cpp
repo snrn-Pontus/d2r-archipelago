@@ -1446,6 +1446,10 @@ void TestRewardSettings() {
 	for (int i = 0; i < 50; ++i) {
 		EXPECT(std::ranges::find(ap::loot::HelpfulShrines, ap::loot::ShrineId(random, harmful)) != std::end(ap::loot::HelpfulShrines));
 	}
+	// The default pool is every helpful shrine; an empty one (no shrines in the seed) still places one that arrives.
+	EXPECT(defaults.shrines.size() == std::size(ap::loot::HelpfulShrines));
+	const ap::loot::RewardSettings none { .shrines = {} };
+	EXPECT(ap::loot::CommandsFor(ap::loot::Loot::RandomShrine, 30, 0, random, {}, {}, none).commands.back().rfind("shrine ", 0) == 0);
 	const ap::loot::RewardSettings experienceOnly { .shrines = { 15 } };
 	EXPECT(ap::loot::CommandsFor(ap::loot::Loot::RandomShrine, 30, 0, random, {}, {}, experienceOnly).commands.back() == "shrine 15");
 }

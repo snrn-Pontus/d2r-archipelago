@@ -859,7 +859,7 @@ auto SlotSummary(const ap::SlotData& slots) -> std::string {
 	     + "; rewards: gold " + std::to_string(slots.rewards.goldPerLevel) + "/level, experience " + std::to_string(slots.rewards.experiencePercent)
 	     + "%, levels -" + std::to_string(slots.rewards.levelBelow) + "/+" + std::to_string(slots.rewards.levelAbove) + ", rare jewels "
 	     + std::to_string(slots.rewards.rareJewelPercent) + "%, high rune curve " + std::to_string(slots.rewards.highRuneCurve) + ", shrines "
-	     + (slots.rewards.shrines.empty() ? std::string("all") : std::to_string(slots.rewards.shrines.size())) + "; DeathLink "
+	     + (slots.rewards.shrines.empty() ? std::string("none") : std::to_string(slots.rewards.shrines.size())) + "; DeathLink "
 	     + on(slots.deathLink) + ", traps wait for town " + on(slots.traps.waitForTown) + ".";
 }
 

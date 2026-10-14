@@ -195,8 +195,12 @@ auto ReadSlotData(const json& data) -> SlotData {
 		.rareJewelPercent = Get(rewards, "rare_jewel_chance", 30),
 		.highRuneCurve = Get(rewards, "high_rune_curve", 2),
 	};
-	for (const int64_t shrine : Integers(rewards, "shrines")) {
-		slots.rewards.shrines.push_back(static_cast<int>(shrine));
+	// Missing keeps every helpful shrine, as before the option; empty means the seed has no Random Shrines.
+	if (rewards.contains("shrines")) {
+		slots.rewards.shrines.clear();
+		for (const int64_t shrine : Integers(rewards, "shrines")) {
+			slots.rewards.shrines.push_back(static_cast<int>(shrine));
+		}
 	}
 	const json randomizer = Object(data, "randomizer");
 	slots.randomizer.seed = Get(randomizer, "seed", 0U);
