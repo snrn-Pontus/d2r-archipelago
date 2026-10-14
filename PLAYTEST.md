@@ -47,6 +47,13 @@ two Ral runes or `ap-debug give lsd 1 3` for a 3-socket Long Sword to try a shuf
 
 Built, pushed and installed, still to check in game:
 
+- [ ] Useful starting skills (#16, new seed needed, `useful_starting_skills` on by default): a Necromancer seed
+      with `starting_skills: 1` starts with Teeth or Raise Skeleton, never only Amplify Damage or Bone Armor, and
+      kills the first Fallen with it. A tree-mode Barbarian with `starting_skills: 1` starts with Bash unlocked
+      and his starting weapon gives +1 Bash (the skill page shows it at 1 before the first point). With
+      `character_class: any`, a few seeds' starting Codex skills always include an attack or summon.
+- [ ] Skill Blocklist (#16): put `Find Potion (Barbarian)` and `Teleport (Sorceress)` in `skill_blocklist`;
+      neither shows up in the spoiler, and in tree mode a blocked skill stays padlocked for the whole game.
 - [ ] S1 skills (#117, new seed needed): a Barbarian or Amazon seed never gets Smite, a Paladin never gets
       Dodge, Avoid or Evade, and a Barbarian no longer gets Assassin traps (its S2 animation only exists with a
       one-handed thrusting weapon). A Sorceress, Necromancer, Druid or Assassin with Smite and a shield can

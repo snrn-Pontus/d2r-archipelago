@@ -5,6 +5,7 @@ from typing import Any
 from Options import Choice, DeathLink, DefaultOnToggle, NamedRange, OptionGroup, OptionSet, PerGameCommonOptions, Range, Toggle
 
 from .data import CLASSES
+from .ids import skill_names_by_class
 
 
 class Goal(Choice):
@@ -136,6 +137,21 @@ class StartingSkills(Range):
     range_start = 0
     range_end = 10
     default = 2
+
+
+class UsefulStartingSkills(DefaultOnToggle):
+    """At least one starting skill deals damage or summons, so you never start with only curses, auras, buffs,
+    passives or skills like Find Potion. With a class, it's one of the class's level-1 attacks or summons; in tree
+    mode one from the tree's top row if it has one (a weapon attack like Bash counts), else the lowest one."""
+    display_name = "Useful Starting Skills"
+
+
+class SkillBlocklist(OptionSet):
+    """Skills that never go in the pool or your starting skills, by item name ("Find Potion (Barbarian)"). In tree
+    mode they stay locked in your tree."""
+    display_name = "Skill Blocklist"
+    valid_keys = sorted(set().union(*skill_names_by_class.values()))
+    default = frozenset()
 
 
 class SkillClasses(OptionSet):
@@ -883,6 +899,8 @@ class D2ROptions(PerGameCommonOptions):
     skill_scaling_cap: SkillScalingCap
     scale_with_length: ScaleWithLength
     starting_skills: StartingSkills
+    useful_starting_skills: UsefulStartingSkills
+    skill_blocklist: SkillBlocklist
     skill_classes: SkillClasses
     include_warlock: IncludeWarlock
     skills_per_act: SkillsPerAct
@@ -977,7 +995,7 @@ class D2ROptions(PerGameCommonOptions):
 OPTION_GROUPS = [
     OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, ActKeyWindow, SkillsPerAct]),
     OptionGroup("Skills and Codex", [CharacterClass, SkillMode, SkillTreeShuffle, SkillPoints, SkillPoolSize, SkillCopies, SkillFocus, ScaleWithLength, StartingSkills,
-                                     SkillClasses, IncludeWarlock, SkillLevelScaling, SkillScalingCap, CodexEmpowerments]),
+                                     UsefulStartingSkills, SkillBlocklist, SkillClasses, IncludeWarlock, SkillLevelScaling, SkillScalingCap, CodexEmpowerments]),
     OptionGroup("Checks", [AreaChecks, SideAreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, CowLevelChecks]),
     OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,
                                                FindCountChecks], start_collapsed=True),

@@ -7,8 +7,8 @@ from worlds.AutoWorld import WebWorld, World
 from worlds.generic.Rules import add_item_rule, add_rule
 
 from . import client  # noqa: F401  (adds the Launcher button)
-from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SIDE_AREAS, SKILL_FORMS, SKILL_SLOTS, SKILL_USERS, SKILLS,
-                   SPECIAL_ITEMS, START_ATTACK_SKILLS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
+from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SIDE_AREAS, SKILL_FORMS, SKILL_ROLES, SKILL_SLOTS, SKILL_USERS,
+                   SKILLS, SPECIAL_ITEMS, START_ATTACK_SKILLS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
 from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, KILL_COUNTS, LEVEL_CAPS,
                   LEVEL_STEP, LOCKS, MERCHANT_ACCESS, SET_FINDS, SKILL_POINT, TRAPS, UNIQUE_FINDS, UNIQUE_LOOT, act_key_name, area_location_name,
                   cow_location_name, find_count_location_name, find_location_name, item_name_to_id, kill_location_name,
@@ -33,6 +33,16 @@ CUBE_AREAS = ("Duriel's Lair", "Durance of Hate Level 2", "Durance of Hate Level
 GRIND_LEVEL = 70
 # Waypoint Lock covers Acts I to III, the acts you can leave backwards without a waypoint.
 WAYPOINT_LOCK_ACTS = 3
+# Skill item name -> skill id.
+SKILL_IDS = {skill_item_name(skill_id, name, cls): skill_id for skill_id, name, cls in SKILLS}
+# Roles that can carry a character (Useful Starting Skills starts you with one), and the ones it replaces first.
+USEFUL_ROLES = ("damage", "summon")
+WEAK_ROLES = ("passive", "curse", "utility")
+
+
+def useful_skill(name: str) -> bool:
+    """Whether a skill (item name) deals damage or summons on its own; Druid form attacks need a form first."""
+    return SKILL_ROLES[SKILL_IDS[name]] in USEFUL_ROLES and SKILL_IDS[name] not in SKILL_FORMS
 
 
 def can_use(skill_id: int, cls: str) -> bool:
@@ -338,6 +348,7 @@ class D2RWorld(World):
                       if CLASSES[cls] in allowed and (sid not in SKILL_USERS or (own and can_use(sid, own)))]
         if self.tree_mode:
             candidates = self.tree_skills()
+        candidates = [name for name in candidates if name not in self.options.skill_blocklist.value]
         keys = [self.create_item(act_key_name(index)) for index in range(1, self.act_count)] if self.options.act_keys else []
         locks = [self.create_item(name) for name in self.lock_items()]
         keys += [item for item in locks if item.classification != ItemClassification.filler]
@@ -493,7 +504,9 @@ class D2RWorld(World):
 
     def pick_tree_starting_skills(self, count: int, candidates: list[str]) -> list[str]:
         """Tree mode: starting skills from the tree's top row, active level-1 skills first, led by one that
-        attacks (it goes on the starting weapon, see start_skill)."""
+        attacks (it goes on the starting weapon, see start_skill). With Useful Starting Skills, a tree whose top
+        row has no such attack is led by a top-row weapon attack (Bash) or summon, else by the lowest skill in the
+        tree that deals damage or summons."""
         row_of = {skill_id: row for skill_id, _page, row, _column, _pinned in SKILL_SLOTS}
         id_of = {skill_item_name(skill_id, name, cls): skill_id for skill_id, name, cls in SKILLS}
         top = [name for name in candidates if row_of.get(self.skill_tree.get(id_of[name], id_of[name])) == 1]
@@ -502,32 +515,53 @@ class D2RWorld(World):
         self.random.shuffle(active)
         self.random.shuffle(rest)
         attack = next((name for name in active if id_of[name] in START_ATTACK_SKILLS), None)
+        if not attack and self.options.useful_starting_skills:
+            lowest = sorted(rest, key=lambda name: row_of.get(self.skill_tree.get(id_of[name], id_of[name]), 99))
+            attack = next((name for name in active + lowest if useful_skill(name)), None)
         if attack:
-            active.remove(attack)
+            (active if attack in active else rest).remove(attack)
             active.insert(0, attack)
         return (active + rest)[:count]
 
     def start_skill(self) -> int | None:
         """Tree mode: the starting skill the class's starting weapon gives +1 to, like the Sorceress's Fire Bolt in
         the real game, so a new character has a skill to use before its first point. An attack if one was dealt,
-        else any active starting skill; None for none."""
+        else an active starting skill, one that deals damage or summons (Bash) first; None for none."""
         ids = [skill_id for skill_id, name, cls in SKILLS if skill_item_name(skill_id, name, cls) in self.starting]
         return (next((skill_id for skill_id in ids if skill_id in START_ATTACK_SKILLS), None)
+                or next((skill_id for skill_id in ids if skill_id in STARTER_SKILLS and SKILL_ROLES[skill_id] in USEFUL_ROLES), None)
                 or next((skill_id for skill_id in ids if skill_id in STARTER_SKILLS), None))
 
     def pick_starting_skills(self, count: int, candidates: list[str]) -> list[str]:
         """Starting skills: the chosen class's level-1 skills first, then the rest of its skills.
-        With no class chosen, any skills from the pool."""
+        With no class chosen, any skills from the pool. Useful Starting Skills then makes sure one of them deals
+        damage or summons (see make_start_useful)."""
         own = self.class_name()
         if own == "Warlock" and not self.options.include_warlock:
             own = ""
         if not own:
-            return self.random.sample(candidates, count)
-        starters = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if CLASSES[cls] == own and sid in STARTER_SKILLS]
-        others = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS if CLASSES[cls] == own and sid not in STARTER_SKILLS]
+            return self.make_start_useful(self.random.sample(candidates, count), candidates)
+        mine = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS
+                if CLASSES[cls] == own and skill_item_name(sid, name, cls) not in self.options.skill_blocklist.value]
+        starters = [name for name in mine if SKILL_IDS[name] in STARTER_SKILLS]
+        others = [name for name in mine if SKILL_IDS[name] not in STARTER_SKILLS]
         self.random.shuffle(starters)
         self.random.shuffle(others)
-        return (starters + others)[:count]
+        return self.make_start_useful((starters + others)[:count], starters, others)
+
+    def make_start_useful(self, starting: list[str], *choices: list[str]) -> list[str]:
+        """Useful Starting Skills: when no starting skill deals damage or summons, a random one that does, from
+        the first of `choices` that has one, takes the place of the least useful starting skill (a passive, curse
+        or utility skill, else a form attack, else the last one)."""
+        if not self.options.useful_starting_skills or not starting or any(useful_skill(name) for name in starting):
+            return starting
+        useful = next(([name for name in names if useful_skill(name)] for names in choices
+                       if any(useful_skill(name) for name in names)), [])
+        if not useful:
+            return starting
+        weakest = max(range(len(starting)), key=lambda index: (SKILL_ROLES[SKILL_IDS[starting[index]]] in WEAK_ROLES,
+                                                               SKILL_IDS[starting[index]] in SKILL_FORMS, index))
+        return starting[:weakest] + [self.random.choice(useful)] + starting[weakest + 1:]
 
     def pick_skill_pool(self, rest: list[str], count: int) -> list[str]:
         """The pool's distinct skills. class_weighted takes half from the chosen class, and when either half

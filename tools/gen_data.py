@@ -170,6 +170,43 @@ ENGINE_CLASS_SKILLS = {
     "ass": ("Dragon Flight", "Dragon Talon", "Dragon Tail", "Fists of Fire", "Claws of Thunder", "Blades of Ice",
             "Dragon Claw", "Claw Mastery", "Weapon Block"),
 }
+# Skill roles (for Useful Starting Skills): passives, auras and summons with a pet that fights come from
+# skills.txt's passive, aura, summon and pettype columns; every other skill deals damage unless it's named
+# here, since an attack's columns don't tell it from a debuff, a buff or a skill that only moves or finds.
+NAMED_ROLES = {
+    # Debuffs on monsters: the Necromancer's curses, the Warlock's hexes, sigils and Death Mark, and the
+    # other classes' skills that work the same way.
+    "curse": ("Amplify Damage", "Dim Vision", "Weaken", "Iron Maiden", "Terror", "Confuse", "Life Tap", "Attract",
+              "Decrepify", "Lower Resist", "Inner Sight", "Slow Missiles", "Howl", "Taunt", "Battle Cry",
+              "Cloak of Shadows", "Death Mark", "Hex Bane", "Hex Siphon", "Hex Purge", "Sigil Lethargy",
+              "Sigil Rancor", "Sigil Death"),
+    # Armors, shouts, shapeshifts and other boosts to yourself or your party; the Druid's spirits too, which
+    # are pets but never attack.
+    "buff": ("Frozen Armor", "Shiver Armor", "Chilling Armor", "Energy Shield", "Enchant", "Bone Armor", "Holy Shield",
+             "Shout", "Battle Orders", "Battle Command", "Cyclone Armor", "Wearwolf", "Wearbear", "Oak Sage",
+             "Heart of Wolverine", "Spirit of Barbs", "Quickness", "Fade", "Venom", "Psychic Ward", "Engorge", "Consume"),
+    # Getting around, finding things and pets that don't fight.
+    "utility": ("Telekinesis", "Teleport", "Leap", "Find Potion", "Find Item", "Grim Ward", "Bone Wall", "Bone Prison",
+                "Dopplezon", "Cycle of Life", "Vines"),
+    # Pets the summon column doesn't name: revived monsters and a bound demon.
+    "summon": ("Revive", "Bind Demon"),
+}
+
+
+def skill_role(row: dict[str, str]) -> str:
+    """A skill's role: damage, summon, curse, aura, buff, passive or utility (NAMED_ROLES first)."""
+    role = next((role for role, names in NAMED_ROLES.items() if row["skill"] in names), None)
+    if role:
+        return role
+    if row.get("passive") == "1":
+        return "passive"
+    if row.get("aura") == "1":
+        return "aura"
+    if row.get("summon") and row.get("pettype", "") not in ("", "none"):
+        return "summon"
+    return "damage"
+
+
 # SQ skills are sequences from the engine's own per-class tables (animdata.d2 has no SQ). The Necromancer
 # has none, so a sequence that plays A1 frames (Charge, and the Amazon's Impale and the Assassin's Blade
 # Fury, which work the same way) does nothing for him. Lightning and Chain Lightning play SC frames: off
@@ -228,11 +265,13 @@ def main() -> None:
     start_attacks = []
     # Skills only some classes can use, and the Druid form each form attack needs.
     users, forms = {}, {}
+    roles = {}
     skill_ids = {row["skill"]: int(row["*Id"]) for row in read_table(excel / "skills.txt") if row.get("*Id", "").isdigit()}
     for row in read_table(excel / "skills.txt"):
         cls = row.get("charclass", "")
         if cls in CLASSES and row.get("*Id", "").isdigit():
             skills.append((int(row["*Id"]), row["skill"], cls))
+            roles[int(row["*Id"])] = skill_role(row)
             if (who := skill_users(row)) is not None:
                 users[int(row["*Id"])] = who
             if row.get("restrict") == "2":
@@ -250,6 +289,10 @@ def main() -> None:
         for name in names:
             if class_of.get(name) != cls:
                 sys.exit(f"ENGINE_CLASS_SKILLS: {name} isn't a {CLASSES[cls]} skill in skills.txt")
+    for names in NAMED_ROLES.values():
+        for name in names:
+            if name not in class_of:
+                sys.exit(f"NAMED_ROLES: {name} isn't a class skill in skills.txt")
 
     # Tree slots for the skill tree shuffle: (skill id, tree page, row, column, pinned). The Warlock
     # (Reign of the Warlock only) and skills without a tree place stay out; the Druid's forms and the
@@ -427,6 +470,8 @@ def main() -> None:
     py += ["", "# Skills only these classes can use (claws, two weapons, animations, Druid forms, engine class skills).",
            "SKILL_USERS = {"]
     py += [f"    {sid}: {who!r}," for sid, who in sorted(users.items())]
+    py += ["}", "", "# Skill id -> role: damage, summon, curse, aura, buff, passive or utility.", "SKILL_ROLES = {"]
+    py += [f"    {sid}: {role!r}," for sid, role in sorted(roles.items())]
     py += ["}", "", "# Druid form attacks: skill id -> the form skills (any one) it needs.", "SKILL_FORMS = {"]
     py += [f"    {sid}: {need!r}," for sid, need in sorted(forms.items())]
     py += ["}"]
