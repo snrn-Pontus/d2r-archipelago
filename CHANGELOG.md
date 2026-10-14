@@ -2,6 +2,19 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.13.1 - 2026-10-14
+
+Works with seeds from 0.13.0; no need to rerun `d2r-ap-setup`.
+
+- The plugin knows your character's name and class as soon as a game begins, so rewards and locks no
+  longer wait for your first kill. A seed now belongs to the character that first plays it, by name: a
+  mule of the same class no longer gets its rewards, and `ap-claim` moves the seed to another character (#155)
+- The main menu's status line says which character to play: the seed's own ("play SorkenTwo (Sorceress,
+  level 12)"), your characters of the seed's class, or "not connected" when the server can't be reached.
+  Joining with the wrong character shows a banner right away (#156)
+- The plugin logs each waypoint you activate, on every difficulty (`ap-debug quests` lists them). Groundwork
+  for waypoint checks (#157)
+
 ## 0.13.0 - 2026-10-14
 
 Rerun `d2r-ap-setup` for this version and make a new seed: most of these are new options, and the
