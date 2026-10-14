@@ -8,9 +8,12 @@
 // (PLAYTEST.md section 2c). Ids are from D2R 3.3 (monstats *hcIdx, item
 // codes, level ids).
 
+#include "game_data.h"
+
 #include <D2RLPlugin/item.h>
 
 #include <cstdint>
+#include <iterator>
 #include <optional>
 
 namespace ap::quests {
@@ -65,6 +68,27 @@ inline constexpr auto Find(Trigger trigger, uint32_t id) -> std::optional<uint8_
 	for (const auto& entry : Triggers) {
 		if (entry.trigger == trigger && entry.id == id) {
 			return entry.flag;
+		}
+	}
+	return std::nullopt;
+}
+
+// The Scroll of Inifuss, and what Akara turns it into (the Key to the Cairn Stones),
+// which counts as finding it too. Tristram can't be reached without it, so The Search
+// for Cain finds it as well (#123).
+inline constexpr uint32_t InifussScroll     = Code("bks");
+inline constexpr uint32_t DecipheredScroll  = Code("bkd");
+inline constexpr uint8_t  SearchForCainFlag = 4;
+
+// The data::QuestItems index of a quest item code.
+inline constexpr auto QuestItemIndex(uint32_t code) -> std::optional<uint32_t> {
+	if (code == DecipheredScroll) {
+		code = InifussScroll;
+	}
+	for (uint32_t index = 0; index < std::size(data::QuestItems); ++index) {
+		const char* text = data::QuestItems[index].code;
+		if (code == D2RL::Items::MakeItemCode(text[0], text[1], text[2])) {
+			return index;
 		}
 	}
 	return std::nullopt;
