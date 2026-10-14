@@ -452,9 +452,10 @@ quest log"). A quest counts when the game marks it done or its reward waiting. W
 only log "... would complete it; the game's quest log decides." Use a seed-bound character; `ap-debug quests`
 (debug tools on) writes the log's raw state.
 
-- [ ] Fresh character, new seed: clear the Den of Evil. "completed by the game's quest log" comes when the last
-      monster dies. (2026-10-14, unbound: clearing the Den set reward pending, bit 1, with 4 "entered" and 13
-      "goal done", before talking to Akara; the record read live had 0x300 bits. Still to see with a seed bound.)
+- [x] Fresh character, new seed: clear the Den of Evil. "completed by the game's quest log" comes when the last
+      monster dies. (2026-10-14: clearing the Den sets reward pending, bit 1, with 4 "entered" and 13 "goal done",
+      before talking to Akara. Bound seed: the 20-kill fallback fired at 16:18:56 and was only logged; the quest
+      log completed it at 16:20:07, after the last monster, and the check sent.)
 - [ ] Sisters' Burial Grounds, The Search for Cain, Tools of the Trade, The Forgotten Tower: each completes once,
       by the quest log, at the right moment. Walking into Tristram before freeing Cain completes nothing.
 - [ ] One quest in each later act, and Hell's Forge and Rescue on Mount Arreat (the fallbacks guessed those).
