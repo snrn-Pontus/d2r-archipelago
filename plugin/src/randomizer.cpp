@@ -81,11 +81,11 @@ auto Settings::Any() const -> bool {
 	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != PerDifficulty { 100, 100, 100 } || !itemLevelRequirements
 	    || !itemStatRequirements || monsterDensity != PerDifficulty { 100, 100, 100 } || championPacks != 100 || superUniqueMinions != 100
 	    || betterDrops != 100 || betterMagic != 100 || deathXpPenalty != 100 || parcelPrice != 100 || prophecyPrice != 100
-	    || shopVendor != ShopVendor::PotionSeller || SuperUniqueCopies() || !skillTree.empty() || treeMode;
+	    || shopVendor != ShopVendor::PotionSeller || freeMercRevive || SuperUniqueCopies() || !skillTree.empty() || treeMode;
 }
 
-auto StampChangesShop(const std::string& stamp) -> bool {
-	for (const char* key : { " parcel_price=", " prophecy_price=", " shop_vendor=" }) {
+auto StampChangesPrices(const std::string& stamp) -> bool {
+	for (const char* key : { " parcel_price=", " prophecy_price=", " shop_vendor=", " merc_revive=" }) {
 		if (stamp.find(key) != std::string::npos) {
 			return true;
 		}
@@ -132,6 +132,8 @@ auto Settings::Stamp() const -> std::string {
 	add(parcelPrice != 100, "parcel_price", parcelPrice);
 	add(prophecyPrice != 100, "prophecy_price", prophecyPrice);
 	add(shopVendor != ShopVendor::PotionSeller, "shop_vendor", static_cast<int>(shopVendor));
+	// The resurrection price in percent: 0 when free.
+	add(freeMercRevive, "merc_revive", 0);
 	add(monsters == Shuffle::Anywhere && shuffleTolerance != 3, "tolerance", shuffleTolerance);
 	add(monsters != Shuffle::Off && shuffleCowLevel, "cows", 1);
 	add(superUniques == Shuffle::Nearby && superUniqueSpread != 6, "superunique_spread", superUniqueSpread);
@@ -1223,6 +1225,23 @@ auto ScaleDeathPenalty(Table& difficultylevels, int percent) -> bool {
 		const std::string value = difficultylevels.Cell(row, column);
 		if (!value.empty()) {
 			difficultylevels.Set(row, column, std::to_string((ParseInt(value) * percent + 50) / 100));
+		}
+	}
+	return true;
+}
+
+auto FreeMercRevive(Table& hirelings) -> bool {
+	const int multiplier = hirelings.Column("resurrectcostmultiplier");
+	const int most = hirelings.Column("resurrectcostmax");
+	if (multiplier < 0 || most < 0) {
+		return false;
+	}
+	// Rows without a cost (dividers) stay as they are.
+	for (size_t row = 0; row < hirelings.Rows().size(); ++row) {
+		for (const int column : { multiplier, most }) {
+			if (!hirelings.Cell(row, column).empty()) {
+				hirelings.Set(row, column, "0");
+			}
 		}
 	}
 	return true;

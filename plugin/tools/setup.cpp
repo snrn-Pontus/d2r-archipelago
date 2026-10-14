@@ -897,6 +897,15 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 				std::printf("  %s: couldn't change the experience lost on death (difficultylevels.txt has no DeathExpPenalty)\n", label);
 			}
 		}
+		if (settings.freeMercRevive) {
+			bool found = false;
+			PatchTable(storage, excel, bank, "hireling.txt", [&](Table& t) { found = rnd::FreeMercRevive(t); });
+			if (found) {
+				std::printf("  %s: resurrecting a mercenary is free\n", label);
+			} else {
+				std::printf("  %s: couldn't make mercenary revives free (hireling.txt has no resurrect cost columns)\n", label);
+			}
+		}
 		const bool clearRequirements = !settings.itemLevelRequirements || !settings.itemStatRequirements;
 		if (clearRequirements) {
 			for (const char* table : { "weapons.txt", "armor.txt", "setitems.txt" }) {

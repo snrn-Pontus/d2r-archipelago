@@ -2,7 +2,8 @@ from dataclasses import dataclass
 
 from typing import Any
 
-from Options import Choice, DeathLink, DefaultOnToggle, NamedRange, OptionGroup, OptionSet, PerGameCommonOptions, Range, Toggle
+from Options import (Choice, DeathLink, DefaultOnToggle, NamedRange, OptionCounter, OptionGroup, OptionSet, PerGameCommonOptions,
+                     Range, Toggle)
 
 from .data import CLASSES
 from .ids import skill_names_by_class
@@ -1032,6 +1033,55 @@ class ItemStatRequirements(DefaultOnToggle):
     display_name = "Item Stat Requirements"
 
 
+class FreeMercRevive(Toggle):
+    """Resurrecting a mercenary at the town's hireling NPC costs nothing (usually up to 50,000 gold)."""
+    display_name = "Free Mercenary Revive"
+
+
+class StartingGold(Range):
+    """Gold your character gets once, the first time it plays the seed. At most 10,000, what a level 1
+    character can carry."""
+    display_name = "Starting Gold"
+    range_start = 0
+    range_end = 10000
+    default = 0
+
+
+RUNE_NAMES = ["El", "Eld", "Tir", "Nef", "Eth", "Ith", "Tal", "Ral", "Ort", "Thul", "Amn", "Sol", "Shael", "Dol", "Hel",
+              "Io", "Lum", "Ko", "Fal", "Lem", "Pul", "Um", "Mal", "Ist", "Gul", "Vex", "Ohm", "Lo", "Sur", "Ber", "Jah",
+              "Cham", "Zod"]
+
+# The items Starting Items can give, by name, with their item codes. Must match Items in
+# plugin/src/starting_items.h.
+STARTING_ITEMS: dict[str, str] = {
+    "Minor Healing Potion": "hp1", "Light Healing Potion": "hp2", "Healing Potion": "hp3",
+    "Greater Healing Potion": "hp4", "Super Healing Potion": "hp5",
+    "Minor Mana Potion": "mp1", "Light Mana Potion": "mp2", "Mana Potion": "mp3",
+    "Greater Mana Potion": "mp4", "Super Mana Potion": "mp5",
+    "Rejuvenation Potion": "rvs", "Full Rejuvenation Potion": "rvl",
+    "Stamina Potion": "vps", "Antidote Potion": "yps", "Thawing Potion": "wms",
+    "Scroll of Town Portal": "tsc", "Scroll of Identify": "isc",
+    "Perfect Amethyst": "gpv", "Perfect Sapphire": "gpb", "Perfect Emerald": "gpg", "Perfect Ruby": "gpr",
+    "Perfect Diamond": "gpw", "Perfect Topaz": "gpy", "Perfect Skull": "skz",
+    **{f"{rune} Rune": f"r{number:02}" for number, rune in enumerate(RUNE_NAMES, 1)},
+}
+
+
+class StartingItems(OptionCounter):
+    """Items your character gets once, the first time it plays the seed, as rewards (they send no checks), e.g.
+    {"Full Rejuvenation Potion": 3, "Ber Rune": 1}. Up to 20 of each. They go in your inventory, then the cube
+    and stash, and wait for room. The Potion and Town Portal locks treat them like any you pick up.
+    Any potion (Minor to Super Healing and Mana, Rejuvenation, Full Rejuvenation, Stamina, Antidote, Thawing),
+    Scroll of Town Portal, Scroll of Identify, perfect gem (Perfect Amethyst ... Perfect Skull) or rune (El Rune
+    ... Zod Rune). For Archipelago items (skills, locks, keys) use start_inventory instead."""
+    display_name = "Starting Items"
+    valid_keys = sorted(STARTING_ITEMS)
+    min = 0
+    max = 20
+    cull_zeroes = True
+    default = {}
+
+
 class LoaderToggle(Choice):
     """A D2RLoader setting d2r-ap-setup writes as the Archipelago mod's override. keep leaves your own D2RLoader
     setting alone."""
@@ -1200,6 +1250,8 @@ class D2ROptions(PerGameCommonOptions):
     codex_empowerments: CodexEmpowerments
     boss_quests_give_uniques: BossQuestsGiveUniques
     boss_reward_type: BossRewardType
+    starting_gold: StartingGold
+    starting_items: StartingItems
     basic_loot_weight: BasicLootWeight
     unique_weight: UniqueWeight
     set_item_weight: SetItemWeight
@@ -1256,6 +1308,7 @@ class D2ROptions(PerGameCommonOptions):
     death_experience_penalty: DeathExperiencePenalty
     item_level_requirements: ItemLevelRequirements
     item_stat_requirements: ItemStatRequirements
+    free_merc_revive: FreeMercRevive
     show_ground_sockets: ShowGroundSockets
     display_item_levels: DisplayItemLevels
     item_stat_ranges: ItemStatRanges
@@ -1286,6 +1339,7 @@ OPTION_GROUPS = [
                             GoldRewardPerLevel, ExperienceRewardPercent, RewardLevelBelow, RewardLevelAbove, RareJewelChance,
                             HighRuneCurve, ShrinePool],
                 start_collapsed=True),
+    OptionGroup("Starting Gold and Items", [StartingGold, StartingItems], start_collapsed=True),
     OptionGroup("Traps", [TrapPercentage, JunkBackpackWeight, AmbushWeight, PoisonCloudWeight, FirestormWeight, ManaDrainWeight,
                           TaxCollectorWeight, MercenaryDownWeight, TrapsWaitForTown, AmbushSize, AmbushMonsters, TaxCollectorGold,
                           JunkBackpackSize], start_collapsed=True),
@@ -1294,7 +1348,8 @@ OPTION_GROUPS = [
                                  SuperUniqueShuffleSpread, SuperUniqueMinions, RunewordShuffle,
                                  RunewordRuneSpread, MonsterDensity, MonsterDensityNightmare, MonsterDensityHell, ChampionPacks,
                                  BetterDrops, BetterMagic, ExperienceMultiplier, ExperienceMultiplierNightmare,
-                                 ExperienceMultiplierHell, DeathExperiencePenalty, ItemLevelRequirements, ItemStatRequirements]),
+                                 ExperienceMultiplierHell, DeathExperiencePenalty, ItemLevelRequirements, ItemStatRequirements,
+                                 FreeMercRevive]),
     OptionGroup("D2RLoader Settings", [ShowGroundSockets, DisplayItemLevels, ItemStatRanges, MaximumSockets, FloorItemLimit,
                                        SharedStashTabs, MaterialsLimit], start_collapsed=True),
     OptionGroup("Multiworld", [DeathLink, DeathLinkMode, DeathLinkAmnesty]),

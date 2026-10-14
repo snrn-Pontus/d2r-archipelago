@@ -66,6 +66,8 @@ struct Settings {
 	int      parcelPrice = 100;
 	int      prophecyPrice = 100;
 	ShopVendor shopVendor = ShopVendor::PotionSeller;
+	// Resurrecting a mercenary costs nothing (hireling.txt, FreeMercRevive).
+	bool     freeMercRevive = false;
 	// Field superuniques get monster rows of their own, so their kills are checks.
 	bool     superUniqueChecks = false;
 	// The skill tree shuffle: (skill id, id of the skill whose tree slot it takes).
@@ -86,10 +88,11 @@ struct Settings {
 	auto Stamp() const -> std::string;
 };
 
-// Whether a mod stamp (Settings::Stamp) has changed shop prices or vendor. The
-// shop items are written for every seed, so a stale mod like that charges other
-// prices than the plugin refunds even when the connected seed changes nothing.
-auto StampChangesShop(const std::string& stamp) -> bool;
+// Whether a mod stamp (Settings::Stamp) has changed shop prices or vendor, or
+// free mercenary revives. The shop items are written for every seed, so a stale
+// mod like that charges other prices than the plugin refunds (or revives for
+// free) even when the connected seed changes nothing.
+auto StampChangesPrices(const std::string& stamp) -> bool;
 
 // Locks the class skill trees: each class skill becomes its own prerequisite,
 // so no skill can take its first point (item skills don't count as points).
@@ -290,6 +293,11 @@ void ScaleExperience(Table& monlvl, const PerDifficulty& percent);
 // Scales each difficulty's DeathExpPenalty in difficultylevels.txt, in percent,
 // rounded to the nearest whole percent of a level. False if the column is missing.
 auto ScaleDeathPenalty(Table& difficultylevels, int percent) -> bool;
+
+// Makes resurrecting any mercenary free: resurrectcostmultiplier and
+// resurrectcostmax to 0 in hireling.txt (the divisor stays, it divides). False
+// if the columns are missing.
+auto FreeMercRevive(Table& hirelings) -> bool;
 
 // Clears level and/or strength and dexterity requirements in an item table
 // (weapons, armor, misc, uniqueitems, setitems).

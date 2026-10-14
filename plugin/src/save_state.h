@@ -62,6 +62,10 @@ struct SaveState {
 	size_t notifiedItems = 0;
 	// Whether Town Portal Access has brought its Tome of Town Portal.
 	bool portalTomeGiven = false;
+	// The seed's starting gold queued, and how many starting item copies handed out
+	// (starting::Expand order), so each goes once.
+	bool startingGoldGiven = false;
+	size_t startingItemsGiven = 0;
 	// Item codes of the potions put aside from the inventory while potions are
 	// locked (one entry each), handed back with Potion Access.
 	std::vector<uint32_t> heldPotions;

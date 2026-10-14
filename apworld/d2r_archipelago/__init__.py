@@ -15,7 +15,7 @@ from .ids import (ACTS, BASE_KILL_COUNTS, BASE_SET_FINDS, BASE_UNIQUE_FINDS, BAS
                   find_location_name, item_name_to_id, kill_location_name, level_location_name, location_name_to_id,
                   quest_item_location_name, quest_location_name, scaled_counts, set_location_name, shop_location_name,
                   skill_item_name, skill_names_by_class, superunique_location_name)
-from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions, ShrinePool, loader_settings
+from .options import OPTION_GROUPS, OPTION_PRESETS, STARTING_ITEMS, D2ROptions, ShrinePool, loader_settings
 
 GAME = "Diablo II Resurrected"
 SKILLS_GROUP = "Skills"
@@ -727,6 +727,10 @@ class D2RWorld(World):
             # random_trap: [loot index, weight] for the traps a DeathLink can set off (a Junk Backpack can't).
             "death_link_traps": [[LOOT.index(name), getattr(self.options, option).value] for name, option in TRAPS.items()
                                  if name != "Junk Backpack" and getattr(self.options, option).value > 0],
+            # Handed out once to the seed's character: gold, and [item code, copies] in name order.
+            "starting_gold": self.options.starting_gold.value,
+            "starting_items": [[STARTING_ITEMS[name], count] for name, count in sorted(self.options.starting_items.value.items())
+                               if count > 0],
             # d2r-ap-setup writes these into the mod's d2rloader.toml, overriding the player's D2RLoader settings.
             "loader_settings": loader_settings(self.options),
             # d2r-ap-setup reads this and writes the matching game tables.
@@ -770,5 +774,6 @@ class D2RWorld(World):
                 "parcel_price": self.options.parcel_price_multiplier.value,
                 "prophecy_price": self.options.prophecy_price_multiplier.value,
                 "shop_vendor": self.options.shop_vendor.value,
+                "free_merc_revive": bool(self.options.free_merc_revive),
             },
         }

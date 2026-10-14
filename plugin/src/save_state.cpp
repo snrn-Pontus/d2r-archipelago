@@ -72,6 +72,10 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			notifiedItems = static_cast<size_t>(value);
 		} else if (key == "portaltome") {
 			portalTomeGiven = value != 0;
+		} else if (key == "startinggold") {
+			startingGoldGiven = value != 0;
+		} else if (key == "startingitems") {
+			startingItemsGiven = static_cast<size_t>(value);
 		} else if (key == "heldpotion") {
 			heldPotions.push_back(static_cast<uint32_t>(value));
 		} else if (key == "heldportal") {
@@ -143,6 +147,7 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		}
 		file << "prophecies " << prophecies << "\nskillpoints " << skillPointsGiven << "\nportaltome " << (portalTomeGiven ? 1 : 0) << "\nnotified " << notifiedItems << "\nunsentdeaths "
 		     << unsentDeaths << "\n";
+		file << "startinggold " << (startingGoldGiven ? 1 : 0) << "\nstartingitems " << startingItemsGiven << "\n";
 		for (const uint32_t skill : unlockedSkills) {
 			file << "unlocked " << skill << "\n";
 		}

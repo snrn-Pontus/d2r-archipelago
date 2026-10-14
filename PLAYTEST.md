@@ -66,6 +66,18 @@ Built, pushed and installed, still to check in game:
       and casts it. The log's seed options line shows the three values. `class_weight_percent: 100` on a
       class_weighted seed puts only your class's skills in the pool (starting skills aside, as long as there are
       enough); with 0, none of them.
+- [ ] Starting gold and items (#42, new seed needed): `starting_gold: 5000`,
+      `starting_items: {"Full Rejuvenation Potion": 3, "Ber Rune": 1, "Scroll of Identify": 2}`. A fresh character
+      gets 5,000 gold and the six items (in two passes a second apart), with "your starting gold" and "your starting
+      items" in the chat, and the log's seed options line says "starting gold 5000, starting items 6". Leave, rejoin,
+      restart D2R: nothing comes again. With `potion_lock` on, the rejuvenation potions are set aside like found ones.
+      The Ber Rune doesn't send "Find Ber Rune" (rune checks). With a full inventory, cube and stash they wait and
+      the "make room" line shows. A gold amount near 10,000 on a level 1 character isn't cut short.
+- [ ] Free mercenary revive (#42, rerun setup): `free_merc_revive: true`; setup prints "resurrecting a mercenary is
+      free" for both banks. Let the mercenary die (Mercenary Down trap from the debug panel, or in a fight) and the
+      town's hireling NPC resurrects it for 0 gold, also at a higher level and on Nightmare. If the price shows 0
+      but the NPC still refuses, or the price is unchanged, note it: the columns are then not what D2R uses. A
+      default seed with the mod still set up for this one says the mod was set up for another seed.
 - [ ] S1 skills (#117, new seed needed): a Barbarian or Amazon seed never gets Smite, a Paladin never gets
       Dodge, Avoid or Evade, and a Barbarian no longer gets Assassin traps (its S2 animation only exists with a
       one-handed thrusting weapon). A Sorceress, Necromancer, Druid or Assassin with Smite and a shield can

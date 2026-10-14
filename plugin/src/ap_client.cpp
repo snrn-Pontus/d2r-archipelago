@@ -231,6 +231,12 @@ auto ReadSlotData(const json& data) -> SlotData {
 			slots.rewards.shrines.push_back(static_cast<int>(shrine));
 		}
 	}
+	slots.startingGold = Get(data, "starting_gold", 0);
+	for (const json& entry : Array(data, "starting_items")) {
+		if (entry.is_array() && entry.size() == 2 && entry[0].is_string() && entry[1].is_number_integer()) {
+			slots.startingItems.emplace_back(entry[0].get<std::string>(), entry[1].get<int>());
+		}
+	}
 	const json randomizer = Object(data, "randomizer");
 	slots.randomizer.seed = Get(randomizer, "seed", 0U);
 	slots.randomizer.monsters = static_cast<randomizer::Shuffle>(Get(randomizer, "monster_shuffle", 0));
@@ -262,6 +268,7 @@ auto ReadSlotData(const json& data) -> SlotData {
 	slots.randomizer.parcelPrice = std::clamp(Get(randomizer, "parcel_price", 100), 10, 500);
 	slots.randomizer.prophecyPrice = std::clamp(Get(randomizer, "prophecy_price", 100), 10, 500);
 	slots.randomizer.shopVendor = Get(randomizer, "shop_vendor", 0) == 1 ? randomizer::ShopVendor::Blacksmith : randomizer::ShopVendor::PotionSeller;
+	slots.randomizer.freeMercRevive = Get(randomizer, "free_merc_revive", false);
 	for (const json& pair : Array(randomizer, "skill_tree")) {
 		if (pair.is_array() && pair.size() == 2 && pair[0].is_number_unsigned() && pair[1].is_number_unsigned()) {
 			slots.randomizer.skillTree.emplace_back(pair[0].get<uint32_t>(), pair[1].get<uint32_t>());

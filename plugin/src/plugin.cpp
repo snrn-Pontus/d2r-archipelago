@@ -28,6 +28,7 @@
 #include "skill_table.h"
 #include "sounds.h"
 #include "starter_kit.h"
+#include "starting_items.h"
 
 #include <D2RLPlugin/api.h>
 #include <D2RLPlugin/core_exports.h>
@@ -873,11 +874,13 @@ auto SlotSummary(const ap::SlotData& slots) -> std::string {
 	     + std::to_string(slots.levelsPerCopy) + " per copy, +" + std::to_string(slots.levelsPerEmpowerment) + " per empowerment, cap "
 	     + std::to_string(slots.codexLevelCap) + ", tree mode "
 	     + on(r.treeMode) + ", tree shuffle " + std::to_string(r.skillTree.size()) + " skills, monsters " + std::to_string(static_cast<int>(r.monsters))
-	     + ", superunique shuffle " + std::to_string(static_cast<int>(r.superUniques)) + ", runewords " + on(r.runewords)
+	     + ", superunique shuffle " + std::to_string(static_cast<int>(r.superUniques)) + ", runewords " + on(r.runewords) + ", free merc revive "
+	     + on(r.freeMercRevive)
 	     + "; rewards: gold " + std::to_string(slots.rewards.goldPerLevel) + "/level, experience " + std::to_string(slots.rewards.experiencePercent)
 	     + "%, levels -" + std::to_string(slots.rewards.levelBelow) + "/+" + std::to_string(slots.rewards.levelAbove) + ", rare jewels "
 	     + std::to_string(slots.rewards.rareJewelPercent) + "%, high rune curve " + std::to_string(slots.rewards.highRuneCurve) + ", shrines "
-	     + (slots.rewards.shrines.empty() ? std::string("none") : std::to_string(slots.rewards.shrines.size())) + "; DeathLink "
+	     + (slots.rewards.shrines.empty() ? std::string("none") : std::to_string(slots.rewards.shrines.size())) + "; starting gold "
+	     + std::to_string(slots.startingGold) + ", starting items " + std::to_string(ap::starting::Expand(slots.startingItems).size()) + "; DeathLink "
 	     + on(slots.deathLink) + " (mode " + std::to_string(static_cast<int>(slots.deathLinkMode)) + ", every "
 	     + std::to_string(slots.deathLinkAmnesty) + " deaths), traps wait for town " + on(slots.traps.waitForTown) + ".";
 }
@@ -1235,7 +1238,7 @@ void CheckInstalledMod(const std::string& seed) {
 	}
 	if (directory.empty() || stamp.empty()) {
 		Feed("Archipelago: the Archipelago mod isn't running, so the skill trees aren't locked. Run d2r-ap-setup and start D2R with it.");
-	} else if (!matches && (settings.Any() || (stamp.size() >= 3 && ap::randomizer::StampChangesShop(stamp[2])))) {
+	} else if (!matches && (settings.Any() || (stamp.size() >= 3 && ap::randomizer::StampChangesPrices(stamp[2])))) {
 		Feed("Archipelago: the Archipelago mod was set up for another seed. Quit, run d2r-ap-setup, and restart.");
 	}
 }
@@ -3059,7 +3062,10 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	bool pending = false;
 	{
 		std::lock_guard lock(gMutex);
-		pending = !gSave.commands.empty() || (gSave.redeliver && gSave.lostFrom < gSave.lostTo) || (snapshot.synced && items.size() > delivered);
+		pending = !gSave.commands.empty() || (gSave.redeliver && gSave.lostFrom < gSave.lostTo) || (snapshot.synced && items.size() > delivered)
+		       || (snapshot.synced
+		           && ap::starting::Pending(slots.startingGold, ap::starting::Expand(slots.startingItems).size(), gSave.startingGoldGiven,
+		                                    gSave.startingItemsGiven));
 	}
 	if (!CharacterReady(player, slots, config, pending)) {
 		std::lock_guard lock(gMutex);
@@ -3260,7 +3266,46 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 			}
 		}
 	};
-	// First the rewards ap-redeliver asked for again, then the new ones.
+	// The seed's starting gold and items come first, once (starting_items.h): the gold as a reward
+	// command, the items like loot, within the pass's share. An item D2R won't make is skipped.
+	const auto startingItems = ap::starting::Expand(slots.startingItems);
+	bool   startingGold = false;
+	size_t startingFrom = 0;
+	{
+		std::lock_guard lock(gMutex);
+		startingGold = synced && !gSave.startingGoldGiven;
+		startingFrom = std::min(gSave.startingItemsGiven, startingItems.size());
+	}
+	size_t startingNext = startingFrom;
+	if (startingGold) {
+		if (const int gold = ap::starting::GoldToGive(slots.startingGold, false); gold > 0) {
+			queued.push_back({ -1, "gold " + std::to_string(gold) });
+			Feed("Archipelago: your starting gold: " + std::to_string(gold) + ".");
+		}
+	}
+	if (synced) {
+		std::vector<const ap::starting::Item*> startingGiven;
+		for (; startingNext < startingItems.size(); ++startingNext) {
+			if (given >= LootPerPass) {
+				more = true;
+				break;
+			}
+			++given;
+			const ap::starting::Item& item = *startingItems[startingNext];
+			if (GiveLoot(player, { .code = ap::loot::CodeFromText(item.code), .name = item.name })) {
+				startingGiven.push_back(&item);
+			} else if (gLootNoRoom) {
+				roomFull = true;
+				break;
+			} else {
+				Log("Archipelago: couldn't make the starting " + std::string(item.name) + "; skipping it.");
+			}
+		}
+		if (!startingGiven.empty()) {
+			Feed("Archipelago: your starting items: " + ap::starting::Describe(startingGiven) + ".");
+		}
+	}
+	// Then the rewards ap-redeliver asked for again, then the new ones.
 	bool   redeliver = false;
 	size_t again = 0, againEnd = 0;
 	{
@@ -3286,6 +3331,14 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		return;
 	}
 	bool changed = !queued.empty();
+	if (startingGold && !gSave.startingGoldGiven) {
+		gSave.startingGoldGiven = true;
+		changed = true;
+	}
+	if (startingNext > gSave.startingItemsGiven) {
+		gSave.startingItemsGiven = startingNext;
+		changed = true;
+	}
 	gSave.commands.insert(gSave.commands.end(), std::make_move_iterator(queued.begin()), std::make_move_iterator(queued.end()));
 	// The count only ever grows: a shorter list (a server restored from an older save) must not
 	// hand the same rewards out again once it catches up.
@@ -3310,7 +3363,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 		gGameSaves.insert(gSavePath);
 		SaveNow();
 	}
-	if (codexOk && next == items.size() && !redelivering) {
+	if (codexOk && next == items.size() && startingNext == startingItems.size() && !redelivering) {
 		gCodexItems = generation;
 		gCodexDirty = false;
 	} else if (codexOk && more) {

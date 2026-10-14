@@ -174,6 +174,7 @@ The setup tool rewrites the game's tables for your seed:
 - `death_experience_penalty`: the experience a death costs on Nightmare and Hell, in percent of the game's own
   5% and 10% of a level (default 100; 0 never loses any). It counts for DeathLink deaths too, and leaves gold
   loss, corpse recovery and Hardcore alone.
+- `free_merc_revive`: resurrecting your mercenary costs nothing.
 
 ## What do other items look like?
 
@@ -208,6 +209,11 @@ longer games get proportionally more, so a full Hell run has about 60 skills and
 
 The weight options (`unique_weight`, `set_item_weight`, `high_rune_weight`, `socketed_base_weight` and
 `basic_loot_weight`) set the mix.
+
+`starting_gold` (up to 10,000) and `starting_items` (up to 20 each of any potion, Town Portal and Identify
+scrolls, perfect gems and runes, e.g. `{"Full Rejuvenation Potion": 3, "Ber Rune": 1}`) are handed to your
+character once, the first time it plays the seed, and send no checks. For Archipelago items (skills, locks,
+keys) use `start_inventory`.
 
 ## What does another world's item look like in Diablo II?
 
