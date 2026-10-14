@@ -22,6 +22,11 @@ enum class Style {
 // files' own level (banner_volume). Call before the first Show.
 void SetSounds(const std::wstring& folder, bool enabled, int volume);
 
+// How many banner lines show at once (more wait their turn), and how long a
+// line stays: ms for white and grey lines, importantMs for gold and red ones
+// (banner_lines, banner_ms, banner_important_ms). Call before the first Show.
+void SetBanner(int lines, int ms, int importantMs);
+
 // Stops a banner sound mid-play, which reads our memory: call before unloading.
 void StopSounds();
 

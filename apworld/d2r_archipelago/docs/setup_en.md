@@ -119,6 +119,15 @@ Progression items other players send each other show too, in grey and after your
 release or collect shows a few and counts the rest, which are in the log. Set `other_sends` in
 `mods/Archipelago/d2rloader/config/archipelago.toml` to `"mine"` to hide them or `"all"` to see every item.
 
+Items you receive and checks you send also show as banners near the top of the screen. The same file tunes
+them (restart the game after editing it): `banner_lines` (5) is how many show at once, `banner_ms` (4500)
+and `banner_important_ms` (6000, for the gold and red ones) how many milliseconds each stays, and
+`summarize_checks_over` (4), `summarize_items_over` (10) and `summarize_loot_over` (3) how many checks,
+items, or ordinary items among them arrive together before they become one "Checks sent: n" or
+"Received n items" line. Keys, locks, skills and traps always get their own line unless more than
+`summarize_items_over` items arrive at once. `notifications = false` turns the banners off, and
+`banner_volume` (percent, 0 to 200) sets their sounds' volume.
+
 Use a fresh character for each seed. The Codex charms (one for your class's skills, one for other
 classes') must stay in your inventory; if you lose one, `ap-codex` rebuilds it.
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <iterator>
 #include <sstream>
 #include <string_view>
 
@@ -43,6 +44,47 @@ auto Quote(const std::string& text) -> std::string {
 	return quoted + "\"";
 }
 
+// The whole-number settings and their ranges; values outside are clamped.
+struct NumberSetting {
+	std::string_view key;
+	int Config::*    field;
+	int              low, high;
+};
+constexpr NumberSetting NumberSettings[] = {
+	{ "banner_volume", &Config::bannerVolume, 0, 200 },
+	{ "banner_lines", &Config::bannerLines, 1, 20 },
+	{ "banner_ms", &Config::bannerMs, 500, 60000 },
+	{ "banner_important_ms", &Config::bannerImportantMs, 500, 60000 },
+	{ "summarize_checks_over", &Config::summarizeChecksOver, 0, 1000 },
+	{ "summarize_items_over", &Config::summarizeItemsOver, 0, 1000 },
+	{ "summarize_loot_over", &Config::summarizeLootOver, 0, 1000 },
+};
+
+// Sets a whole-number setting, clamped to its range. Junk (or a number too big
+// to read) keeps the previous value. No exceptions: they'd escape the noexcept
+// plugin load.
+void SetNumber(Config& config, const NumberSetting& setting, const std::string& value, size_t lineNumber, std::vector<std::string>* warnings) {
+	int& current = config.*setting.field;
+	const auto warn = [&](const std::string& text) {
+		if (warnings != nullptr) {
+			warnings->push_back("Archipelago: " + std::string(setting.key) + " on config line " + std::to_string(lineNumber) + " " + text);
+		}
+	};
+	// TOML allows an explicit positive sign, which from_chars only skips when we do.
+	const char* first = value.data() + (!value.empty() && value.front() == '+' ? 1 : 0);
+	const char* last = value.data() + value.size();
+	long long number = 0;
+	const auto [end, error] = std::from_chars(first, last, number);
+	if (first == last || (first != value.data() && *first == '-') || error != std::errc {} || end != last) {
+		warn("isn't a whole number; keeping " + std::to_string(current) + ".");
+		return;
+	}
+	current = static_cast<int>(std::clamp(number, static_cast<long long>(setting.low), static_cast<long long>(setting.high)));
+	if (current != number) {
+		warn("is outside " + std::to_string(setting.low) + " to " + std::to_string(setting.high) + "; using " + std::to_string(current) + ".");
+	}
+}
+
 } // namespace
 
 auto OtherSendsName(OtherSends setting) -> const char* {
@@ -79,12 +121,9 @@ auto ParseConfig(const std::string& text, std::vector<std::string>* warnings) ->
 			config.notifications = value != "false";
 		} else if (key == "banner_sounds") {
 			config.bannerSounds = value != "false";
-		} else if (key == "banner_volume" && !value.empty()) {
-			// No exceptions: they'd escape the noexcept plugin load. Junk keeps the default.
-			long long volume = 0;
-			const char* last = value.data() + value.size();
-			if (const auto [end, error] = std::from_chars(value.data(), last, volume); error == std::errc {} && end == last) {
-				config.bannerVolume = static_cast<int>(std::clamp(volume, 0LL, 200LL));
+		} else if (const auto number = std::ranges::find(NumberSettings, key, &NumberSetting::key); number != std::end(NumberSettings)) {
+			if (!value.empty()) {
+				SetNumber(config, *number, value, lineNumber, warnings);
 			}
 		} else if (key == "status_line") {
 			config.statusLine = value != "false";
@@ -139,6 +178,16 @@ auto FormatConfig(const Config& config) -> std::string {
 	    << "banner_sounds = " << (config.bannerSounds ? "true" : "false") << "\n"
 	    << "# Their volume in percent, 0 to 200 (the game's own loudness). Low by default, since they ignore the game's volume and are jarring louder.\n"
 	    << "banner_volume = " << config.bannerVolume << "\n"
+	    << "# Banner lines shown at once (1 to 20; more wait their turn), and how long each stays in milliseconds:\n"
+	    << "# banner_ms for white and grey lines, banner_important_ms for gold and red ones (500 to 60000).\n"
+	    << "banner_lines = " << config.bannerLines << "\n"
+	    << "banner_ms = " << config.bannerMs << "\n"
+	    << "banner_important_ms = " << config.bannerImportantMs << "\n"
+	    << "# More than this many at once become one banner line (0 to 1000): checks sent, items received, and\n"
+	    << "# ordinary items among them (keys, locks, skills and traps always get their own line).\n"
+	    << "summarize_checks_over = " << config.summarizeChecksOver << "\n"
+	    << "summarize_items_over = " << config.summarizeItemsOver << "\n"
+	    << "summarize_loot_over = " << config.summarizeLootOver << "\n"
 	    << "# The always-on checks line; status_position is top-left, top, top-right, bottom-left or bottom-right.\n"
 	    << "status_line = " << (config.statusLine ? "true" : "false") << "\n"
 	    << "status_position = " << Quote(config.statusPosition) << "\n"

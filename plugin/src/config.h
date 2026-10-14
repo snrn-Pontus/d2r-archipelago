@@ -35,6 +35,17 @@ struct Config {
 	// is the game's own, 0 silent. Low by default: they play over the game's own
 	// volume setting, and much louder they're jarring.
 	int bannerVolume = 10;
+	// The banner: how many lines it shows at once (more wait their turn), and
+	// how long a line stays in milliseconds, for white and grey lines and for
+	// gold and red ones.
+	int bannerLines = 5;
+	int bannerMs = 4500;
+	int bannerImportantMs = 6000;
+	// More than this many checks sent, items received, or ordinary items among
+	// them (not keys, locks, skills or traps) at once become one summing line.
+	int summarizeChecksOver = 4;
+	int summarizeItemsOver = 10;
+	int summarizeLootOver = 3;
 	// The always-on checks line, and its corner: top-left, top, top-right,
 	// bottom-left or bottom-right.
 	bool statusLine = true;

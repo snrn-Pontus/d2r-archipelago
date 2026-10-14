@@ -928,6 +928,7 @@ void AddChecks(const std::vector<int64_t>& locations, uint64_t session = 0) {
 	std::vector<int> locked;
 	std::vector<std::pair<int64_t, bool>> announce; // new checks, and whether they're held
 	std::vector<int64_t> fresh;
+	size_t summarizeOver = 0;
 	const ap::SlotData slots = gClient ? gClient->Slots() : ap::SlotData {};
 	const std::set<int> unlocked = gClient ? UnlockedActs() : std::set<int> { 0 };
 	{
@@ -936,6 +937,7 @@ void AddChecks(const std::vector<int64_t>& locations, uint64_t session = 0) {
 			return;
 		}
 		bound = gBoundSession != 0;
+		summarizeOver = static_cast<size_t>(gConfig.summarizeChecksOver);
 		for (const int64_t location : locations) {
 			if (gBoundSession != 0 ? gSave.checks.insert(location).second : gUnbound.insert(location).second) {
 				added = true;
@@ -965,8 +967,8 @@ void AddChecks(const std::vector<int64_t>& locations, uint64_t session = 0) {
 		Feed("Archipelago: " + ActLabel(act) + " is locked; its checks are held until you find the " + ActLabel(act) + " Key.");
 	}
 	// A banner per check, naming what it held for another player (your own
-	// items get their own banner when they arrive).
-	if (announce.size() > 4) {
+	// items get their own banner when they arrive), or one line for many.
+	if (announce.size() > summarizeOver) {
 		Banner("Checks sent: " + std::to_string(announce.size()), ap::notify::Style::Check);
 	} else if (!announce.empty()) {
 		const auto scouted = gClient->Scouted();
@@ -3959,12 +3961,15 @@ void AnnounceItems() {
 	static uint64_t seen = UINT64_MAX;
 	const uint64_t generation = gClient->ItemsGeneration();
 	size_t from = 0;
+	size_t itemsOver = 0, lootOver = 0;
 	{
 		std::lock_guard lock(gMutex);
 		if (gBoundSession == 0 || generation == seen) {
 			return;
 		}
 		from = gSave.notifiedItems;
+		itemsOver = static_cast<size_t>(gConfig.summarizeItemsOver);
+		lootOver = static_cast<size_t>(gConfig.summarizeLootOver);
 	}
 	seen = generation;
 	const auto items = gClient->Items();
@@ -3980,9 +3985,10 @@ void AnnounceItems() {
 	}
 	// A big catch-up (reconnecting, a new save) is one line. Otherwise keys,
 	// locks, skills and traps each get a banner, and ordinary loot is summed up
-	// when more than three arrive together.
-	if (items.size() - from > 10) {
-		Banner("Received " + std::to_string(items.size() - from) + " items", ap::notify::Style::Info);
+	// when many arrive together (summarize_items_over, summarize_loot_over).
+	if (items.size() - from > itemsOver) {
+		// A threshold of 0 can sum a single item.
+		Banner("Received " + std::to_string(items.size() - from) + (items.size() - from == 1 ? " item" : " items"), ap::notify::Style::Info);
 	} else {
 		std::vector<std::pair<std::string, ap::notify::Style>> ordinary;
 		for (size_t i = from; i < items.size(); ++i) {
@@ -4003,8 +4009,8 @@ void AnnounceItems() {
 				ordinary.emplace_back(std::move(text), ap::notify::Style::Info);
 			}
 		}
-		if (ordinary.size() > 3) {
-			Banner("Received " + std::to_string(ordinary.size()) + " more items", ap::notify::Style::Info);
+		if (ordinary.size() > lootOver) {
+			Banner("Received " + std::to_string(ordinary.size()) + (ordinary.size() == 1 ? " more item" : " more items"), ap::notify::Style::Info);
 		} else {
 			for (const auto& [text, style] : ordinary) {
 				Banner(text, style);
@@ -6189,6 +6195,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		Log("Archipelago: encounter logging provider: result " + std::to_string(static_cast<uint32_t>(result)) + " (0 is registered).");
 	}
 	ap::notify::SetSounds((GameDirectory() / ap::sounds::Folder).wstring(), gConfig.bannerSounds, gConfig.bannerVolume);
+	ap::notify::SetBanner(gConfig.bannerLines, gConfig.bannerMs, gConfig.bannerImportantMs);
 	gClient = std::make_unique<ap::Client>(Log);
 	gClient->SetOtherSends(gConfig.otherSends);
 
