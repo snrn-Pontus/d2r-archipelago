@@ -187,6 +187,9 @@ uint64_t              gQuestLogOtherSeed = 0;
 std::vector<std::pair<uint64_t, int>> gQuestLogCompletions;
 std::atomic<bool>     gQuestLogReadQueued { false };
 Clock::time_point     gNextQuestLogRead {};
+// Reads in a row that found no record while in a game. Leaving frees it a little before
+// GameLeft (measured 70 ms), so one alone means nothing.
+int                   gQuestLogMissing = 0;
 // Whether the quest log is what completes quests now. Call with gMutex held.
 auto QuestLogDecides() -> bool {
 	return gQuestLogPointer != 0 && !gQuestLogFailed && gBoundSession != 0;
@@ -1114,9 +1117,10 @@ void __cdecl QuestLogWork(const D2RL::PluginContext*, void*) noexcept {
 		if (!gInGame || gQuestLogFailed) {
 			return;
 		}
+		gQuestLogMissing = result == ap::quest_record::ReadResult::NoRecord ? gQuestLogMissing + 1 : 0;
 		if (result != ap::quest_record::ReadResult::Ok) {
 			// The client makes the record as the game starts, so it's there by now.
-			if (result != ap::quest_record::ReadResult::NoRecord || Clock::now() - gPlayerReadyAt > std::chrono::seconds(15)) {
+			if (result != ap::quest_record::ReadResult::NoRecord || (Clock::now() - gPlayerReadyAt > std::chrono::seconds(15) && gQuestLogMissing >= 5)) {
 				message = FailQuestLog(result == ap::quest_record::ReadResult::NoRecord ? "no record in the game"
 				                       : result == ap::quest_record::ReadResult::Invalid ? "the record doesn't look right"
 				                                                                          : "reading it faulted");
@@ -4265,6 +4269,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 				gQuestLogAtJoin.reset();
 				gQuestLogSeenBound = 0;
 				gQuestLogOtherSeed = 0;
+				gQuestLogMissing = 0;
 				gHeldFallbacks.clear();
 			}
 			gInGame = true;
