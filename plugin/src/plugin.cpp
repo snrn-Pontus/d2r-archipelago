@@ -631,6 +631,12 @@ void ReadClientPlayer() {
 	if (!gInGame || !gPlayerName.empty() || gDebugNativeOff || gPlayerLocation.slot == 0) {
 		return;
 	}
+	// Only once this game's client state is up (its quest record is made as the game starts and
+	// freed as it ends), so the player read can't be the last game's.
+	ap::quest_record::Bits bits {};
+	if (gQuestLogPointer != 0 && ap::quest_record::Read(gQuestLogPointer, bits) != ap::quest_record::ReadResult::Ok) {
+		return;
+	}
 	const auto player = ap::client_info::ReadPlayer(gImageBase, gPlayerLocation);
 	if (!player) {
 		return;

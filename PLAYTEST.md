@@ -600,6 +600,8 @@ has a "game client player" line with the seed's name.
 - [ ] **Same-class mule:** make a second character of the seed's class and join: rewards wait, with "this seed
       belongs to SorkenTwo (Sorceress), not Sorken (Sorceress)" and a banner. Its kills and quests send nothing.
 - [ ] **Another class:** rewards wait from the start, not after a kill.
+- [ ] **Switching characters:** Save & Exit, load another character, join: the join line names the new one,
+      never the last one.
 - [ ] **ap-claim:** with the mule, `ap-claim` moves the seed to it ("rewards go to Sorken (Sorceress) now"), and the
       first character then waits.
 - [ ] **Tree mode:** the Emblem appears at join, without a kill.
