@@ -219,6 +219,8 @@ struct QueuedTrap {
 	int               level = 1;
 	// The save of the seed it came from: after ap-connect to another seed or slot it's let go.
 	std::filesystem::path save;
+	// A DeathLink's random trap: a death soon after it goes off isn't sent back.
+	bool              fromDeathLink = false;
 	// When an area ambush first waited for its area's monsters.
 	Clock::time_point waiting {};
 };
@@ -286,7 +288,8 @@ std::vector<std::string> gHintQueue;
 // DeathLink: another player died and this one hasn't been killed yet.
 bool                  gDeathPending = false;
 std::atomic<bool>     gKillQueued;
-// When a DeathLink death killed the player, so that death isn't sent back.
+// When a DeathLink killed the player, left 1 life or set off a trap, so a death
+// in the next 20 seconds isn't sent back.
 Clock::time_point     gLinkKillAt;
 // Set from the death until resurrection or a new game, so each death is sent once.
 bool                  gPlayerDead = false;
@@ -3493,6 +3496,10 @@ void __cdecl RunCommands(const D2RL::PluginContext*, void*) noexcept {
 	if (!traps.empty()) {
 		std::lock_guard lock(gMutex);
 		gNextTrapAt = Clock::now() + TrapGap;
+		// A death from a DeathLink's trap is DeathLink's doing, so it isn't sent back.
+		if (std::ranges::any_of(traps, &QueuedTrap::fromDeathLink)) {
+			gLinkKillAt = Clock::now();
+		}
 	}
 	for (const auto& trap : traps) {
 		const auto fired = ap::loot::CommandsFor(trap.loot, trap.level, act, random, tuning, monsters);
@@ -3526,10 +3533,12 @@ void __cdecl ApplyDeathLink(const D2RL::PluginContext*, void*) noexcept {
 				return;
 			}
 			std::mt19937 random(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
-			gTrapQueue.push_back({ ap::death_link::PickTrap(slots.deathLinkTraps, random), level, gSavePath });
+			gTrapQueue.push_back({ ap::death_link::PickTrap(slots.deathLinkTraps, random), level, gSavePath, true });
 			return;
 		}
-		if (slots.deathLinkMode == ap::death_link::Mode::Die) {
+		// A death right after (the kill itself, or a monster finishing off 1 life) is DeathLink's
+		// doing, so it isn't sent back.
+		if (slots.deathLinkMode == ap::death_link::Mode::Die || slots.deathLinkMode == ap::death_link::Mode::OneHp) {
 			gLinkKillAt = Clock::now();
 		}
 	}

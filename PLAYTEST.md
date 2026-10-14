@@ -773,12 +773,13 @@ with `ap_probe localhost:38281 Probe --death`, standing outside town.
 - [ ] `one_hp`: life drops to 1 without dying; the log shows `console command "cheat depletehealth 1" accepted`
       and chat says "DeathLink leaves you with 1 life." (`depletehealth` is a D2RCore cheat that
       ExecuteConsoleCommand accepts even if it did nothing, so check the life orb.) A monster finishing you off
-      right after is a real death and is sent.
+      within 20 seconds counts as DeathLink's doing and isn't sent back; a death later than that is sent.
 - [ ] `lose_gold` with `tax_collector_gold: 250` at level 30: you lose 7,500 gold (or all you carry if less) and
       chat says "DeathLink takes up to 7500 gold."
 - [ ] `random_trap`: a trap goes off ("it's a trap! ..."); in town it waits until you leave (with
       `traps_wait_for_town` on). With only `ambush_weight` above 0 it's always an Ambush; with every trap weight
       at 0 it's one of Ambush, Poison Cloud, Firestorm, Mana Drain or Tax Collector, never a Junk Backpack.
+      Dying to that trap within 20 seconds of it going off isn't sent back out (no death ping-pong).
 - [ ] `die` (the default) still kills, as in 7.
 - [ ] `death_link_amnesty: 3`: the first two deaths say "DeathLink spares the others this time (2 more deaths
       send one)" and "(1 more death sends one)" and the Probe gets nothing; the third sends one. Die twice, quit
