@@ -2448,7 +2448,10 @@ auto LockedIcons(D2RL::DataTables::Bank bank) -> const std::vector<ap::randomize
 	const wchar_t* name = bank == D2RL::DataTables::Bank::Rotw ? L"locked-icons.txt" : L"locked-icons-lod.txt";
 	std::vector<ap::randomizer::LockedIcon> icons;
 	for (const auto& candidate : { directory / name, directory.parent_path() / name }) {
-		std::ifstream file(candidate, std::ios::binary);
+		std::ifstream file;
+		if (!directory.empty()) {
+			file.open(candidate, std::ios::binary);
+		}
 		if (file) {
 			icons = ap::randomizer::ParseLockedIcons(std::string(std::istreambuf_iterator<char>(file), {}));
 			break;
