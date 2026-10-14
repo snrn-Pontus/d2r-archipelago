@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <random>
 #include <string>
@@ -105,6 +106,25 @@ struct TreeShuffle {
 // (skills.txt) and tab, place and icon (skilldesc.txt). Synergies then point at
 // skills in each skill's new tree.
 auto ApplySkillTrees(Table& skills, Table& skilldesc, const SkillTree& tree) -> TreeShuffle;
+
+// A class skill's icon in tree mode: skilldesc.txt row `descRow` shows frame
+// `lockedCel` (the padlocked copy) until the plugin sets it back to `cel`.
+struct LockedIcon {
+	uint32_t skill   = 0;
+	uint32_t descRow = 0;
+	int      cel     = 0;
+	int      lockedCel = 0;
+};
+
+// Tree mode: points each class skill's icon at its locked copy, `frames[class]`
+// frames on (the class's icon sheet length before AddLockedFrames). Classes
+// missing from `frames` keep their icons.
+auto LockSkillIcons(const Table& skills, Table& skilldesc, const std::map<std::string, int>& frames) -> std::vector<LockedIcon>;
+
+// The list d2r-ap-setup leaves for the plugin, a line per icon:
+// "skill descRow cel lockedCel".
+auto FormatLockedIcons(const std::vector<LockedIcon>& icons) -> std::string;
+auto ParseLockedIcons(const std::string& text) -> std::vector<LockedIcon>;
 
 // Sets a class's StartSkill in charstats.txt, the +1 skill on its starting
 // weapon (Fire Bolt on the Sorceress's staff), to the skills.txt skill with

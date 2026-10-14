@@ -264,6 +264,10 @@ Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fana
 - [ ] A second copy, a found Skill Point (Dark Wood) and `/send Snrn Skill Point` each give an unspent
       skill point.
 - [ ] After Save and Exit and rejoining, nothing is unlocked twice and no points are given again.
+- [ ] Locked icons (#143, rerun d2r-ap-setup): locked skills show a grey icon with a padlock, unlocked ones
+      their own icon, also with no unspent points. A skill that unlocks mid-game swaps to its own icon
+      (reopen the tree if needed), and still has it after Save and Exit. The plugin log says
+      "SkillDesc bank ...: icon at +N". Low-end graphics too.
 - [ ] Moved-in skills work for a Barbarian: Plague Poppy (Poison Creeper) summons, Tiger Strike charges.
 - [ ] Starting weapon skill (#127): a new character's starting weapon shows "+1 to <skill>" for one of its
       starting skills (an attack or summon if one was dealt, like Plague Poppy above), and the skill is usable

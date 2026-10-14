@@ -30,4 +30,8 @@ bool CopyFrame(const Sheet& source, uint32_t from, Sheet& target, uint32_t to);
 // Skill tree art: the arrows go, the skill and level boxes stay.
 void RemoveThinShapes(Sheet& sheet, uint32_t kernel, uint32_t minSize);
 
+// Doubles the strip: frame n + (old frame count) becomes a locked copy of
+// frame n, darkened grey with a padlock. Tree mode's locked skill icons.
+void AddLockedFrames(Sheet& sheet);
+
 } // namespace ap::sprite

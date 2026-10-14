@@ -668,6 +668,26 @@ void TestSkillTablePrerequisite() {
 		put(skill, ReqAt, st::NoSkill);
 	}
 	EXPECT(!st::FindSelfPrerequisite(rows.data(), Rows, RowSize, classSkills));
+
+	// SkillDesc: IconCel is a byte at +7; +6 holds a value that's the same in every row.
+	constexpr size_t DescSize = 12, CelAt = 7;
+	std::vector<uint8_t> desc(DescSize * 40, 3);
+	std::vector<ap::randomizer::LockedIcon> icons;
+	for (uint32_t row = 5; row < 35; ++row) {
+		const int cel = static_cast<int>(row % 30) * 2;
+		icons.push_back({ row + 100, row, cel, cel + 60 });
+		desc[row * DescSize + CelAt] = static_cast<uint8_t>(cel + 60);
+	}
+	EXPECT(st::FindIconCel(desc.data(), 40, DescSize, icons) == CelAt);
+	// Still found with some icons shown already; not found in a mod without locked icons.
+	for (size_t i = 0; i < 10; ++i) {
+		desc[icons[i].descRow * DescSize + CelAt] = static_cast<uint8_t>(icons[i].cel);
+	}
+	EXPECT(st::FindIconCel(desc.data(), 40, DescSize, icons) == CelAt);
+	for (const auto& icon : icons) {
+		desc[icon.descRow * DescSize + CelAt] = static_cast<uint8_t>(icon.cel);
+	}
+	EXPECT(!st::FindIconCel(desc.data(), 40, DescSize, icons));
 }
 
 void TestStarterKit() {
@@ -1715,6 +1735,36 @@ void TestSprite() {
 	auto at = [&](int x, int y) { return sheet->bytes[40 + static_cast<size_t>(y * 40 + x) * 4 + 3]; };
 	EXPECT(at(3, 1) != 0 && at(5, 10) != 0 && at(14, 19) != 0 && at(10, 15) != 0);
 	EXPECT(at(25, 15) == 0 && at(26, 30) == 0);
+
+	// Locked frames: the strip doubles, the old frames stay, and the copies are grey with a padlock.
+	std::string icons(40, '\0');
+	icons.replace(0, 4, "SpA1");
+	const uint32_t iconSize[] = { 40, 20, 0, 2 };
+	std::memcpy(icons.data() + 8, iconSize, sizeof(iconSize));
+	for (int i = 0; i < 40 * 20; ++i) {
+		icons += std::string("\xc8\x20\x20\xff", 4); // red
+	}
+	auto locked = ap::sprite::Parse(icons);
+	ap::sprite::AddLockedFrames(*locked);
+	EXPECT(locked->frames == 4 && locked->width == 80 && locked->FrameWidth() == 20 && ap::sprite::Parse(locked->bytes));
+	auto pixel = [&](int x, int y) { return locked->bytes.substr(40 + static_cast<size_t>(y * 80 + x) * 4, 4); };
+	EXPECT(pixel(39, 19) == std::string("\xc8\x20\x20\xff", 4));
+	const std::string corner = pixel(41, 1);
+	EXPECT(corner[0] == corner[1] && corner[1] == corner[2] && static_cast<uint8_t>(corner[0]) < 0x40 && corner[3] == '\xff');
+	EXPECT(pixel(50, 12) != corner && pixel(70, 12) == pixel(50, 12)); // the padlock, in both locked frames
+}
+
+void TestLockSkillIcons() {
+	namespace rnd = ap::randomizer;
+	const auto skills = ap::Table::Parse("skill\t*Id\tcharclass\tskilldesc\r\nAttack\t0\t\tattack\r\nFire Bolt\t36\tsor\tfire bolt\r\n"
+	                                     "Bash\t126\tbar\tbash\r\nRaven\t221\tdru\traven\r\n");
+	auto desc = ap::Table::Parse("skilldesc\tIconCel\r\nattack\t0\r\nfire bolt\t4\r\nbash\t59\r\nraven\t2\r\n");
+	// Barbarian's pair (59, 60) doesn't fit in 60 frames, and Druid has no sheet.
+	const auto icons = rnd::LockSkillIcons(skills, desc, { { "sor", 60 }, { "bar", 60 } });
+	EXPECT(icons.size() == 1 && icons[0].skill == 36 && icons[0].descRow == 1 && icons[0].cel == 4 && icons[0].lockedCel == 64);
+	EXPECT(desc.Cell(1, 1) == "64" && desc.Cell(0, 1) == "0" && desc.Cell(2, 1) == "59" && desc.Cell(3, 1) == "2");
+	const auto parsed = rnd::ParseLockedIcons(rnd::FormatLockedIcons({ { 36, 1, 4, 64 }, { 126, 9, 0, 60 } }) + "junk\n");
+	EXPECT(parsed.size() == 2 && parsed[1].skill == 126 && parsed[1].descRow == 9 && parsed[1].cel == 0 && parsed[1].lockedCel == 60);
 }
 
 void TestSkillTreeShuffle() {
@@ -1986,6 +2036,7 @@ int main() {
 	TestShopParcels();
 	TestSkillTreeShuffle();
 	TestSprite();
+	TestLockSkillIcons();
 	TestRunewordShuffle();
 	TestTableEdits();
 	TestLootScalesToLevel();

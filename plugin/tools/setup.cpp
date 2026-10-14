@@ -507,10 +507,41 @@ const std::map<std::string, std::string> IconSheets = {
 	{ "ass", "assassin/asskillicon" },
 };
 
+// Each class's icon sheet length, for the classes whose HD and low-end sheets
+// agree (tree mode's locked icons go after them).
+auto IconFrames(HANDLE storage) -> std::map<std::string, int> {
+	std::map<std::string, int> frames;
+	for (const auto& [cls, sheet] : IconSheets) {
+		std::optional<uint32_t> count;
+		for (const char* suffix : { ".sprite", ".lowend.sprite" }) {
+			std::string bytes;
+			std::string path = "data/hd/global/ui/spells/" + sheet + suffix;
+			std::ranges::replace(path, '/', '\\');
+			const auto parsed = ReadCascFile(storage, path, bytes) ? ap::sprite::Parse(std::move(bytes)) : std::nullopt;
+			if (!parsed || (count && *count != parsed->frames)) {
+				count.reset();
+				break;
+			}
+			count = parsed->frames;
+		}
+		if (count) {
+			frames[cls] = static_cast<int>(*count);
+		}
+	}
+	return frames;
+}
+
+// Tree mode's list of locked icons for one bank, for the plugin.
+auto LockedIconsFile(size_t bankIndex) -> std::string {
+	return bankIndex == 0 ? "locked-icons.txt" : "locked-icons-lod.txt";
+}
+
 // After a skill tree shuffle, rebuilds every class's skill icon sheets (HD and
 // low-end) so each skill shows its own icon in its new tree: the skill's frames
 // (icon and pressed icon) are copied from its old class's sheet to its new slot.
-auto WriteSkillIcons(HANDLE storage, const fs::path& mpq, const std::vector<rnd::IconMove>& icons) -> int {
+// With `locked` (tree mode), each sheet of `lockedClasses` also gets its locked copies.
+auto WriteSkillIcons(HANDLE storage, const fs::path& mpq, const std::vector<rnd::IconMove>& icons, const std::map<std::string, int>& lockedClasses)
+    -> int {
 	int written = 0;
 	for (const char* suffix : { ".sprite", ".lowend.sprite" }) {
 		std::map<std::string, ap::sprite::Sheet> original, rebuilt;
@@ -536,6 +567,12 @@ auto WriteSkillIcons(HANDLE storage, const fs::path& mpq, const std::vector<rnd:
 				if (ap::sprite::CopyFrame(from->second, static_cast<uint32_t>(icon.fromCel + frame), to->second, static_cast<uint32_t>(icon.toCel + frame))) {
 					changed.insert(icon.toClass);
 				}
+			}
+		}
+		for (auto& [cls, sheet] : rebuilt) {
+			if (const auto frames = lockedClasses.find(cls); frames != lockedClasses.end() && sheet.frames == static_cast<uint32_t>(frames->second)) {
+				ap::sprite::AddLockedFrames(sheet);
+				changed.insert(cls);
 			}
 		}
 		for (const auto& cls : changed) {
@@ -691,8 +728,11 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	}
 	std::error_code error;
 	fs::remove_all(excel, error);
-	// And the previous seed's skill icon sheets, which only a tree shuffle writes.
+	// And the previous seed's skill icon sheets, which only a tree shuffle or tree mode writes.
 	fs::remove_all(mpq / "data" / "hd" / "global" / "ui" / "spells", error);
+	for (size_t bankIndex = 0; bankIndex < std::size(Banks); ++bankIndex) {
+		fs::remove(modRoot / LockedIconsFile(bankIndex), error);
+	}
 	fs::remove_all(mpq / "data" / "hd" / "global" / "ui" / "controller" / "panel" / "spells", error);
 	// And the superunique models, which only Superunique Checks write.
 	fs::remove(mpq / "data" / "hd" / "character" / "monsters.json", error);
@@ -707,6 +747,8 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 	std::vector<std::string> recipes;
 	// Both banks shuffle the trees alike, so either one's icon moves will do.
 	std::vector<rnd::IconMove> icons;
+	// Tree mode: each class's icon sheet length, where its locked icons start.
+	const auto iconFrames = settings.treeMode ? IconFrames(storage) : std::map<std::string, int> {};
 	// RotW's misc codes in order, so Classic/LoD can hold the places of the ones it lacks.
 	std::vector<std::string> rotwMisc;
 	// Each superunique's own monster and the one it copies, from either bank (both share monsters.json).
@@ -751,20 +793,30 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 		const std::string bank = Banks[bankIndex];
 		const char* label = bank.empty() ? "RotW" : "Classic/LoD";
 		int blocked = 0;
-		if (!settings.skillTree.empty()) {
-			// The trees span two tables: skills.txt holds each skill's class, skilldesc.txt its place.
+		if (!settings.skillTree.empty() || !iconFrames.empty()) {
+			// The trees span two tables: skills.txt holds each skill's class, skilldesc.txt its place and icon.
 			std::string descText;
 			ReadCascFile(storage, "data\\global\\excel\\" + bank + "skilldesc.txt", descText);
 			Table skilldesc = Table::Parse(descText);
 			int moved = 0;
+			std::vector<rnd::LockedIcon> locked;
 			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) {
-				auto shuffle = rnd::ApplySkillTrees(t, skilldesc, settings.skillTree);
-				moved = shuffle.moved;
-				icons = std::move(shuffle.icons);
+				if (!settings.skillTree.empty()) {
+					auto shuffle = rnd::ApplySkillTrees(t, skilldesc, settings.skillTree);
+					moved = shuffle.moved;
+					icons = std::move(shuffle.icons);
+				}
 				blocked = rnd::BlockClassSkills(t, settings.treeMode);
+				locked = rnd::LockSkillIcons(t, skilldesc, iconFrames);
 			});
 			PatchTable(storage, excel, bank, "skilldesc.txt", [&](Table& t) { t = skilldesc; });
-			std::printf("  %s: %d skills moved to another class's tree\n", label, moved);
+			if (!settings.skillTree.empty()) {
+				std::printf("  %s: %d skills moved to another class's tree\n", label, moved);
+			}
+			if (!locked.empty()) {
+				std::ofstream(modRoot / LockedIconsFile(bankIndex), std::ios::binary | std::ios::trunc) << rnd::FormatLockedIcons(locked);
+				std::printf("  %s: %zu locked skills show a padlock until they unlock\n", label, locked.size());
+			}
 		} else {
 			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) { blocked = rnd::BlockClassSkills(t, settings.treeMode); });
 		}
@@ -865,11 +917,12 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 		std::printf("  %d superunique monsters given their HD models\n", AddSuperUniqueModels(storage, mpq, superUniqueCopies));
 	}
 	if (!icons.empty()) {
-		const int sheets = WriteSkillIcons(storage, mpq, icons);
 		const int trees = WriteSkillTreeArt(storage, mpq);
 		std::printf("  %d skill tree panels redrawn without arrows", trees);
 		std::puts("");
-		std::printf("  %d skill icon sheets rebuilt for the new trees\n", sheets);
+	}
+	if (!icons.empty() || !iconFrames.empty()) {
+		std::printf("  %d skill icon sheets rebuilt\n", WriteSkillIcons(storage, mpq, icons, iconFrames));
 	}
 	if (!recipes.empty()) {
 		std::ofstream list(modRoot / "runewords.txt", std::ios::trunc);

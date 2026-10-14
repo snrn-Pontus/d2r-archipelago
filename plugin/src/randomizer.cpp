@@ -12,6 +12,7 @@
 #include <numeric>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <unordered_map>
 
 namespace ap::randomizer {
@@ -347,6 +348,54 @@ auto ApplySkillTrees(Table& skills, Table& skilldesc, const SkillTree& tree) -> 
 	}
 	RemapSynergies(skills, skilldesc, before);
 	return result;
+}
+
+auto LockSkillIcons(const Table& skills, Table& skilldesc, const std::map<std::string, int>& frames) -> std::vector<LockedIcon> {
+	const int id = skills.Column("*Id"), charclass = skills.Column("charclass"), descOf = skills.Column("skilldesc");
+	const int descName = skilldesc.Column("skilldesc"), iconCel = skilldesc.Column("IconCel");
+	if (id < 0 || charclass < 0 || descOf < 0 || descName < 0 || iconCel < 0) {
+		return {};
+	}
+	std::map<std::string, size_t> descRows;
+	for (size_t row = 0; row < skilldesc.Rows().size(); ++row) {
+		descRows.emplace(skilldesc.Cell(row, descName), row);
+	}
+	std::vector<LockedIcon> icons;
+	for (size_t row = 0; row < skills.Rows().size(); ++row) {
+		const auto count = frames.find(skills.Cell(row, charclass));
+		const auto desc = descRows.find(skills.Cell(row, descOf));
+		if (count == frames.end() || desc == descRows.end() || skills.Cell(row, descOf).empty()) {
+			continue;
+		}
+		const int cel = ParseInt(skilldesc.Cell(desc->second, iconCel), -1);
+		// The pressed icon is the next frame, so the pair has to fit.
+		if (cel < 0 || cel + 1 >= count->second) {
+			continue;
+		}
+		icons.push_back({ static_cast<uint32_t>(ParseInt(skills.Cell(row, id))), static_cast<uint32_t>(desc->second), cel, cel + count->second });
+		skilldesc.Set(desc->second, iconCel, std::to_string(cel + count->second));
+	}
+	return icons;
+}
+
+auto FormatLockedIcons(const std::vector<LockedIcon>& icons) -> std::string {
+	std::string text;
+	for (const auto& icon : icons) {
+		text += std::to_string(icon.skill) + " " + std::to_string(icon.descRow) + " " + std::to_string(icon.cel) + " " + std::to_string(icon.lockedCel) + "\n";
+	}
+	return text;
+}
+
+auto ParseLockedIcons(const std::string& text) -> std::vector<LockedIcon> {
+	std::vector<LockedIcon> icons;
+	std::istringstream lines(text);
+	for (std::string line; std::getline(lines, line);) {
+		LockedIcon icon;
+		if (std::istringstream(line) >> icon.skill >> icon.descRow >> icon.cel >> icon.lockedCel) {
+			icons.push_back(icon);
+		}
+	}
+	return icons;
 }
 
 // Picks the variant of a monster's family whose Normal level is closest to
