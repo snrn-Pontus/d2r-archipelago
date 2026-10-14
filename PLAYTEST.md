@@ -412,6 +412,14 @@ Defaults, plus `shop_checks: 3`, `kill_count_checks: true`, `find_count_checks: 
 - [ ] Side areas (#31): `ap-missing` lists five "Normal: Enter <side area>" checks. Walking
       into one of them (e.g. the Mausoleum or Cave Level 2) sends its check; a side area the seed didn't
       pick sends nothing and shows no banner.
+- [ ] MapSense export (#59), only with [MapSense](https://github.com/RuffDood/RuffnecKk-D2RLoader-Suite)
+      2.2.0 installed: with the game closed, `d2r-ap-setup.exe --mapsense` writes
+      `mods\Archipelago\mapsense-destinations.toml`, opens Explorer on it, and leaves `ruffneckk-mapsense.toml`
+      untouched. Its list has one line per side area, and the same names `ap-missing` lists as "Enter <side
+      area>". Paste the list into `ruffneckk-mapsense.toml` under `[navigation.custom_levels]`, turn on Custom
+      Levels in the MapSense menu and restart D2R: standing in the area next to one of them (e.g. the Burial
+      Grounds for the Mausoleum, or Cave Level 1 for Cave Level 2) shows a line to it. On a seed with
+      `side_area_checks: 0`, `--mapsense` says there are none.
 
 ## 2b. Quest items used at once
 

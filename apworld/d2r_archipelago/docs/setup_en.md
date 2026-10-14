@@ -75,6 +75,33 @@ Without `--play` it only sets up, and you start D2RLoader with the `Archipelago`
 `--connect` it reuses the last server and slot. (The Launcher keeps its copy of the tool in
 `%LOCALAPPDATA%\d2r-archipelago\tools`.)
 
+### Side area destinations for MapSense (optional)
+
+If you already play with [RuffnecKk MapSense](https://github.com/RuffDood/RuffnecKk-D2RLoader-Suite), a
+separate D2RLoader plugin that draws route lines on the automap, the setup tool can list your seed's side area
+checks as MapSense destinations. Nothing here installs, turns on or edits MapSense. Run:
+
+```
+"%LOCALAPPDATA%\d2r-archipelago\tools\d2r-ap-setup.exe" --mapsense
+```
+
+(add `--connect <server> <slot>` if you haven't connected yet). It reads the seed from the server, writes
+`<D2R folder>/mods/Archipelago/mapsense-destinations.toml` and opens its folder. The file has a
+`targets = [ ... ]` list for MapSense 2.2.0 (config `schema_version = 21`): one `{ level_id = N }` per side area,
+each once with a comment naming the area, its act and the difficulties on which it's a check.
+
+1. Open MapSense's own config, `ruffneckk-mapsense.toml` in the `d2rloader/config/` folder you installed
+   MapSense into (`<D2R folder>/d2rloader/config/`, or `<D2R folder>/mods/Archipelago/d2rloader/config/`).
+2. Under `[navigation.custom_levels]`, replace `targets = [ ... ]` with the list from the export, or copy its
+   lines into your own list.
+3. Turn on Custom Levels in the MapSense menu, and restart D2R: MapSense only reads the list when the game starts.
+
+The destinations are areas, not checks. The list is written once and doesn't change as you play, so an area
+stays on it after you've sent its check (`ap-missing` shows what's left). MapSense draws a line when a destination
+connects to the area you're in, so for a deeper level such as Tower Cellar Level 5 the line shows from the level
+above. MapSense can also reveal maps and mark things far beyond these destinations, depending on its own settings.
+Run `--mapsense` again for each new seed.
+
 ## Connecting
 
 The plugin connects on its own. To connect somewhere else from the game, open the console and type:

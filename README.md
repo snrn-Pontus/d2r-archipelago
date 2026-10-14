@@ -90,7 +90,8 @@ three players, and checks every seed fills and can be beaten.
 
 ## Installing and playing
 
-See [the setup guide](apworld/d2r_archipelago/docs/setup_en.md).
+See [the setup guide](apworld/d2r_archipelago/docs/setup_en.md). Players who use MapSense can export the
+seed's side area checks as MapSense destinations with `d2r-ap-setup --mapsense` (see the guide).
 
 ## Status
 

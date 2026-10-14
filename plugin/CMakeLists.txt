@@ -15,6 +15,7 @@ add_library(ap_core STATIC
 	src/command_panel.cpp
 	src/config.cpp
 	src/loot.cpp
+	src/mapsense.cpp
 	src/native_scan.cpp
 	src/personalize.cpp
 	src/quest_record.cpp
