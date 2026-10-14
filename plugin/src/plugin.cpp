@@ -259,6 +259,9 @@ bool                  gDifficultyKnown = false;
 std::vector<int>      gPendingAreas;
 // Quest item codes found before then, for their checks (#123).
 std::set<uint32_t>    gPendingQuestItems;
+// The seed those were found for, while ap-connect has left it and the next bind hasn't said
+// whether it's the same one (#135). Until then they don't go to any seed.
+std::optional<std::filesystem::path> gPendingSeed;
 // When this game began, for telling the character saves written since (#130).
 std::filesystem::file_time_type gGameBegan;
 // Areas (#130) and quest items (#135) a game was left with before its difficulty
@@ -1090,6 +1093,14 @@ void BindSession(uint64_t session) {
 				gSave.Load(gSavePath);
 			}
 		}
+		// Finds waiting for the difficulty from the seed ap-connect left go with it if it's another.
+		if (gPendingSeed && *gPendingSeed != gSavePath) {
+			Log("Archipelago: connected to another seed; letting go of " + std::to_string(gPendingAreas.size()) + " areas and "
+			    + std::to_string(gPendingQuestItems.size()) + " quest items found for the last one.");
+			gPendingAreas.clear();
+			gPendingQuestItems.clear();
+		}
+		gPendingSeed.reset();
 		// Cows killed while unbound count toward this seed (before Missing() below looks at them).
 		gHeldCows.MoveTo(gSave, CowsShuffled(slots));
 		// A goal quest finished before this seed was bound left only its check behind (ReachGoal
@@ -3806,7 +3817,7 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 	std::optional<LeftAreas> left;
 	{
 		std::lock_guard lock(gMutex);
-		if (gDifficultyKnown) {
+		if (gDifficultyKnown && !gPendingSeed) {
 			areas.swap(gPendingAreas);
 			difficulty = std::clamp(gDifficulty, 0, 2);
 			for (const uint32_t code : std::exchange(gPendingQuestItems, {})) {
@@ -3814,7 +3825,8 @@ void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame* fra
 			}
 		}
 		bound = gBoundSession != 0;
-		if (gLeftAreas && gLeftAreas->difficulty) {
+		// Ones found for a seed wait while none is bound: ap-connect may bind it again.
+		if (gLeftAreas && gLeftAreas->difficulty && (bound || gLeftAreas->save.empty())) {
 			left = std::exchange(gLeftAreas, std::nullopt);
 			// Not into another seed than the one the game was played for.
 			if (left->save != (bound ? gSavePath : std::filesystem::path {})) {
@@ -3984,6 +3996,7 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			gDifficultyKnown = false;
 			gPendingAreas.clear();
 			gPendingQuestItems.clear();
+			gPendingSeed.reset();
 			DropUnresolvedAreaQuests();
 			// The old game's item handles are stale, which would look like a used token.
 			gRespecToken = D2RL::InvalidItemHandle;
@@ -4027,15 +4040,20 @@ void __cdecl OnGameplayEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::
 			Log("Archipelago: left the game.");
 			// Areas and quest items still waiting for the difficulty wait for the save this leaves
 			// instead (#130, #135): a used-up quest item can't be found again in the next game.
-			if (!gDifficultyKnown && (!gPendingAreas.empty() || !gPendingQuestItems.empty())) {
+			// Ones whose difficulty is known but still wait for ap-connect's bind keep it.
+			if (!gPendingAreas.empty() || !gPendingQuestItems.empty()) {
 				if (gLeftAreas) {
-					Log("Archipelago: letting go of " + WaitingText(*gLeftAreas) + " from an earlier game, still without a difficulty.");
+					Log("Archipelago: letting go of " + WaitingText(*gLeftAreas) + " from an earlier game, still waiting.");
 				}
-				gLeftAreas = LeftAreas { std::exchange(gPendingAreas, {}), std::exchange(gPendingQuestItems, {}), gGameBegan,
-					                     gBoundSession != 0 ? gSavePath : std::filesystem::path {}, std::nullopt };
+				const std::filesystem::path save = gPendingSeed ? *gPendingSeed : gBoundSession != 0 ? gSavePath : std::filesystem::path {};
+				const std::optional<int> difficulty = gDifficultyKnown ? std::optional<int>(std::clamp(gDifficulty, 0, 2)) : std::nullopt;
+				gLeftAreas = LeftAreas { std::exchange(gPendingAreas, {}), std::exchange(gPendingQuestItems, {}), gGameBegan, save, difficulty };
 				gNextSaveLook = Clock::now();
-				Log("Archipelago: left with " + WaitingText(*gLeftAreas) + " found before the difficulty was known; reading it from the save.");
+				if (!difficulty) {
+					Log("Archipelago: left with " + WaitingText(*gLeftAreas) + " found before the difficulty was known; reading it from the save.");
+				}
 			}
+			gPendingSeed.reset();
 			// Kill and cow counters only reach the file every so often; leaving the game
 			// (or closing D2R) writes the rest, so the next game carries on from them.
 			// Leaving also saves the character, rewards and all: a crash later can't take them.
@@ -4440,13 +4458,10 @@ auto CommandConnect(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 		// The bound seed's counters only reach the file every so often.
 		if (gBoundSession != 0) {
 			SaveNow();
-			// Areas and quest items still waiting for the difficulty were found for that seed,
-			// not for whichever this connects to.
-			if (!gPendingAreas.empty() || !gPendingQuestItems.empty()) {
-				Log("Archipelago: connecting elsewhere; letting go of " + std::to_string(gPendingAreas.size()) + " areas and "
-				    + std::to_string(gPendingQuestItems.size()) + " quest items still waiting for the difficulty.");
-				gPendingAreas.clear();
-				gPendingQuestItems.clear();
+			// Areas and quest items still waiting for the difficulty were found for that seed:
+			// they wait for the bind to see if it's the same one.
+			if (!gPendingSeed && (!gPendingAreas.empty() || !gPendingQuestItems.empty())) {
+				gPendingSeed = gSavePath;
 			}
 		}
 		gBoundSession = 0;

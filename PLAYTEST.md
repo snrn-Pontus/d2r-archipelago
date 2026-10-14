@@ -475,6 +475,9 @@ difficulty was known" and then "the save says the last game was on ...".
       check hasn't been sent, join, use it in town without killing anything, Save & Exit. The log says
       "left with 0 areas and 1 quest items" and the item's check arrives on that difficulty. Then the same
       twice in a row (use it, Save & Exit, rejoin, Save & Exit): the check still arrives.
+- [ ] **ap-connect in between (#135):** use such an item without a kill, `ap-connect` to the same slot, then
+      kill something: the check arrives. Again with `ap-connect` to another slot: the log says "connected to
+      another seed; letting go of ..." and the new slot gets no check for it.
 
 ## 3. Act keys
 
