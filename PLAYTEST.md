@@ -588,6 +588,24 @@ log says "found the game's difficulty"). Joining logs "the game client says the 
 - [ ] **Fallback:** `ap-debug native off`, then a new game: no join line, and areas wait for a kill as before
       (section 2e still works). `ap-debug native on` to undo.
 
+## 2d3. Class and name from the game client (issue #155)
+
+The plugin now reads the character's class and name from the game client as a game begins (the startup log
+says "found the game's player"; joining logs "the game client says this is SorkenTwo (Sorceress)"). The seed
+binds to the character by name once it plays: "this seed's character is SorkenTwo (Sorceress)". `ap-debug state`
+has a "game client player" line with the seed's name.
+
+- [ ] **The seed's character:** join, and before any kill a reward arrives in town (`/send` one). The log names
+      the character; the seed's save gets `seedname`.
+- [ ] **Same-class mule:** make a second character of the seed's class and join: rewards wait, with "this seed
+      belongs to SorkenTwo (Sorceress), not Sorken (Sorceress)" and a banner. Its kills and quests send nothing.
+- [ ] **Another class:** rewards wait from the start, not after a kill.
+- [ ] **ap-claim:** with the mule, `ap-claim` moves the seed to it ("rewards go to Sorken (Sorceress) now"), and the
+      first character then waits.
+- [ ] **Tree mode:** the Emblem appears at join, without a kill.
+- [ ] **Fallback:** `ap-debug native off`, then a new game: no "the game client says" line, and the class comes
+      from a kill (or the Codex) as before; a seed already bound by name still matches by class.
+
 ## 2e. Areas left before the difficulty is known (issue #130)
 
 Only happens now when the game's difficulty can't be read (`ap-debug native off`, or a game build where it

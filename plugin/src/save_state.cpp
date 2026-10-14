@@ -8,7 +8,7 @@
 
 namespace ap {
 
-// One "key value" pair per line: "check <id>", "fillers <count>", "goal 1", "level <n>",
+// One "key value" pair per line: "check <id>", "fillers <count>", "goal 1", "level <n>", "seedname <name>",
 // "kills_<difficulty * 10 + act> <count>", "cows_<difficulty> <count>", "questbase_<difficulty> <quest mask>",
 // "unique <seed>", "set <seed>",
 // "rewardcopies <code> <count>", "heldportal <code> <charges>",
@@ -42,6 +42,8 @@ bool SaveState::Load(const std::filesystem::path& path) {
 		} else if (key == "seedclass") {
 			// Not "class": older plugins wrote whichever character was loaded there, mules too.
 			playerClass = static_cast<int>(value);
+		} else if (key == "seedname") {
+			characterName = rest;
 		} else if (key.rfind("kills_", 0) == 0) {
 			kills[std::atoi(key.c_str() + 6)] = static_cast<int>(value);
 		} else if (key.rfind("cows_", 0) == 0) {
@@ -118,6 +120,9 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 			return false;
 		}
 		file << "fillers " << fillersDelivered << "\ngoal " << (goalReached ? 1 : 0) << "\nlevel " << level << "\nseedclass " << playerClass << "\n";
+		if (!characterName.empty()) {
+			file << "seedname " << characterName << "\n";
+		}
 		for (const int64_t check : checks) {
 			file << "check " << check << "\n";
 		}

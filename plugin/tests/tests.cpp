@@ -32,6 +32,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -273,6 +274,105 @@ void TestClientInfo() {
 	EXPECT(!ap::client_info::ReadDifficulty(0) && !ap::client_info::ReadDifficulty(0x10));
 }
 
+// FakeImage's sections with the player lookup at 0x1800 (ids at 0x2200, its table at
+// 0x2400), the bucket walk at 0x1900, and callers of the lookup at 0x1A00 (and 0x1A20)
+// whose slot getters at 0x1A80 (and 0x1A90) read 0x2100 (and secondSlot).
+auto FakePlayerImage(bool walk, uint32_t tableAt, int callers, uint32_t secondSlot = 0x2100) -> std::vector<uint8_t> {
+	auto image = FakeImage(0x2010, 0x2010, 0x2010, false);
+	const auto put32 = [&](size_t at, uint32_t value) { std::memcpy(&image[at], &value, 4); };
+	const auto bytes = [&](size_t at, std::initializer_list<uint8_t> list) { std::copy(list.begin(), list.end(), image.begin() + static_cast<std::ptrdiff_t>(at)); };
+	bytes(0x1800, { 0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x83, 0xF9, 0x08, 0x0F, 0x83, 0, 0, 0, 0, 0x8B, 0xD9, 0x48, 0x89, 0x5C, 0x24, 0x38,
+	                0x48, 0x83, 0xFB, 0x08, 0x72, 0x19, 0x48, 0x8D, 0x44, 0x24, 0x38, 0x48, 0x8D, 0x4C, 0x24, 0x40, 0x48, 0x89, 0x44, 0x24, 0x40, 0xE8, 0, 0, 0, 0,
+	                0x84, 0xC0, 0x74, 0x01, 0xCC, 0x48, 0x8B, 0x44, 0x24, 0x38, 0x48, 0x8D, 0x3D, 0, 0, 0, 0 });
+	put32(0x1841, 0x2200 - 0x1845);
+	bytes(tableAt, { 0x48, 0x8D, 0x0D, 0, 0, 0, 0, 0x45, 0x33, 0xC9, 0x44, 0x8B, 0x04, 0x87, 0x41, 0x8B, 0xD0, 0x83, 0xE2, 0x7F, 0xE8 });
+	put32(tableAt + 3, 0x2400 - static_cast<uint32_t>(tableAt + 7));
+	if (walk) {
+		bytes(0x1900, { 0x44, 0x39, 0x40, 0x08, 0x75, 0x05, 0x44, 0x39, 0x08, 0x74, 0x11, 0x48, 0x8B, 0x88, 0x58, 0x01, 0x00, 0x00 });
+	}
+	const auto caller = [&](size_t at, size_t getter, uint32_t slot) {
+		bytes(at, { 0xE8, 0, 0, 0, 0, 0x8B, 0xC8, 0xE8, 0, 0, 0, 0 });
+		put32(at + 1, static_cast<uint32_t>(getter - (at + 5)));
+		put32(at + 8, static_cast<uint32_t>(0x1800 - (at + 12)));
+		bytes(getter, { 0x8B, 0x05, 0, 0, 0, 0, 0xC3 });
+		put32(getter + 2, slot - static_cast<uint32_t>(getter + 6));
+	};
+	if (callers >= 1) {
+		caller(0x1A00, 0x1A80, 0x2100);
+	}
+	if (callers >= 2) {
+		caller(0x1A20, 0x1A90, secondSlot);
+	}
+	return image;
+}
+
+void TestClientPlayer() {
+	using ap::client_info::LocatePlayer;
+	const auto found = LocatePlayer(FakePlayerImage(true, 0x1874, 2).data());
+	EXPECT(found.error.empty() && found.slot == 0x2100 && found.ids == 0x2200 && found.table == 0x2400 && found.next == 0x158);
+	EXPECT(LocatePlayer(FakePlayerImage(true, 0x1874, 2, 0x2104).data()).error.find("slot") != std::string::npos);
+	EXPECT(LocatePlayer(FakePlayerImage(true, 0x1874, 0).data()).error.find("slot") != std::string::npos);
+	EXPECT(LocatePlayer(FakePlayerImage(true, 0x1C00, 1).data()).error.find("isn't in the player lookup") != std::string::npos);
+	EXPECT(LocatePlayer(FakePlayerImage(false, 0x1874, 1).data()).error.find("walk") != std::string::npos);
+	EXPECT(LocatePlayer(FakeImage(0x2010, 0x2010, 0x2010, false).data()).error.find("not found") != std::string::npos);
+
+	// Reading: slot 1 has unit id 33, in bucket 33 behind another player (id 161, same bucket).
+	struct Unit {
+		uint32_t    type;
+		int32_t     classId;
+		uint32_t    id;
+		uint32_t    mode;
+		const char* data;
+		uint8_t     padding[0x158 - 0x18];
+		const Unit* next;
+	};
+	static_assert(offsetof(Unit, next) == 0x158);
+	char name[48] = "SorkenTwo";
+	char otherName[48] = "Barb";
+	Unit me {};
+	me.type = 0;
+	me.classId = 1;
+	me.id = 33;
+	me.data = name;
+	Unit other {};
+	other.classId = 4;
+	other.id = 161;
+	other.data = otherName;
+	other.next = &me;
+	struct Globals {
+		uint32_t    slot;
+		uint32_t    ids[8];
+		const Unit* table[128];
+	} globals {};
+	globals.slot = 1;
+	std::fill(std::begin(globals.ids), std::end(globals.ids), 0xFFFFFFFF);
+	globals.ids[1] = 33;
+	globals.table[33] = &other;
+	const auto base = reinterpret_cast<uintptr_t>(&globals);
+	const ap::client_info::PlayerLocation where { .slot = static_cast<uint32_t>(offsetof(Globals, slot)) + 0x1000, .ids = static_cast<uint32_t>(offsetof(Globals, ids)) + 0x1000,
+	                                              .table = static_cast<uint32_t>(offsetof(Globals, table)) + 0x1000, .next = 0x158 };
+	const auto player = ap::client_info::ReadPlayer(base - 0x1000, where);
+	EXPECT(player && player->classId == 1 && player->name == "SorkenTwo");
+	globals.ids[1] = 0xFFFFFFFF;
+	EXPECT(!ap::client_info::ReadPlayer(base - 0x1000, where));
+	globals.ids[1] = 33;
+	globals.slot = 9;
+	EXPECT(!ap::client_info::ReadPlayer(base - 0x1000, where));
+	globals.slot = 1;
+	me.classId = 9;
+	EXPECT(!ap::client_info::ReadPlayer(base - 0x1000, where));
+	me.classId = 1;
+	name[0] = '\x01';
+	EXPECT(!ap::client_info::ReadPlayer(base - 0x1000, where));
+	name[0] = 'S';
+	other.next = reinterpret_cast<const Unit*>(uintptr_t { 0x10 });
+	EXPECT(!ap::client_info::ReadPlayer(base - 0x1000, where));
+	EXPECT(!ap::client_info::ReadPlayer(base - 0x1000, {}));
+
+	EXPECT(ap::client_info::ValidName("Al") && ap::client_info::ValidName("Sorken-Two") && !ap::client_info::ValidName("A")
+	       && !ap::client_info::ValidName("Bad\tName") && !ap::client_info::ValidName(std::string(48, 'a')));
+}
+
 void TestConfigRoundTrip() {
 	ap::Config config;
 	config.server = "archipelago.gg:38281";
@@ -478,6 +578,7 @@ void TestSaveStateRoundTrip() {
 	state.fillersDelivered = 7;
 	state.goalReached = true;
 	state.playerClass = 4;
+	state.characterName = "Sorken Two";
 	state.kills = { { 3, 120 }, { 24, 7 } };
 	state.cowKills = { { 1, 64 } };
 	state.questBaseline = { { 0, (uint64_t { 1 } << 1) | (uint64_t { 1 } << 40) }, { 2, 0 } };
@@ -502,7 +603,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.checks == state.checks);
 	EXPECT(loaded.fillersDelivered == 7);
 	EXPECT(loaded.goalReached);
-	EXPECT(loaded.playerClass == 4);
+	EXPECT(loaded.playerClass == 4 && loaded.characterName == "Sorken Two");
 	EXPECT(loaded.kills == state.kills && loaded.cowKills == state.cowKills && loaded.foundUniques == state.foundUniques && loaded.foundSets == state.foundSets);
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12
@@ -1020,6 +1121,14 @@ void TestCharacterCheck() {
 	EXPECT(ap::character::Check(4, 1) == Verdict::Mismatch);
 	// A seed with no class yet goes to the first character that shows its class.
 	EXPECT(ap::character::Check(-1, 7) == Verdict::Match);
+	// Names, once both are known (#155): a mule of the same class doesn't match.
+	EXPECT(ap::character::Check(1, 1, "SorkenTwo", "SorkenTwo") == Verdict::Match);
+	EXPECT(ap::character::Check(1, 1, "SorkenTwo", "Sorken") == Verdict::Mismatch);
+	EXPECT(ap::character::Check(1, 4, "SorkenTwo", "SorkenTwo") == Verdict::Mismatch);
+	EXPECT(ap::character::Check(1, 1, "", "Sorken") == Verdict::Match);
+	EXPECT(ap::character::Check(1, 1, "SorkenTwo", "") == Verdict::Match);
+	EXPECT(ap::character::Check(-1, 1, "SorkenTwo", "Sorken") == Verdict::Mismatch);
+	EXPECT(ap::character::Check(1, -1, "SorkenTwo", "SorkenTwo") == Verdict::Unknown);
 }
 
 // A D2R 3.x character file header with the given difficulty bytes (Fontanellen's: 80 00 00, Normal act 1).
@@ -2662,6 +2771,7 @@ int main() {
 	TestNativeScan();
 	TestQuestRecord();
 	TestClientInfo();
+	TestClientPlayer();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
 	TestConfigNumericIds();
