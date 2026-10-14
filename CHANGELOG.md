@@ -2,6 +2,42 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.13.0 - 2026-10-14
+
+Rerun `d2r-ap-setup` for this version and make a new seed: most of these are new options, and the
+death experience loss, shop prices, parcel vendor and free mercenary revive are written into the mod.
+Every new option defaults to how the game played before.
+
+- Death Experience Penalty: lose less experience when you die, or none at all (#58)
+- Potion Lock Mode: potions picked up while potions are locked can be drunk on the spot, or
+  rejuvenation potions can stay usable, instead of being set aside (#4, #37)
+- Town Portal Lock sets scrolls and tomes aside with their charges instead of destroying them, and Town
+  Portal Access gives them back. Town Portal Access Tome Charges sets how full the new tome is (#37)
+- Enforce Act Keys Mode: walking into a locked act can just tell you it's locked instead of warping you
+  to town (#37)
+- Useful Starting Skills (on by default): you always start with at least one skill that attacks or
+  summons, so no more two curses at level 1. Skill Blocklist keeps skills you never want out of the
+  seed (#16)
+- Codex options: levels per skill copy, levels per Codex Empowerment, the Codex level cap, and your
+  class's share of the pool with class-weighted skills (#39)
+- Reward options: gold and experience reward sizes, the level window for Random Uniques and Set Items,
+  rare jewel chance, jewels' share of charms, the high rune curve, which shrines can appear, and what
+  boss quests give (#35)
+- Shop options: parcel and Scroll of Prophecy price multipliers, and parcels sold by the blacksmiths
+  instead of the potion sellers (#36)
+- DeathLink Mode: another player's death can drop you to 1 life, take gold or spring a trap instead of
+  killing you. DeathLink Amnesty only sends every Nth death of yours (#41)
+- Check threshold options: a level check every 1 to 10 levels, the level above which level checks hold
+  only filler, half or double kill and find counts, and 50 to 500 cows (#40)
+- Starting Gold and Starting Items (potions, scrolls, perfect gems, runes) given once at the start, and
+  Free Mercenary Revive (#42)
+- `archipelago.toml` can set how many banner lines show, how long they stay, and when checks, items and
+  loot get summed into one line (#43)
+- `d2r-ap-setup --mapsense` writes the seed's side areas as MapSense destinations, so MapSense can draw
+  a route to them (#59)
+- Areas and quest items count from the moment you join a game: the plugin reads the difficulty from the
+  game instead of waiting for your first kill (#154)
+
 ## 0.12.0 - 2026-10-14
 
 Rerun `d2r-ap-setup` for this version: the mod gets tree mode's starting skill and locked-skill icons.
