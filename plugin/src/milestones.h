@@ -8,15 +8,20 @@
 // runs them when a seed binds as well as after each kill.
 //
 // Cows add up per difficulty over the whole seed: every game and every
-// connection counts toward the same 100. Cows killed while no seed is bound
+// connection counts toward the same count. Cows killed while no seed is bound
 // are held and join the next seed the game binds to.
+//
+// The thresholds are the seed's (slot data: kill_counts, cow_kills and the
+// find counts), each count with its own location id (ids.h); a count with no
+// id of its own makes no check.
 
 #include "game_data.h"
 #include "ids.h"
 #include "save_state.h"
 
+#include <algorithm>
 #include <cstdint>
-#include <iterator>
+#include <span>
 #include <vector>
 
 namespace ap::milestones {
@@ -24,27 +29,61 @@ namespace ap::milestones {
 inline constexpr int Difficulties = 3;
 inline constexpr int KillActs     = 5;
 
-// The kill-count checks `count` kills in an act on a difficulty have reached.
-inline auto KillChecks(int difficulty, int act, int count) -> std::vector<int64_t> {
+// The level checks a character at `level` has reached: every `step` levels
+// from step (but not level 1) up to the seed's level cap.
+inline auto LevelChecks(int level, int step, int cap) -> std::vector<int64_t> {
+	std::vector<int64_t> checks;
+	if (step <= 0) {
+		return checks;
+	}
+	for (int milestone = std::max(step, ids::FirstLevelCheck); milestone <= std::min(level, cap); milestone += step) {
+		checks.push_back(ids::LevelLocation(static_cast<uint32_t>(milestone)));
+	}
+	return checks;
+}
+
+// The kill-count checks `count` kills in an act on a difficulty have reached,
+// for the seed's thresholds `counts`.
+inline auto KillChecks(int difficulty, int act, int count, std::span<const uint32_t> counts) -> std::vector<int64_t> {
 	std::vector<int64_t> checks;
 	if (difficulty < 0 || difficulty >= Difficulties || act < 0 || act >= KillActs) {
 		return checks;
 	}
-	for (uint32_t index = 0; index < std::size(ids::KillCounts); ++index) {
-		if (count >= static_cast<int>(ids::KillCounts[index])) {
-			checks.push_back(ids::KillLocation(static_cast<uint32_t>(difficulty), static_cast<uint32_t>(act), index));
+	for (const uint32_t threshold : counts) {
+		if (const int index = ids::CountIndex(ids::KillCounts, threshold); index >= 0 && count >= static_cast<int>(threshold)) {
+			checks.push_back(ids::KillLocation(static_cast<uint32_t>(difficulty), static_cast<uint32_t>(act), static_cast<uint32_t>(index)));
 		}
 	}
 	return checks;
 }
 
-// The cow-count check `count` cows on a difficulty have reached. Whatever
-// counts as `count` (a seed's total or one game's) is up to the caller.
-inline auto CowChecks(int difficulty, int count) -> std::vector<int64_t> {
-	if (difficulty < 0 || difficulty >= Difficulties || count < static_cast<int>(ids::CowKills)) {
+// The find-count checks `uniques` unique items and `sets` set items found have
+// reached, for the seed's thresholds.
+inline auto FindChecks(size_t uniques, size_t sets, std::span<const uint32_t> uniqueCounts, std::span<const uint32_t> setCounts)
+    -> std::vector<int64_t> {
+	std::vector<int64_t> checks;
+	for (const uint32_t threshold : uniqueCounts) {
+		if (const int index = ids::CountIndex(ids::UniqueFinds, threshold); index >= 0 && uniques >= threshold) {
+			checks.push_back(ids::UniqueFindLocation(static_cast<uint32_t>(index)));
+		}
+	}
+	for (const uint32_t threshold : setCounts) {
+		if (const int index = ids::CountIndex(ids::SetFinds, threshold); index >= 0 && sets >= threshold) {
+			checks.push_back(ids::SetFindLocation(static_cast<uint32_t>(index)));
+		}
+	}
+	return checks;
+}
+
+// The cow-count check `count` cows on a difficulty have reached, when the seed's
+// check takes `cows`. Whatever counts as `count` (a seed's total or one game's)
+// is up to the caller.
+inline auto CowChecks(int difficulty, int count, uint32_t cows) -> std::vector<int64_t> {
+	const int check = ids::CowKillCheck(cows);
+	if (difficulty < 0 || difficulty >= Difficulties || check < 0 || count < static_cast<int>(cows)) {
 		return {};
 	}
-	return { ids::CowLocation(static_cast<uint32_t>(difficulty), 2) };
+	return { ids::CowLocation(static_cast<uint32_t>(difficulty), static_cast<uint32_t>(check)) };
 }
 
 // Whether a cow killed in `levelId` counts toward the 100: only in the Secret
@@ -62,14 +101,15 @@ struct CowKill {
 	std::vector<int64_t> reached;
 };
 
-// Counts a cow killed on a difficulty in an area into a bound seed's save.
-inline auto CountCow(SaveState& save, int difficulty, int levelId, bool cowsShuffled) -> CowKill {
+// Counts a cow killed on a difficulty in an area into a bound seed's save,
+// whose cow check takes `cows`.
+inline auto CountCow(SaveState& save, int difficulty, int levelId, bool cowsShuffled, uint32_t cows) -> CowKill {
 	CowKill kill;
 	if (difficulty < 0 || difficulty >= Difficulties || !CowCounts(levelId, cowsShuffled)) {
 		return kill;
 	}
 	kill.counted = true;
-	for (const int64_t location : CowChecks(difficulty, ++save.cowKills[difficulty])) {
+	for (const int64_t location : CowChecks(difficulty, ++save.cowKills[difficulty], cows)) {
 		if (!save.checks.contains(location)) {
 			kill.reached.push_back(location);
 		}
@@ -103,8 +143,9 @@ struct HeldCows {
 };
 
 // The checks the save's counters have reached that aren't among its checks
-// (which include the server's), for the categories the seed has.
-inline auto Missing(const SaveState& save, bool killChecks, bool cowChecks) -> std::vector<int64_t> {
+// (which include the server's), for the seed's kill-count thresholds (none
+// without kill-count checks) and the cows its cow check takes (0 without one).
+inline auto Missing(const SaveState& save, std::span<const uint32_t> killCounts, uint32_t cows) -> std::vector<int64_t> {
 	std::vector<int64_t> missing;
 	auto add = [&](const std::vector<int64_t>& reached) {
 		for (const int64_t location : reached) {
@@ -113,42 +154,43 @@ inline auto Missing(const SaveState& save, bool killChecks, bool cowChecks) -> s
 			}
 		}
 	};
-	if (killChecks) {
-		for (const auto& [key, count] : save.kills) {
-			if (key >= 0) {
-				add(KillChecks(key / 10, key % 10, count));
-			}
+	for (const auto& [key, count] : save.kills) {
+		if (key >= 0) {
+			add(KillChecks(key / 10, key % 10, count, killCounts));
 		}
 	}
-	if (cowChecks) {
-		for (const auto& [difficulty, count] : save.cowKills) {
-			add(CowChecks(difficulty, count));
-		}
+	for (const auto& [difficulty, count] : save.cowKills) {
+		add(CowChecks(difficulty, count, cows));
 	}
 	return missing;
 }
 
-// For the debug tools: the count one short of the first kill-count check an act
-// on a difficulty hasn't got in the save, so the next kill sends it; -1 if it
-// has them all.
-inline auto KillsBeforeNext(const SaveState& save, int difficulty, int act) -> int {
+// For the debug tools: the count one short of the lowest of the seed's
+// kill-count thresholds an act on a difficulty hasn't got the check for in the
+// save, so the next kill sends it; -1 if it has them all.
+inline auto KillsBeforeNext(const SaveState& save, int difficulty, int act, std::span<const uint32_t> counts) -> int {
 	if (difficulty < 0 || difficulty >= Difficulties || act < 0 || act >= KillActs) {
 		return -1;
 	}
-	for (uint32_t index = 0; index < std::size(ids::KillCounts); ++index) {
-		if (!save.checks.contains(ids::KillLocation(static_cast<uint32_t>(difficulty), static_cast<uint32_t>(act), index))) {
-			return static_cast<int>(ids::KillCounts[index]) - 1;
+	int next = -1;
+	for (const uint32_t threshold : counts) {
+		const int index = ids::CountIndex(ids::KillCounts, threshold);
+		if (index >= 0 && !save.checks.contains(ids::KillLocation(static_cast<uint32_t>(difficulty), static_cast<uint32_t>(act), static_cast<uint32_t>(index)))
+		    && (next < 0 || static_cast<int>(threshold) - 1 < next)) {
+			next = static_cast<int>(threshold) - 1;
 		}
 	}
-	return -1;
+	return next;
 }
 
-// The same for the cow check on a difficulty.
-inline auto CowsBeforeNext(const SaveState& save, int difficulty) -> int {
-	if (difficulty < 0 || difficulty >= Difficulties || save.checks.contains(ids::CowLocation(static_cast<uint32_t>(difficulty), 2))) {
+// The same for the cow check on a difficulty, which takes `cows`.
+inline auto CowsBeforeNext(const SaveState& save, int difficulty, uint32_t cows) -> int {
+	const int check = ids::CowKillCheck(cows);
+	if (difficulty < 0 || difficulty >= Difficulties || check < 0
+	    || save.checks.contains(ids::CowLocation(static_cast<uint32_t>(difficulty), static_cast<uint32_t>(check)))) {
 		return -1;
 	}
-	return static_cast<int>(ids::CowKills) - 1;
+	return static_cast<int>(cows) - 1;
 }
 
 } // namespace ap::milestones

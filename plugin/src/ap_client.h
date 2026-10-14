@@ -77,6 +77,12 @@ struct SlotData {
 	bool uberChecks = false;
 	bool killCountChecks = false;
 	bool findCountChecks = false;
+	// The seed's count thresholds, each a count with its own location id (ids.h):
+	// cows per difficulty, kills per act, uniques and set items found.
+	uint32_t cowKills = 100;
+	std::vector<uint32_t> killCounts { 100, 250, 500 };
+	std::vector<uint32_t> uniqueFinds { 1, 5, 10, 25, 50 };
+	std::vector<uint32_t> setFinds { 1, 5, 10, 25 };
 	// Walking into a locked act warps you back to town, or only says so.
 	bool enforceActKeys = false;
 	act_lock::Mode enforceActKeysMode = act_lock::Mode::WarpToTown;

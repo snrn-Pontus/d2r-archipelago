@@ -2,6 +2,7 @@
 
 // Must match apworld/d2r_archipelago/ids.py.
 
+#include <cstddef>
 #include <cstdint>
 
 namespace ap::ids {
@@ -28,6 +29,9 @@ inline constexpr auto QuestLocation(uint32_t difficulty, uint32_t questFlag) noe
 inline constexpr auto AreaLocation(uint32_t difficulty, uint32_t levelId) noexcept -> int64_t {
 	return LocationBase + 1000 + difficulty * 200 + levelId;
 }
+
+// Every level from FirstLevelCheck to 90 has one; the seed's level_step picks which are checks.
+inline constexpr int FirstLevelCheck = 2;
 
 inline constexpr auto LevelLocation(uint32_t level) noexcept -> int64_t {
 	return LocationBase + 2000 + level;
@@ -65,17 +69,39 @@ inline constexpr auto SpecialLocation(uint32_t index) noexcept -> int64_t {
 	return LocationBase + 5300 + index;
 }
 
-// Secret Cow Level, per difficulty: 0 enter, 1 The Cow King, 2 CowKills cows.
-inline constexpr uint32_t CowKills = 100;
+// Count thresholds. Each count is a location of its own, its id from its index
+// here, so a location means the same count in every seed: the seed's options
+// (slot data) only pick which of them it has. Append only: the index is the id.
+// Cows per difficulty: CowLocation check 2 + index.
+inline constexpr uint32_t CowKills[]    = { 100, 50, 250, 500 };
+// Kills per act (KillLocation), uniques and set items found (UniqueFindLocation, SetFindLocation).
+inline constexpr uint32_t KillCounts[]  = { 100, 250, 500, 50, 125, 200, 1000 };
+inline constexpr uint32_t UniqueFinds[] = { 1, 5, 10, 25, 50, 2, 12, 20, 100 };
+inline constexpr uint32_t SetFinds[]    = { 1, 5, 10, 25, 2, 12, 20, 50 };
 
+// The index of a count among a threshold list (its location's index), or -1 if it has none.
+template <size_t N>
+inline constexpr auto CountIndex(const uint32_t (&counts)[N], uint32_t count) noexcept -> int {
+	for (size_t index = 0; index < N; ++index) {
+		if (counts[index] == count) {
+			return static_cast<int>(index);
+		}
+	}
+	return -1;
+}
+
+// Secret Cow Level, per difficulty: 0 enter, 1 The Cow King, 2.. CowKills cows.
 inline constexpr auto CowLocation(uint32_t difficulty, uint32_t check) noexcept -> int64_t {
 	return LocationBase + 5400 + difficulty * 10 + check;
 }
 
+// The cow check for killing `count` cows, or -1 if no check takes that many.
+inline constexpr auto CowKillCheck(uint32_t count) noexcept -> int {
+	const int index = CountIndex(CowKills, count);
+	return index < 0 ? -1 : 2 + index;
+}
+
 inline constexpr uint32_t MaxShopChecks = 5;
-inline constexpr uint32_t KillCounts[]  = { 100, 250, 500 };
-inline constexpr uint32_t UniqueFinds[] = { 1, 5, 10, 25, 50 };
-inline constexpr uint32_t SetFinds[]    = { 1, 5, 10, 25 };
 
 // Parcels bought at each act's shop, once per seed.
 inline constexpr auto ShopLocation(uint32_t act, uint32_t number) noexcept -> int64_t {

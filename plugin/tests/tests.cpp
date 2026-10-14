@@ -492,16 +492,18 @@ void TestMilestoneRecovery() {
 		std::ranges::sort(checks);
 		return checks;
 	};
+	const std::vector<uint32_t> kills = ap::SlotData {}.killCounts;
 	// Exactly at each threshold, and one below it.
 	for (uint32_t index = 0; index < std::size(ap::ids::KillCounts); ++index) {
 		const int threshold = static_cast<int>(ap::ids::KillCounts[index]);
-		EXPECT(std::ranges::count(ap::milestones::KillChecks(0, 0, threshold), KillLocation(0, 0, index)) == 1);
-		EXPECT(std::ranges::count(ap::milestones::KillChecks(0, 0, threshold - 1), KillLocation(0, 0, index)) == 0);
+		EXPECT(std::ranges::count(ap::milestones::KillChecks(0, 0, threshold, ap::ids::KillCounts), KillLocation(0, 0, index)) == 1);
+		EXPECT(std::ranges::count(ap::milestones::KillChecks(0, 0, threshold - 1, ap::ids::KillCounts), KillLocation(0, 0, index)) == 0);
 	}
-	EXPECT(ap::milestones::CowChecks(1, static_cast<int>(ap::ids::CowKills)) == std::vector<int64_t> { CowLocation(1, 2) });
-	EXPECT(ap::milestones::CowChecks(1, static_cast<int>(ap::ids::CowKills) - 1).empty());
+	EXPECT(ap::milestones::CowChecks(1, 100, 100) == std::vector<int64_t> { CowLocation(1, 2) });
+	EXPECT(ap::milestones::CowChecks(1, 99, 100).empty());
 	// Out-of-range keys from a damaged save give nothing.
-	EXPECT(ap::milestones::KillChecks(3, 0, 1000).empty() && ap::milestones::KillChecks(0, 5, 1000).empty() && ap::milestones::CowChecks(-1, 1000).empty());
+	EXPECT(ap::milestones::KillChecks(3, 0, 1000, kills).empty() && ap::milestones::KillChecks(0, 5, 1000, kills).empty()
+	       && ap::milestones::CowChecks(-1, 1000, 100).empty());
 
 	ap::SaveState save;
 	save.kills = {
@@ -512,22 +514,22 @@ void TestMilestoneRecovery() {
 	};
 	save.cowKills = { { 0, 100 }, { 2, 140 }, { 1, 99 } };
 	save.checks = { KillLocation(1, 2, 0), KillLocation(0, 3, 0), KillLocation(0, 3, 1), CowLocation(2, 2) };
-	const std::vector<int64_t> both = sorted(ap::milestones::Missing(save, true, true));
+	const std::vector<int64_t> both = sorted(ap::milestones::Missing(save, kills, 100));
 	EXPECT(both == sorted({ KillLocation(0, 0, 0), KillLocation(1, 2, 1), KillLocation(1, 2, 2), CowLocation(0, 2) }));
 	// Disabled categories recover nothing.
-	EXPECT(sorted(ap::milestones::Missing(save, true, false)) == sorted({ KillLocation(0, 0, 0), KillLocation(1, 2, 1), KillLocation(1, 2, 2) }));
-	EXPECT(ap::milestones::Missing(save, false, true) == std::vector<int64_t> { CowLocation(0, 2) });
-	EXPECT(ap::milestones::Missing(save, false, false).empty());
+	EXPECT(sorted(ap::milestones::Missing(save, kills, 0)) == sorted({ KillLocation(0, 0, 0), KillLocation(1, 2, 1), KillLocation(1, 2, 2) }));
+	EXPECT(ap::milestones::Missing(save, {}, 100) == std::vector<int64_t> { CowLocation(0, 2) });
+	EXPECT(ap::milestones::Missing(save, {}, 0).empty());
 	// The same through a save file, as BindSession loads it; once the checks are
 	// in the save nothing is missing, so they aren't sent or announced again.
 	const auto path = std::filesystem::temp_directory_path() / "d2rl-ap-test-milestones" / "seed_slot.txt";
 	EXPECT(save.Save(path));
 	ap::SaveState loaded;
 	EXPECT(loaded.Load(path));
-	const std::vector<int64_t> recovered = ap::milestones::Missing(loaded, true, true);
+	const std::vector<int64_t> recovered = ap::milestones::Missing(loaded, kills, 100);
 	EXPECT(sorted(recovered) == both);
 	loaded.checks.insert(recovered.begin(), recovered.end());
-	EXPECT(ap::milestones::Missing(loaded, true, true).empty());
+	EXPECT(ap::milestones::Missing(loaded, kills, 100).empty());
 	std::filesystem::remove_all(path.parent_path());
 }
 
@@ -541,7 +543,7 @@ void TestLifetimeCows() {
 	auto kill = [](ap::SaveState& save, int difficulty, int count, int level = Cows, bool shuffled = false) {
 		std::vector<int64_t> reached;
 		for (int i = 0; i < count; ++i) {
-			for (const int64_t location : CountCow(save, difficulty, level, shuffled).reached) {
+			for (const int64_t location : CountCow(save, difficulty, level, shuffled, 100).reached) {
 				reached.push_back(location);
 				save.checks.insert(location); // as AddChecks does
 			}
@@ -582,7 +584,7 @@ void TestLifetimeCows() {
 		}
 		held.MoveTo(save, false);
 		EXPECT(save.cowKills[2] == 100);
-		EXPECT(ap::milestones::Missing(save, false, true) == std::vector<int64_t> { CowLocation(2, 2) });
+		EXPECT(ap::milestones::Missing(save, {}, 100) == std::vector<int64_t> { CowLocation(2, 2) });
 		// The held cows are gone once moved.
 		held.MoveTo(save, false);
 		EXPECT(save.cowKills[2] == 100);
@@ -591,19 +593,19 @@ void TestLifetimeCows() {
 	{
 		ap::SaveState save;
 		EXPECT(kill(save, 0, 60).empty() && kill(save, 1, 40).empty() && kill(save, 2, 99).empty());
-		EXPECT(ap::milestones::Missing(save, false, true).empty());
+		EXPECT(ap::milestones::Missing(save, {}, 100).empty());
 		ap::milestones::HeldCows held;
 		held.Kill(1, Cows);
 		held.Kill(3, Cows); // out of range
 		held.MoveTo(save, false);
 		EXPECT(save.cowKills[0] == 60 && save.cowKills[1] == 41 && save.cowKills[2] == 99 && !save.cowKills.contains(3));
-		EXPECT(CountCow(save, 3, Cows, false).reached.empty() && !CountCow(save, -1, Cows, false).counted);
+		EXPECT(CountCow(save, 3, Cows, false, 100).reached.empty() && !CountCow(save, -1, Cows, false, 100).counted);
 	}
 	// Only the Cow Level's cows count, unless the seed shuffled them into another area.
 	{
 		EXPECT(ap::milestones::CowCounts(Cows, false) && !ap::milestones::CowCounts(2, false) && ap::milestones::CowCounts(2, true));
 		ap::SaveState save;
-		EXPECT(!CountCow(save, 0, 2, false).counted && !save.cowKills.contains(0));
+		EXPECT(!CountCow(save, 0, 2, false, 100).counted && !save.cowKills.contains(0));
 		EXPECT(kill(save, 0, 150, 2).empty() && !save.cowKills.contains(0));
 		EXPECT(kill(save, 0, 100, 2, true) == std::vector<int64_t> { CowLocation(0, 2) });
 		// Held cows outside the Cow Level only count for a seed that shuffled them.
@@ -618,6 +620,19 @@ void TestLifetimeCows() {
 		held.MoveTo(plain, false);
 		copy.MoveTo(shuffled, true);
 		EXPECT(plain.cowKills[0] == 30 && shuffled.cowKills[0] == 60);
+	}
+	// cow_kill_count: the seed's count has its own check (50 is check 3, 500 check 5);
+	// a count with no check of its own makes none.
+	{
+		ap::SaveState save;
+		for (int i = 0; i < 49; ++i) {
+			EXPECT(CountCow(save, 1, Cows, false, 50).reached.empty());
+		}
+		EXPECT(CountCow(save, 1, Cows, false, 50).reached == std::vector<int64_t> { CowLocation(1, 3) });
+		EXPECT(ap::milestones::Missing(save, {}, 500).empty() && ap::milestones::Missing(save, {}, 50) == std::vector<int64_t> { CowLocation(1, 3) });
+		save.cowKills[1] = 500;
+		EXPECT(ap::milestones::Missing(save, {}, 500) == std::vector<int64_t> { CowLocation(1, 5) });
+		EXPECT(ap::milestones::CowChecks(1, 1000, 75).empty() && ap::milestones::Missing(save, {}, 75).empty());
 	}
 	std::filesystem::remove_all(path.parent_path());
 }
@@ -846,37 +861,85 @@ void TestStarterKit() {
 	EXPECT(ap::panel::Find(ap::panel::Debug(), "debug-kit") != nullptr);
 }
 
+// The seed's check thresholds (#40): level_step picks which levels are checks,
+// and every count a multiplier makes has a location of its own, so the same id
+// means the same count in every seed. Mirrors test_generation.py.
+void TestCheckThresholds() {
+	using ap::ids::KillLocation;
+	using ap::ids::LevelLocation;
+	using ap::ids::SetFindLocation;
+	using ap::ids::UniqueFindLocation;
+	// Every fifth level, as before; every level from 2; every seventh up to a cap of 28.
+	EXPECT(ap::milestones::LevelChecks(12, 5, 30) == (std::vector<int64_t> { LevelLocation(5), LevelLocation(10) }));
+	EXPECT(ap::milestones::LevelChecks(4, 1, 30) == (std::vector<int64_t> { LevelLocation(2), LevelLocation(3), LevelLocation(4) }));
+	EXPECT(ap::milestones::LevelChecks(1, 1, 30).empty() && ap::milestones::LevelChecks(99, 0, 90).empty());
+	EXPECT(ap::milestones::LevelChecks(99, 7, 28).size() == 4 && ap::milestones::LevelChecks(99, 7, 28).back() == LevelLocation(28));
+	EXPECT(ap::milestones::LevelChecks(99, 5, 90).size() == 18);
+	// The counts keep their ids: 100/250/500 kills are 0..2 whatever else a seed has; doubled 200/500/1000 are 5, 2, 6.
+	const std::vector<uint32_t> doubled { 200, 500, 1000 };
+	EXPECT(ap::milestones::KillChecks(1, 3, 600, doubled) == (std::vector<int64_t> { KillLocation(1, 3, 5), KillLocation(1, 3, 2) }));
+	EXPECT(ap::milestones::KillChecks(0, 0, 60, std::vector<uint32_t> { 50, 125, 250 }) == std::vector<int64_t> { KillLocation(0, 0, 3) });
+	// A count with no location of its own makes no check.
+	EXPECT(ap::milestones::KillChecks(0, 0, 10000, std::vector<uint32_t> { 300 }).empty());
+	const ap::SlotData defaults;
+	EXPECT(ap::milestones::FindChecks(10, 5, defaults.uniqueFinds, defaults.setFinds)
+	       == (std::vector<int64_t> { UniqueFindLocation(0), UniqueFindLocation(1), UniqueFindLocation(2), SetFindLocation(0), SetFindLocation(1) }));
+	EXPECT(ap::milestones::FindChecks(12, 2, std::vector<uint32_t> { 1, 2, 5, 12, 25 }, std::vector<uint32_t> { 1, 2, 5, 12 })
+	       == (std::vector<int64_t> { UniqueFindLocation(0), UniqueFindLocation(5), UniqueFindLocation(1), UniqueFindLocation(6),
+	                                  SetFindLocation(0), SetFindLocation(4) }));
+	EXPECT(ap::milestones::FindChecks(100, 100, {}, std::vector<uint32_t> { 3 }).empty());
+	// The catalogs, as ids.py has them.
+	EXPECT(ap::ids::CountIndex(ap::ids::KillCounts, 1000) == 6 && ap::ids::CountIndex(ap::ids::UniqueFinds, 100) == 8
+	       && ap::ids::CountIndex(ap::ids::SetFinds, 50) == 7 && ap::ids::CowKillCheck(500) == 5 && ap::ids::CowKillCheck(100) == 2
+	       && ap::ids::CowKillCheck(75) == -1);
+	// Slot data: the seed's thresholds, the defaults without them, and only positive counts.
+	EXPECT(defaults.cowKills == 100 && defaults.killCounts == (std::vector<uint32_t> { 100, 250, 500 }));
+	ap::Client client([](const std::string&) {});
+	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[],"missing_locations":[],"checked_locations":[],
+		"slot_data":{"level_step":1,"cow_kills":250,"kill_counts":[50,125,250],"unique_finds":[2,10,"x",-1],"set_finds":[]},"slot_info":{},"hint_points":0}])json");
+	const ap::SlotData slots = client.Slots();
+	EXPECT(slots.levelStep == 1 && slots.cowKills == 250 && slots.killCounts == (std::vector<uint32_t> { 50, 125, 250 }));
+	EXPECT(slots.uniqueFinds == (std::vector<uint32_t> { 2, 10 }) && slots.setFinds.empty());
+}
+
 // ap-debug kills and cows: one short of the first check the save hasn't got.
 void TestDebugCounts() {
 	using ap::ids::CowLocation;
 	using ap::ids::KillLocation;
 	using ap::milestones::CowsBeforeNext;
 	using ap::milestones::KillsBeforeNext;
+	const std::vector<uint32_t> counts = ap::SlotData {}.killCounts;
 	ap::SaveState save;
-	EXPECT(KillsBeforeNext(save, 0, 0) == 99);
+	EXPECT(KillsBeforeNext(save, 0, 0, counts) == 99);
 	save.checks = { KillLocation(1, 2, 0) };
-	EXPECT(KillsBeforeNext(save, 1, 2) == 249);
+	EXPECT(KillsBeforeNext(save, 1, 2, counts) == 249);
 	// Only that act and difficulty.
-	EXPECT(KillsBeforeNext(save, 0, 2) == 99 && KillsBeforeNext(save, 1, 3) == 99);
+	EXPECT(KillsBeforeNext(save, 0, 2, counts) == 99 && KillsBeforeNext(save, 1, 3, counts) == 99);
 	// A gap: the 250 check is missing though 500 is in.
 	save.checks = { KillLocation(0, 0, 0), KillLocation(0, 0, 2) };
-	EXPECT(KillsBeforeNext(save, 0, 0) == 249);
+	EXPECT(KillsBeforeNext(save, 0, 0, counts) == 249);
 	save.checks.insert(KillLocation(0, 0, 1));
-	EXPECT(KillsBeforeNext(save, 0, 0) == -1);
-	EXPECT(KillsBeforeNext(save, 3, 0) == -1 && KillsBeforeNext(save, 0, 5) == -1 && KillsBeforeNext(save, -1, 0) == -1);
+	EXPECT(KillsBeforeNext(save, 0, 0, counts) == -1);
+	EXPECT(KillsBeforeNext(save, 3, 0, counts) == -1 && KillsBeforeNext(save, 0, 5, counts) == -1 && KillsBeforeNext(save, -1, 0, counts) == -1);
 	// The next kill at that count reaches the check.
 	save.checks.clear();
-	const int kills = KillsBeforeNext(save, 2, 4);
-	EXPECT(ap::milestones::KillChecks(2, 4, kills).empty() && ap::milestones::KillChecks(2, 4, kills + 1) == std::vector<int64_t> { KillLocation(2, 4, 0) });
+	const int kills = KillsBeforeNext(save, 2, 4, counts);
+	EXPECT(ap::milestones::KillChecks(2, 4, kills, counts).empty()
+	       && ap::milestones::KillChecks(2, 4, kills + 1, counts) == std::vector<int64_t> { KillLocation(2, 4, 0) });
+	// Doubled counts: 200 is the first, and 100 (in the save) isn't one of them.
+	const std::vector<uint32_t> doubled { 200, 500, 1000 };
+	save.checks = { KillLocation(0, 0, 0) };
+	EXPECT(KillsBeforeNext(save, 0, 0, doubled) == 199 && KillsBeforeNext(save, 0, 0, {}) == -1);
 
-	EXPECT(CowsBeforeNext(save, 1) == static_cast<int>(ap::ids::CowKills) - 1);
+	save.checks.clear();
+	EXPECT(CowsBeforeNext(save, 1, 100) == 99 && CowsBeforeNext(save, 1, 250) == 249 && CowsBeforeNext(save, 1, 75) == -1);
 	save.checks = { CowLocation(1, 2) };
-	EXPECT(CowsBeforeNext(save, 1) == -1 && CowsBeforeNext(save, 0) == 99);
-	EXPECT(CowsBeforeNext(save, 3) == -1);
+	EXPECT(CowsBeforeNext(save, 1, 100) == -1 && CowsBeforeNext(save, 0, 100) == 99 && CowsBeforeNext(save, 1, 50) == 49);
+	EXPECT(CowsBeforeNext(save, 3, 100) == -1);
 	// ap-debug kills 260 sets a count past two thresholds, both recovered on the next bind.
 	save.checks.clear();
 	save.kills[0] = 260;
-	EXPECT(ap::milestones::Missing(save, true, false).size() == 2);
+	EXPECT(ap::milestones::Missing(save, counts, 0).size() == 2);
 	EXPECT(ap::panel::Find(ap::panel::Debug(), "debug-kills-260")->action == "ap-debug kills 260");
 }
 
@@ -2525,6 +2588,7 @@ int main() {
 	TestPotionLock();
 	TestPortalLock();
 	TestActLock();
+	TestCheckThresholds();
 	TestDebugCounts();
 	TestSkillTablePrerequisite();
 	TestCharacterCheck();

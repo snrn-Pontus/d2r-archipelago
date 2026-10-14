@@ -229,9 +229,27 @@ class SideAreaChecks(Range):
 
 
 class LevelChecks(DefaultOnToggle):
-    """Reaching every fifth character level is a check, up to a cap set by the goal
-    (30 on Normal, 60 on Nightmare, 90 on Hell). Past level 70 they only hold filler."""
+    """Reaching every fifth character level (Level Check Step) is a check, up to a cap set by the goal
+    (30 on Normal, 60 on Nightmare, 90 on Hell). Past level 70 (Grind Level) they only hold filler."""
     display_name = "Level Checks"
+
+
+class LevelCheckStep(Range):
+    """With Level Checks, every this many character levels is a check: 5 is levels 5, 10, 15..., 1 is every
+    level from 2. The level cap is rounded down to a multiple of it."""
+    display_name = "Level Check Step"
+    range_start = 1
+    range_end = 10
+    default = 5
+
+
+class GrindLevel(Range):
+    """Level checks above this level take a long grind, so they only hold filler. 90 lets every level check hold
+    anything; 0 keeps them all filler-only."""
+    display_name = "Grind Level"
+    range_start = 0
+    range_end = 90
+    default = 70
 
 
 class SuperUniqueChecks(DefaultOnToggle):
@@ -285,15 +303,37 @@ class UberChecks(Toggle):
 
 
 class KillCountChecks(Toggle):
-    """Killing 100, 250 and 500 monsters in each act on each difficulty is a check (counted across
-    sessions). Only filler goes on these."""
+    """Killing 100, 250 and 500 monsters (Kill Count Multiplier) in each act on each difficulty is a check
+    (counted across sessions). Only filler goes on these."""
     display_name = "Kill Count Checks"
 
 
+class KillCountMultiplier(Choice):
+    """With Kill Count Checks, how many monsters each act's checks take.
+    half: 50, 125 and 250. normal: 100, 250 and 500. double: 200, 500 and 1,000."""
+    display_name = "Kill Count Multiplier"
+    option_half = 50
+    option_normal = 100
+    option_double = 200
+    default = 100
+
+
 class FindCountChecks(Toggle):
-    """Finding 1, 5, 10, 25 and 50 unique items, and 1, 5, 10 and 25 set items, are checks. Items you
-    receive from Archipelago don't count. Only filler goes on these."""
+    """Finding 1, 5, 10, 25 and 50 unique items, and 1, 5, 10 and 25 set items (Find Count Multiplier), are
+    checks. Items you receive from Archipelago don't count. Only filler goes on these."""
     display_name = "Find Count Checks"
+
+
+class FindCountMultiplier(Choice):
+    """With Find Count Checks, how many items the checks take.
+    half: 1, 2, 5, 12 and 25 uniques, 1, 2, 5 and 12 set items.
+    normal: 1, 5, 10, 25 and 50 uniques, 1, 5, 10 and 25 set items.
+    double: 2, 10, 20, 50 and 100 uniques, 2, 10, 20 and 50 set items."""
+    display_name = "Find Count Multiplier"
+    option_half = 50
+    option_normal = 100
+    option_double = 200
+    default = 100
 
 
 class EnforceActKeys(DefaultOnToggle):
@@ -432,11 +472,21 @@ class ProphecyWeight(Range):
 
 class CowLevelChecks(DefaultOnToggle):
     """On each difficulty you finish (Baal beaten) before the goal: entering the Secret Cow Level, killing
-    The Cow King, and killing 100 cows are checks. The cows add up per difficulty over the whole seed, across
-    games and reconnects (cows killed before connecting count too); only cows in the Cow Level count, unless
-    Shuffle Cow Level moved them. Killing the Cow King closes the portal for that difficulty, so get the
+    The Cow King, and killing 100 cows (Cow Kill Count) are checks. The cows add up per difficulty over the whole
+    seed, across games and reconnects (cows killed before connecting count too); only cows in the Cow Level count,
+    unless Shuffle Cow Level moved them. Killing the Cow King closes the portal for that difficulty, so get the
     other two first."""
     display_name = "Cow Level Checks"
+
+
+class CowKillCount(Choice):
+    """With Cow Level Checks, how many cows the cow check on each difficulty takes."""
+    display_name = "Cow Kill Count"
+    option_50 = 50
+    option_100 = 100
+    option_250 = 250
+    option_500 = 500
+    default = 100
 
 
 class RuneChecks(Range):
@@ -1113,6 +1163,8 @@ class D2ROptions(PerGameCommonOptions):
     area_checks: AreaChecks
     side_area_checks: SideAreaChecks
     level_checks: LevelChecks
+    level_check_step: LevelCheckStep
+    grind_level: GrindLevel
     superunique_checks: SuperUniqueChecks
     quest_item_checks: QuestItemChecks
     shop_checks: ShopChecks
@@ -1120,7 +1172,9 @@ class D2ROptions(PerGameCommonOptions):
     parcel_price_multiplier: ParcelPriceMultiplier
     uber_checks: UberChecks
     kill_count_checks: KillCountChecks
+    kill_count_multiplier: KillCountMultiplier
     find_count_checks: FindCountChecks
+    find_count_multiplier: FindCountMultiplier
     enforce_act_keys: EnforceActKeys
     enforce_act_keys_mode: EnforceActKeysMode
     act_key_window: ActKeyWindow
@@ -1133,6 +1187,7 @@ class D2ROptions(PerGameCommonOptions):
     merchant_lock: MerchantLock
     waypoint_lock: WaypointLock
     cow_level_checks: CowLevelChecks
+    cow_kill_count: CowKillCount
     cain_hints: CainHints
     page_hint_chance: PageHintChance
     prophecy_shop: ProphecyShop
@@ -1220,10 +1275,10 @@ OPTION_GROUPS = [
                                      ScaleWithLength, StartingSkills, UsefulStartingSkills, SkillBlocklist, SkillClasses, IncludeWarlock,
                                      SkillLevelScaling, SkillScalingCap, CodexEmpowerments, LevelsPerCopy, LevelsPerEmpowerment,
                                      CodexLevelCap]),
-    OptionGroup("Checks", [AreaChecks, SideAreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, ShopVendor,
-                           ParcelPriceMultiplier, CowLevelChecks]),
+    OptionGroup("Checks", [AreaChecks, SideAreaChecks, LevelChecks, LevelCheckStep, GrindLevel, SuperUniqueChecks, QuestItemChecks,
+                           ShopChecks, ShopVendor, ParcelPriceMultiplier, CowLevelChecks, CowKillCount]),
     OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,
-                                               FindCountChecks], start_collapsed=True),
+                                               KillCountMultiplier, FindCountChecks, FindCountMultiplier], start_collapsed=True),
     OptionGroup("Locks", [CubeLock, TownPortalLock, TownPortalAccessTomeCharges, PotionLock, PotionLockMode, StashLock, MerchantLock, WaypointLock]),
     OptionGroup("Hints", [CainHints, PageHintChance, ProphecyShop, ProphecyPriceMultiplier, HintBalance]),
     OptionGroup("Rewards", [BossQuestsGiveUniques, BossRewardType, BasicLootWeight, UniqueWeight, SetItemWeight, HighRuneWeight,

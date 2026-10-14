@@ -467,6 +467,23 @@ Prophecy at 200%)" for both banks.
       Grounds for the Mausoleum, or Cave Level 1 for Cave Level 2) shows a line to it. On a seed with
       `side_area_checks: 0`, `--mapsense` says there are none.
 
+### 2a2. Check thresholds (issue #40)
+
+`level_check_step: 3`, `grind_level: 20`, `kill_count_checks: true`, `kill_count_multiplier: double`,
+`find_count_checks: true`, `find_count_multiplier: half`, `cow_kill_count: 50`, `goal: nightmare`. The
+plugin's log line with the seed's options reads "levels on every 3", "cows on (50)", "kill counts on
+(200/500/1000)" and "find counts on (1/2/5/12/25) (1/2/5/12)".
+
+- [ ] **Level 6** on the debug panel sends "Reach Character Level 3" and "Reach Character Level 6", with
+      those names on the banners; **Level 30** sends 9 to 30 in threes, and the spoiler log's "Reach
+      Character Level 21" and up hold only filler.
+- [ ] **Kills to Next Check** in Act I says 199, and one more kill sends "Normal: Kill 200 Monsters in Act I"
+      (the banner and `ap-missing` show 200, not 100). **Save 260 Kills** then **Reconnect** recovers only the
+      200 check.
+- [ ] Finding a second unique sends "Find 2 Unique Items"; "Find 5 Unique Items" waits for the fifth.
+- [ ] After Normal Baal, in the Secret Cow Level: `ap-debug cows` says the next cow sends the check, and it
+      sends "Normal: Kill 50 Cows". A default seed's cows still need 100 ("Kill 100 Cows").
+
 ## 2b. Quest items used at once
 
 Defaults (`quest_item_checks` on). The plugin scans for quest items every 5 seconds, so these are now also

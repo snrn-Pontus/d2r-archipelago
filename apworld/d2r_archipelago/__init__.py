@@ -9,12 +9,12 @@ from worlds.generic.Rules import add_item_rule, add_rule
 from . import client  # noqa: F401  (adds the Launcher button)
 from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SIDE_AREAS, SKILL_FORMS, SKILL_ROLES, SKILL_SLOTS, SKILL_USERS,
                    SKILLS, SPECIAL_ITEMS, START_ATTACK_SKILLS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
-from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, KILL_COUNTS, LEVEL_CAPS, LOOT,
-                  LEVEL_STEP, LOCKS, MERCHANT_ACCESS, SET_FINDS, SKILL_POINT, TOWN_PORTAL_ACCESS, TRAPS, UNIQUE_FINDS, UNIQUE_LOOT, act_key_name, area_location_name,
-                  cow_location_name, find_count_location_name, find_location_name, item_name_to_id, kill_location_name,
-                  level_location_name, location_name_to_id, quest_item_location_name, quest_location_name,
-                  set_location_name, shop_location_name, skill_item_name, skill_names_by_class,
-                  superunique_location_name)
+from .ids import (ACTS, BASE_KILL_COUNTS, BASE_SET_FINDS, BASE_UNIQUE_FINDS, BASIC_LOOT, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT,
+                  FIRST_LEVEL_CHECK, KEY_NAMES, LEVEL_CAPS, LOOT, LOCKS, MERCHANT_ACCESS, SKILL_POINT, TOWN_PORTAL_ACCESS, TRAPS,
+                  UNIQUE_LOOT, act_key_name, area_location_name, cow_kill_check, cow_location_name, find_count_location_name,
+                  find_location_name, item_name_to_id, kill_location_name, level_location_name, location_name_to_id,
+                  quest_item_location_name, quest_location_name, scaled_counts, set_location_name, shop_location_name,
+                  skill_item_name, skill_names_by_class, superunique_location_name)
 from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions, ShrinePool, loader_settings
 
 GAME = "Diablo II Resurrected"
@@ -28,8 +28,6 @@ USEFUL_LOOT = {"Random Unique", *UNIQUE_LOOT, "Random Set Item", "High Rune", EM
 # With the Cube Lock, these need the Horadric Cube (the Horadric Staff and Khalim's Will), on every difficulty.
 CUBE_QUESTS = ("The Horadric Staff", "The Seven Tombs", "Khalim's Will", "The Blackened Temple", "The Guardian")
 CUBE_AREAS = ("Duriel's Lair", "Durance of Hate Level 2", "Durance of Hate Level 3")
-# Level milestones above this take hours of grinding, so they only hold filler.
-GRIND_LEVEL = 70
 # Waypoint Lock covers Acts I to III, the acts you can leave backwards without a waypoint.
 WAYPOINT_LOCK_ACTS = 3
 # Skill item name -> skill id.
@@ -136,7 +134,12 @@ class D2RWorld(World):
         # The level cap grows with the acts in play, from the previous difficulty's cap.
         previous = LEVEL_CAPS[goal - 1] if goal > 0 else 0
         cap = previous + (LEVEL_CAPS[goal] - previous) * goal_act // len(ACTS)
-        self.level_cap = max(LEVEL_STEP, cap - cap % LEVEL_STEP)
+        step = self.options.level_check_step.value
+        self.level_cap = max(step, cap - cap % step)
+        # The count checks' thresholds; each count is a location of its own (ids.py), so these pick the seed's.
+        self.kill_counts = scaled_counts(BASE_KILL_COUNTS, self.options.kill_count_multiplier.value)
+        self.unique_finds = scaled_counts(BASE_UNIQUE_FINDS, self.options.find_count_multiplier.value)
+        self.set_finds = scaled_counts(BASE_SET_FINDS, self.options.find_count_multiplier.value)
         self.randomizer_seed = self.random.getrandbits(31)
         # Logic caps, filled in by create_regions and create_items.
         self.locations_before: list[int] = [0] * (self.act_count + 1)
@@ -172,6 +175,12 @@ class D2RWorld(World):
         windows = [self.multiworld.worlds[owner].options.act_key_window for owner in owners]
         window = min(option.value for option in windows)
         return window == windows[0].range_end or act_index <= KEY_ACTS[item.name] - 1 + window
+
+    def level_milestones(self) -> range:
+        """The character levels that are checks: every level_check_step up to the level cap, from level 2
+        (the plugin's milestones::LevelChecks)."""
+        step = self.options.level_check_step.value
+        return range(max(step, FIRST_LEVEL_CHECK), self.level_cap + 1, step)
 
     def act_region_name(self, index: int) -> str:
         return f"{DIFFICULTIES[index // len(ACTS)]} {ACTS[index % len(ACTS)]}"
@@ -222,10 +231,9 @@ class D2RWorld(World):
         if self.options.cow_level_checks:
             # The cow portal opens once Baal is dead, so only difficulties finished before the goal.
             for difficulty in range(self.options.goal.value):
-                for check in range(len(COW_CHECKS)):
-                    # Killing The Cow King first closes the level for good, so the 100 cows can be missed.
-                    add(acts[difficulty * len(ACTS) + 4], cow_location_name(difficulty, check),
-                        filler_only=COW_CHECKS[check] == "Kill 100 Cows")
+                for check in (0, 1, cow_kill_check(self.options.cow_kill_count.value)):
+                    # Killing The Cow King first closes the level for good, so the cow count can be missed.
+                    add(acts[difficulty * len(ACTS) + 4], cow_location_name(difficulty, check), filler_only=check >= 2)
                     # The portal takes a Tome of Town Portal, and new characters only have a scroll.
                     if self.options.merchant_lock:
                         add_rule(acts[difficulty * len(ACTS) + 4].locations[-1],
@@ -262,12 +270,12 @@ class D2RWorld(World):
                 add(acts[-1], f"Kill {name}", filler_only=True)
         if self.options.kill_count_checks:
             for index in range(self.act_count):
-                for count in KILL_COUNTS:
+                for count in self.kill_counts:
                     add(acts[index], kill_location_name(index // len(ACTS), index % len(ACTS), count), filler_only=True)
         if self.options.find_count_checks:
-            for count in UNIQUE_FINDS:
+            for count in self.unique_finds:
                 add(acts[0], find_count_location_name(count, "Unique"), filler_only=True)
-            for count in SET_FINDS:
+            for count in self.set_finds:
                 add(acts[0], find_count_location_name(count, "Set"), filler_only=True)
         if self.options.area_checks:
             for difficulty in range(self.options.goal.value + 1):
@@ -279,11 +287,12 @@ class D2RWorld(World):
                 add(acts[difficulty * len(ACTS) + act], area_location_name(difficulty, name))
         if self.options.level_checks:
             cap = self.level_cap
-            for level in range(LEVEL_STEP, cap + 1, LEVEL_STEP):
+            for level in self.level_milestones():
                 # Spread the milestones over the acts in proportion to the level cap. The plugin holds
-                # each one for its act's key the same way (ids::LevelAct).
+                # each one for its act's key the same way (ids::LevelAct). Past the grind level they take
+                # hours of grinding, so they only hold filler.
                 add(acts[min(self.act_count - 1, (level - 1) * self.act_count // cap)], level_location_name(level),
-                    filler_only=level > GRIND_LEVEL)
+                    filler_only=level > self.options.grind_level.value)
 
         # Locations open before each act, not counting the boss quests' locked uniques.
         boss_locked = {quest_location_name(d, name) for d in range(3) for flag, _act, name in QUESTS if flag in BOSS_QUESTS} \
@@ -664,10 +673,15 @@ class D2RWorld(World):
             "side_areas": sorted(location_name_to_id[area_location_name(difficulty, name)]
                                  for difficulty, areas in self.side_areas.items() for _level_id, _act, name in areas),
             "level_checks": bool(self.options.level_checks),
-            "level_step": LEVEL_STEP,
+            "level_step": self.options.level_check_step.value,
             "level_cap": self.level_cap,
             "superunique_checks": bool(self.options.superunique_checks),
             "cow_level_checks": bool(self.options.cow_level_checks),
+            # The seed's count thresholds; each count has its own location id (ids.py), which the plugin looks up.
+            "cow_kills": self.options.cow_kill_count.value,
+            "kill_counts": list(self.kill_counts),
+            "unique_finds": list(self.unique_finds),
+            "set_finds": list(self.set_finds),
             "rune_checks": self.options.rune_checks.value,
             "gem_checks": bool(self.options.gem_checks),
             "set_checks": bool(self.options.set_checks),
