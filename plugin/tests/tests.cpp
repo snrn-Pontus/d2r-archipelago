@@ -1733,6 +1733,13 @@ void TestTableEdits() {
 	EXPECT(skills.Cell(1, 2) == "0" && skills.Cell(1, 3) == "Fire Bolt");
 	EXPECT(skills.Cell(2, 2) == "0" && skills.Cell(2, 3) == "Abyss" && skills.Cell(2, 4).empty());
 
+	const auto ids = ap::Table::Parse("skill\t*Id\r\nFire Bolt\t36\r\nBash\t126\r\n");
+	auto charstats = ap::Table::Parse("class\tStartSkill\r\nSorceress\tfire bolt\r\nBarbarian\t\r\n");
+	EXPECT(ap::randomizer::SetStartSkill(charstats, ids, "Barbarian", 36));
+	EXPECT(charstats.Cell(1, 1) == "Fire Bolt" && charstats.Cell(0, 1) == "fire bolt");
+	EXPECT(ap::randomizer::SetStartSkill(charstats, ids, "Sorceress", -1) && charstats.Cell(0, 1).empty());
+	EXPECT(!ap::randomizer::SetStartSkill(charstats, ids, "Druid", 126));
+
 	auto monlvl = ap::Table::Parse("Level\tXP\tXP(N)\tXP(H)\r\n1\t1\t100\t1000\r\n");
 	ap::randomizer::ScaleExperience(monlvl, { 250, 250, 250 });
 	EXPECT(monlvl.Cell(0, 1) == "2" && monlvl.Cell(0, 2) == "250" && monlvl.Cell(0, 3) == "2500");

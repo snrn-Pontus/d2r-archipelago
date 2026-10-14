@@ -261,6 +261,10 @@ Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fana
       skill point.
 - [ ] After Save and Exit and rejoining, nothing is unlocked twice and no points are given again.
 - [ ] Moved-in skills work for a Barbarian: Plague Poppy (Poison Creeper) summons, Tiger Strike charges.
+- [ ] Starting weapon skill (#127): a new character's starting weapon shows "+1 to <skill>" for one of its
+      starting skills (an attack or summon if one was dealt, like Plague Poppy above), and the skill is usable
+      at level 1 with no points in it. Swapping the weapon off removes it. A Sorceress whose Fire Bolt was dealt
+      away no longer gets +1 Fire Bolt.
 
 ## 0c. Skill tree shuffle
 

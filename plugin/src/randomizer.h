@@ -62,6 +62,10 @@ struct Settings {
 	SkillTree skillTree;
 	// Tree mode: skills are unlocked in the tree, so the trees keep their level requirements.
 	bool     treeMode = false;
+	// Tree mode: this class's starting weapon gives +1 to startSkill (none when negative).
+	// An empty class leaves charstats.txt alone.
+	std::string startClass;
+	int      startSkill = -1;
 
 	auto Any() const -> bool;
 	// The superuniques need monster rows of their own (AddSuperUniqueMonsters):
@@ -101,6 +105,11 @@ struct TreeShuffle {
 // (skills.txt) and tab, place and icon (skilldesc.txt). Synergies then point at
 // skills in each skill's new tree.
 auto ApplySkillTrees(Table& skills, Table& skilldesc, const SkillTree& tree) -> TreeShuffle;
+
+// Sets a class's StartSkill in charstats.txt, the +1 skill on its starting
+// weapon (Fire Bolt on the Sorceress's staff), to the skills.txt skill with
+// this id; a negative id clears it. Returns whether the class's row was found.
+auto SetStartSkill(Table& charstats, const Table& skills, const std::string& className, int skill) -> bool;
 
 // Swaps whole monster line-ups (normal, nightmare/hell and unique lists move
 // together) between areas: Nearby within each act, Anywhere across all of

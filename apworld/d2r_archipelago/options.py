@@ -130,7 +130,8 @@ class SkillScalingCap(Range):
 
 
 class StartingSkills(Range):
-    """How many skills from the pool you start with."""
+    """How many skills from the pool you start with. In tree mode your starting weapon also gives +1 to one of them
+    (an attack if you have one), like the Sorceress's Fire Bolt staff in the normal game."""
     display_name = "Starting Skills"
     range_start = 0
     range_end = 10

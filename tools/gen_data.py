@@ -224,6 +224,8 @@ def main() -> None:
     skills = []
     # Active skills a level 1 character could normally take, for class starting skills.
     starters = []
+    # The starters that fight for you, preferred for the starting weapon's skill in tree mode.
+    start_attacks = []
     # Skills only some classes can use, and the Druid form each form attack needs.
     users, forms = {}, {}
     skill_ids = {row["skill"]: int(row["*Id"]) for row in read_table(excel / "skills.txt") if row.get("*Id", "").isdigit()}
@@ -238,6 +240,9 @@ def main() -> None:
                 forms[int(row["*Id"])] = tuple(skill_ids[FORM_SKILLS[state]] for state in states if state in FORM_SKILLS)
             if row.get("reqlevel") == "1" and row.get("passive") != "1":
                 starters.append(int(row["*Id"]))
+                # Damage of its own (not a weapon swing or a heal) or a summon: something that can carry a start.
+                if row.get("MinDam", "0") not in ("", "0") or (row.get("EType") and row.get("EMin", "0") not in ("", "0")) or row.get("summon"):
+                    start_attacks.append(int(row["*Id"]))
     skills.sort()
     # A misspelt or moved engine skill would silently stay usable by everyone.
     class_of = {name: cls for _sid, name, cls in skills}
@@ -417,6 +422,8 @@ def main() -> None:
           f"CLASSES = {CLASSES!r}", "", "# (skill id, name, class code)", "SKILLS = ["]
     py += [f"    ({sid}, {name!r}, {cls!r})," for sid, name, cls in skills]
     py += ["]", "", "# Active skills with a vanilla level requirement of 1.", f"STARTER_SKILLS = frozenset({sorted(starters)!r})"]
+    py += ["", "# Starter skills that deal damage of their own or summon, for the starting weapon's skill in tree mode.",
+           f"START_ATTACK_SKILLS = frozenset({sorted(start_attacks)!r})"]
     py += ["", "# Skills only these classes can use (claws, two weapons, animations, Druid forms, engine class skills).",
            "SKILL_USERS = {"]
     py += [f"    {sid}: {who!r}," for sid, who in sorted(users.items())]

@@ -769,6 +769,18 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) { blocked = rnd::BlockClassSkills(t, settings.treeMode); });
 		}
 		std::printf("  %s: locked %d class skills\n", label, blocked);
+		if (!settings.startClass.empty()) {
+			// Skill names don't change in the shuffle, so the game's own skills.txt names it.
+			std::string skillsText;
+			ReadCascFile(storage, "data\\global\\excel\\" + bank + "skills.txt", skillsText);
+			const Table skills = Table::Parse(skillsText);
+			bool found = false;
+			PatchTable(storage, excel, bank, "charstats.txt",
+			           [&](Table& t) { found = rnd::SetStartSkill(t, skills, settings.startClass, settings.startSkill); });
+			if (found) {
+				std::printf("  %s: %s starting weapon skill set\n", label, settings.startClass.c_str());
+			}
+		}
 
 		const rnd::PerDifficulty unchanged = { 100, 100, 100 };
 		const auto& density = settings.monsterDensity;

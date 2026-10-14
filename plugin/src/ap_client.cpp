@@ -213,6 +213,11 @@ auto ReadSlotData(const json& data) -> SlotData {
 		}
 	}
 	slots.randomizer.treeMode = Get(randomizer, "tree_mode", false);
+	const json start = randomizer.value("start_skill", json());
+	if (start.is_object()) {
+		slots.randomizer.startClass = Get(start, "class", std::string());
+		slots.randomizer.startSkill = Get(start, "skill", -1);
+	}
 	slots.randomizer.superUniqueChecks = slots.superUniqueChecks;
 	// Bound first: items() on a temporary would iterate a destroyed object.
 	const json loaderSettings = Object(data, "loader_settings");
