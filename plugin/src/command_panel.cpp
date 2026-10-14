@@ -132,8 +132,7 @@ constexpr std::array DebugServer {
 constexpr std::array DebugTesting {
 	Button { "debug-kit", "Starter Kit", "ap-debug kit" },
 	Button { "debug-mark", "Mark the Log", "ap-debug mark" },
-	Button { "debug-state", "Log State", "ap-debug state" },
-	Button { "debug-kills-next", "Kills to Next Check", "ap-debug kills" },
+	Button { "debug-state", "Log State", "ap-debug state" },	Button { "debug-kills-next", "Kills to Next Check", "ap-debug kills" },
 	Button { "debug-kills-260", "Save 260 Kills", "ap-debug kills 260" },
 	Button { "debug-cows-next", "Cows to Next Check", "ap-debug cows" },
 	Button { "debug-reconnect", "Reconnect", "ap-reconnect" },
