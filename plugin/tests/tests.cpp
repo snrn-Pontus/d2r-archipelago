@@ -12,6 +12,7 @@
 #include "milestones.h"
 #include "native_scan.h"
 #include "personalize.h"
+#include "potion_lock.h"
 #include "quest_record.h"
 #include "quest_triggers.h"
 #include "randomizer.h"
@@ -962,6 +963,7 @@ void TestClientParsesServerPackets() {
 	client.Handle(R"json([{"cmd":"ReceivedItems","index":5,"items":[{"item":2431000,"location":3,"player":1,"flags":0}]}])json");
 	EXPECT(client.Items().size() == 1);
 	EXPECT(!client.Slots().deathLink && !client.Slots().superUniqueChecks && !client.Slots().locks.cube);
+	EXPECT(client.Slots().locks.potionMode == ap::potion_lock::Mode::SetAside);
 	// DeathLink is off for this seed, so deaths are ignored.
 	client.Handle(R"json([{"cmd":"Bounced","tags":["DeathLink"],"data":{"time":1.0,"source":"Other","cause":"Other fell."}}])json");
 	EXPECT(client.TakeDeaths().empty());
@@ -1044,7 +1046,8 @@ void TestClientDeathLink() {
 	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[],"missing_locations":[],"checked_locations":[],
 		"slot_data":{"death_link":true,"superunique_checks":true,"shop_checks":3,"enforce_act_keys":true,"side_areas":[2421019,2421325],
 		"hints":[[77,2,2430951],[2420001,1,2430054]],"hint_balance":30,"hint_sources":{"cain":true,"page_chance":25,"prophecy_shop":true},
-		"locks":{"cube":true,"waypoints":true}},"slot_info":{}}])json");
+		"locks":{"cube":true,"waypoints":true,"potion_mode":"drink"}},"slot_info":{}}])json");
+	EXPECT(client.Slots().locks.potionMode == ap::potion_lock::Mode::Drink);
 	EXPECT(client.Slots().hints.size() == 2 && client.Slots().hints[0].location == 77 && client.Slots().hints[0].player == 2
 	       && client.Slots().hints[1].item == 2430054 && client.Slots().hintBalance == 30 && client.Slots().cainHints
 	       && client.Slots().pageHintChance == 25 && client.Slots().prophecyShop);
@@ -2132,6 +2135,32 @@ void TestRepairOffers() {
 	EXPECT(!ap::repairs::IsVendorPanel("PlayerInventoryPanel"));
 }
 
+void TestPotionLock() {
+	using namespace ap::potion_lock;
+	using ap::loot::CodeFromText;
+	EXPECT(ModeFromKey("drink") == Mode::Drink);
+	EXPECT(ModeFromKey("set_aside") == Mode::SetAside);
+	EXPECT(ModeFromKey("block") == Mode::SetAside);
+	EXPECT(IsPotion(CodeFromText("hp1")) && IsPotion(CodeFromText("wms")) && !IsPotion(CodeFromText("xyz")) && !IsPotion(CodeFromText("tsc")));
+	const auto healing = DrinkEffect(CodeFromText("hp5"));
+	EXPECT(healing && healing->life && !healing->mana);
+	const auto mana = DrinkEffect(CodeFromText("mp1"));
+	EXPECT(mana && !mana->life && mana->mana);
+	const auto rejuvenation = DrinkEffect(CodeFromText("rvs"));
+	EXPECT(rejuvenation && rejuvenation->life && rejuvenation->mana);
+	// Stamina, antidote and thawing potions can't be drunk this way; they stay set aside.
+	EXPECT(!DrinkEffect(CodeFromText("vps")) && !DrinkEffect(CodeFromText("yps")) && !DrinkEffect(CodeFromText("wms")));
+	// Potion of Life is a quest item, not a potion here.
+	EXPECT(!DrinkEffect(CodeFromText("xyz")));
+	EXPECT(DrinkCommands({}).empty());
+	const Effect three[] = { *healing, *healing, *healing };
+	EXPECT(DrinkCommands(three) == std::vector<std::string> { "heal" });
+	const Effect both[] = { *mana, *healing };
+	EXPECT((DrinkCommands(both) == std::vector<std::string> { "heal", "setmana 100000" }));
+	const Effect one[] = { *rejuvenation };
+	EXPECT((DrinkCommands(one) == std::vector<std::string> { "heal", "setmana 100000" }));
+}
+
 int main() {
 	TestCommandPanel();
 	TestDeferredPanelScope();
@@ -2182,6 +2211,7 @@ int main() {
 	TestUncleanExit();
 	TestSessionLog();
 	TestStarterKit();
+	TestPotionLock();
 	TestDebugCounts();
 	TestSkillTablePrerequisite();
 	TestCharacterCheck();

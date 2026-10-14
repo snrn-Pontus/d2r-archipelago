@@ -260,6 +260,19 @@ class PotionLock(Toggle):
     display_name = "Potion Lock"
 
 
+class PotionLockMode(Choice):
+    """What happens to potions you pick up while Potion Lock is on.
+    set_aside: potions in your inventory are put away until Potion Access hands them back; belt potions stay
+    but won't drink.
+    drink: healing, mana and rejuvenation potions are drunk as soon as they reach your inventory or belt. Any
+    healing potion fills your life and any mana potion your mana, whatever its size (a rejuvenation potion
+    both); one drunk at full life or mana is wasted. Stamina, antidote and thawing potions are set aside."""
+    display_name = "Potion Lock Mode"
+    option_set_aside = 0
+    option_drink = 1
+    default = 0
+
+
 class StashLock(Toggle):
     """Your stash won't open until you find Stash Access."""
     display_name = "Stash Lock"
@@ -887,6 +900,7 @@ class D2ROptions(PerGameCommonOptions):
     cube_lock: CubeLock
     town_portal_lock: TownPortalLock
     potion_lock: PotionLock
+    potion_lock_mode: PotionLockMode
     stash_lock: StashLock
     merchant_lock: MerchantLock
     waypoint_lock: WaypointLock
@@ -967,7 +981,7 @@ OPTION_GROUPS = [
     OptionGroup("Checks", [AreaChecks, SideAreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, CowLevelChecks]),
     OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,
                                                FindCountChecks], start_collapsed=True),
-    OptionGroup("Locks", [CubeLock, TownPortalLock, PotionLock, StashLock, MerchantLock, WaypointLock]),
+    OptionGroup("Locks", [CubeLock, TownPortalLock, PotionLock, PotionLockMode, StashLock, MerchantLock, WaypointLock]),
     OptionGroup("Hints", [CainHints, PageHintChance, ProphecyShop, HintBalance]),
     OptionGroup("Rewards", [BossQuestsGiveUniques, BasicLootWeight, UniqueWeight, SetItemWeight, HighRuneWeight,
                             SocketedBaseWeight, GoldWeight, ExperienceWeight, CharmWeight, ShrineWeight, ProphecyWeight],

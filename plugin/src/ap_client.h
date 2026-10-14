@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include "potion_lock.h"
 #include "randomizer.h"
 #include "websocket.h"
 
@@ -81,6 +82,8 @@ struct SlotData {
 	// What's blocked until its lock item arrives.
 	struct Locks {
 		bool cube = false, townPortal = false, potions = false, stash = false, merchants = false, waypoints = false;
+		// What happens to potions picked up while potions are locked.
+		potion_lock::Mode potionMode = potion_lock::Mode::SetAside;
 	} locks;
 	// Trap tuning; the defaults are the traps from before these were options.
 	struct Traps {
