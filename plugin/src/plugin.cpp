@@ -1093,7 +1093,8 @@ void __cdecl QuestLogWork(const D2RL::PluginContext*, void*) noexcept {
 					for (const auto& quest : ap::data::Quests) {
 						played |= gSave.checks.contains(ap::ids::QuestLocation(static_cast<uint32_t>(difficulty), quest.flag));
 					}
-					baseline = gSave.questBaseline.emplace(difficulty, ap::quest_record::Baseline(confirmed, played)).first;
+					// From this read alone: leaving a quest out of the baseline could hand it to the seed.
+					baseline = gSave.questBaseline.emplace(difficulty, ap::quest_record::Baseline(done, played)).first;
 					SaveNow();
 					const int before = std::popcount(baseline->second);
 					message = "Archipelago: " + std::string(DifficultyNames[difficulty]) + " quest log read for this seed"
