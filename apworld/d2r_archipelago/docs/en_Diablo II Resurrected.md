@@ -111,13 +111,18 @@ them.
 Optional locks block part of the game until their item turns up from the multiworld:
 
 - `enforce_act_keys` (on): walking into an act you don't have the key for warps you back to the town of an
-  act you can be in.
+  act you can be in. With `enforce_act_keys_mode: message_only` you stay, and the chat says the act is locked
+  and its checks wait for its key.
 - `cube_lock`: the Horadric Cube won't open without **Horadric Cube Access**. Logic expects it before the
   Horadric Staff, Duriel and Khalim's Will.
 - `town_portal_lock`, `potion_lock`: Town Portal scrolls and tomes, or potions, can't be used without **Town
-  Portal Access** or **Potion Access**. Potions in your inventory are set aside until Potion Access, which
-  hands them back; belt potions stay but won't drink. With `potion_lock_mode: drink`, healing, mana and
-  rejuvenation potions are drunk as you pick them up instead (filling life or mana, whatever the potion's size).
+  Portal Access** or **Potion Access**. Town Portal scrolls and tomes you carry are set aside until Town
+  Portal Access, which hands them back with a new tome of `tp_access_tome_charges` charges (20; 0 for none).
+  Potions in your inventory are set aside until Potion Access, which hands them back; belt potions stay but
+  won't drink. With `potion_lock_mode: drink`, healing, mana and rejuvenation potions are drunk as you pick
+  them up instead (filling life or mana, whatever the potion's size); with `rejuvenation_allowed`,
+  rejuvenation potions aren't locked at all. The cow level checks wait for Town Portal Access, since its
+  portal takes a tome.
 - `stash_lock`, `merchant_lock`: the stash, or trading with merchants, needs **Stash Access** or **Merchant
   Access**. Shop checks wait for Merchant Access, and so do the cow level checks: the portal takes a Tome of
   Town Portal, and new characters only have a scroll.

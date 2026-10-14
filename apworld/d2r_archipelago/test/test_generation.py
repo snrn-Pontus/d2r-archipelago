@@ -391,6 +391,10 @@ class TestLocks(D2RTestBase):
         self.assertTrue(self.world.create_item("Stash Access").useful)
         self.assertEqual(self.world.fill_slot_data()["locks"]["cube"], True)
         self.assertEqual(self.world.fill_slot_data()["locks"]["potion_mode"], "set_aside")
+        self.assertEqual(self.world.fill_slot_data()["locks"]["town_portal_tome_charges"], 20)
+        self.assertEqual(self.world.fill_slot_data()["enforce_act_keys_mode"], "warp_to_town")
+        # No cow level here, so no check waits for Town Portal Access.
+        self.assertFalse(self.world.create_item("Town Portal Access").advancement)
 
     def test_late_waypoints_never_lock(self) -> None:
         # From Acts IV and V only a waypoint goes back an act, so those must work from the start.
@@ -419,6 +423,30 @@ class TestDrinkPotions(D2RTestBase):
         locks = self.world.fill_slot_data()["locks"]
         self.assertTrue(locks["potions"])
         self.assertEqual(locks["potion_mode"], "drink")
+
+
+class TestLockModes(D2RTestBase):
+    options = {"potion_lock": True, "potion_lock_mode": "rejuvenation_allowed", "town_portal_lock": True,
+               "tp_access_tome_charges": 0, "enforce_act_keys_mode": "message_only"}
+
+    def test_slot_data(self) -> None:
+        data = self.world.fill_slot_data()
+        self.assertEqual(data["locks"]["potion_mode"], "rejuvenation_allowed")
+        self.assertEqual(data["locks"]["town_portal_tome_charges"], 0)
+        self.assertEqual(data["enforce_act_keys_mode"], "message_only")
+
+
+class TestCowLevelPortals(D2RTestBase):
+    # The Town Portal lock sets tomes aside, so the cow portal waits for Town Portal Access.
+    options = {"town_portal_lock": True, "cow_level_checks": True, "goal": "nightmare", "goal_act": 1, "act_keys": False}
+
+    def test_cow_portal_needs_town_portal_access(self) -> None:
+        self.assertTrue(self.world.create_item("Town Portal Access").advancement)
+        self.collect_all_but(["Town Portal Access"])
+        self.assertTrue(self.can_reach_region("Normal Act V"))
+        self.assertFalse(self.can_reach_location("Normal: Kill The Cow King"))
+        self.collect_by_name("Town Portal Access")
+        self.assertTrue(self.can_reach_location("Normal: Kill The Cow King"))
 
 
 class TestCowLevelMerchants(D2RTestBase):

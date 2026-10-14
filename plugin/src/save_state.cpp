@@ -11,7 +11,7 @@ namespace ap {
 // One "key value" pair per line: "check <id>", "fillers <count>", "goal 1", "level <n>",
 // "kills_<difficulty * 10 + act> <count>", "cows_<difficulty> <count>", "questbase_<difficulty> <quest mask>",
 // "unique <seed>", "set <seed>",
-// "rewardcopies <code> <count>",
+// "rewardcopies <code> <count>", "heldportal <code> <charges>",
 // "command <item> <text>" (the text runs to the end of the line).
 bool SaveState::Load(const std::filesystem::path& path) {
 	std::ifstream file(path);
@@ -72,6 +72,10 @@ bool SaveState::Load(const std::filesystem::path& path) {
 			portalTomeGiven = value != 0;
 		} else if (key == "heldpotion") {
 			heldPotions.push_back(static_cast<uint32_t>(value));
+		} else if (key == "heldportal") {
+			if (const size_t gap = rest.find(' '); gap != std::string::npos) {
+				heldPortals.push_back({ static_cast<uint32_t>(value), std::atoi(rest.c_str() + gap + 1) });
+			}
 		} else if (key == "command" || key == "ran" || key == "lostcommand") {
 			if (const size_t gap = rest.find(' '); gap != std::string::npos && gap + 1 < rest.size()) {
 				(key == "command" ? commands : key == "ran" ? ran : lostCommands).push_back({ value, rest.substr(gap + 1) });
@@ -141,6 +145,9 @@ bool SaveState::Save(const std::filesystem::path& path) const {
 		}
 		for (const uint32_t code : heldPotions) {
 			file << "heldpotion " << code << "\n";
+		}
+		for (const auto& portal : heldPortals) {
+			file << "heldportal " << portal.code << " " << portal.charges << "\n";
 		}
 		auto writeCommands = [&](const char* key, const std::vector<PendingCommand>& list) {
 			for (const auto& command : list) {

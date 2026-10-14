@@ -153,6 +153,7 @@ auto ReadSlotData(const json& data) -> SlotData {
 	slots.killCountChecks = Get(data, "kill_count_checks", false);
 	slots.findCountChecks = Get(data, "find_count_checks", false);
 	slots.enforceActKeys = Get(data, "enforce_act_keys", false);
+	slots.enforceActKeysMode = act_lock::ModeFromKey(Get(data, "enforce_act_keys_mode", std::string("warp_to_town")));
 	for (const json& hint : Array(data, "hints")) {
 		if (hint.is_array() && hint.size() == 3 && std::ranges::all_of(hint, [](const json& part) { return part.is_number_integer(); })) {
 			slots.hints.push_back({ hint[0].get<int64_t>(), hint[1].get<int>(), hint[2].get<int64_t>() });
@@ -172,6 +173,7 @@ auto ReadSlotData(const json& data) -> SlotData {
 		.merchants = Get(locks, "merchants", false),
 		.waypoints = Get(locks, "waypoints", false),
 		.potionMode = potion_lock::ModeFromKey(Get(locks, "potion_mode", std::string("set_aside"))),
+		.portalTomeCharges = Get(locks, "town_portal_tome_charges", 20),
 	};
 	const json traps = Object(data, "traps");
 	slots.traps = {

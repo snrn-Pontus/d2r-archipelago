@@ -247,6 +247,17 @@ class EnforceActKeys(DefaultOnToggle):
     display_name = "Enforce Act Keys"
 
 
+class EnforceActKeysMode(Choice):
+    """What Enforce Act Keys does when you walk into an act you don't have the key for.
+    warp_to_town: sends you back to the town of an act you can be in.
+    message_only: lets you stay, and says once each time you walk in that the act is locked and its checks
+    wait for its key."""
+    display_name = "Enforce Act Keys Mode"
+    option_warp_to_town = 0
+    option_message_only = 1
+    default = 0
+
+
 class ActKeyWindow(NamedRange):
     """How far into a Diablo II world (another player's or yours) each of your act keys can land, counted
     from the act it unlocks. The key for your Act N may only be at their Act N - 1 + this or earlier, so
@@ -267,8 +278,18 @@ class CubeLock(Toggle):
 
 
 class TownPortalLock(Toggle):
-    """Town Portal scrolls and tomes can't be used until you find Town Portal Access."""
+    """Town Portal scrolls and tomes can't be used until you find Town Portal Access. The ones you carry or
+    pick up are set aside until then; Town Portal Access hands them back with a new Tome of Town Portal."""
     display_name = "Town Portal Lock"
+
+
+class TownPortalAccessTomeCharges(Range):
+    """Charges in the Tome of Town Portal that Town Portal Access brings. 0 brings no tome, only the scrolls
+    and tomes set aside."""
+    display_name = "Town Portal Access Tome Charges"
+    range_start = 0
+    range_end = 20
+    default = 20
 
 
 class PotionLock(Toggle):
@@ -282,10 +303,12 @@ class PotionLockMode(Choice):
     but won't drink.
     drink: healing, mana and rejuvenation potions are drunk as soon as they reach your inventory or belt. Any
     healing potion fills your life and any mana potion your mana, whatever its size (a rejuvenation potion
-    both); one drunk at full life or mana is wasted. Stamina, antidote and thawing potions are set aside."""
+    both); one drunk at full life or mana is wasted. Stamina, antidote and thawing potions are set aside.
+    rejuvenation_allowed: like set_aside, but rejuvenation potions aren't locked: they stay and drink as usual."""
     display_name = "Potion Lock Mode"
     option_set_aside = 0
     option_drink = 1
+    option_rejuvenation_allowed = 2
     default = 0
 
 
@@ -914,9 +937,11 @@ class D2ROptions(PerGameCommonOptions):
     kill_count_checks: KillCountChecks
     find_count_checks: FindCountChecks
     enforce_act_keys: EnforceActKeys
+    enforce_act_keys_mode: EnforceActKeysMode
     act_key_window: ActKeyWindow
     cube_lock: CubeLock
     town_portal_lock: TownPortalLock
+    tp_access_tome_charges: TownPortalAccessTomeCharges
     potion_lock: PotionLock
     potion_lock_mode: PotionLockMode
     stash_lock: StashLock
@@ -993,13 +1018,13 @@ class D2ROptions(PerGameCommonOptions):
 
 # Sections for the Options Creator, the options web page and the template YAML.
 OPTION_GROUPS = [
-    OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, ActKeyWindow, SkillsPerAct]),
+    OptionGroup("Goal and Length", [Goal, GoalAct, ActKeys, EnforceActKeys, EnforceActKeysMode, ActKeyWindow, SkillsPerAct]),
     OptionGroup("Skills and Codex", [CharacterClass, SkillMode, SkillTreeShuffle, SkillPoints, SkillPoolSize, SkillCopies, SkillFocus, ScaleWithLength, StartingSkills,
                                      UsefulStartingSkills, SkillBlocklist, SkillClasses, IncludeWarlock, SkillLevelScaling, SkillScalingCap, CodexEmpowerments]),
     OptionGroup("Checks", [AreaChecks, SideAreaChecks, LevelChecks, SuperUniqueChecks, QuestItemChecks, ShopChecks, CowLevelChecks]),
     OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,
                                                FindCountChecks], start_collapsed=True),
-    OptionGroup("Locks", [CubeLock, TownPortalLock, PotionLock, PotionLockMode, StashLock, MerchantLock, WaypointLock]),
+    OptionGroup("Locks", [CubeLock, TownPortalLock, TownPortalAccessTomeCharges, PotionLock, PotionLockMode, StashLock, MerchantLock, WaypointLock]),
     OptionGroup("Hints", [CainHints, PageHintChance, ProphecyShop, HintBalance]),
     OptionGroup("Rewards", [BossQuestsGiveUniques, BasicLootWeight, UniqueWeight, SetItemWeight, HighRuneWeight,
                             SocketedBaseWeight, GoldWeight, ExperienceWeight, CharmWeight, ShrineWeight, ProphecyWeight],

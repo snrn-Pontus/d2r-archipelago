@@ -1,5 +1,6 @@
 #pragma once
 
+#include "act_lock.h"
 #include "config.h"
 #include "potion_lock.h"
 #include "randomizer.h"
@@ -70,8 +71,9 @@ struct SlotData {
 	bool uberChecks = false;
 	bool killCountChecks = false;
 	bool findCountChecks = false;
-	// Walking into a locked act warps you back to town.
+	// Walking into a locked act warps you back to town, or only says so.
 	bool enforceActKeys = false;
+	act_lock::Mode enforceActKeysMode = act_lock::Mode::WarpToTown;
 	// Hints found in game: where this player's items are (in order), and the
 	// share (percent) that point at other players' items in this world instead.
 	std::vector<HintEntry> hints;
@@ -84,6 +86,8 @@ struct SlotData {
 		bool cube = false, townPortal = false, potions = false, stash = false, merchants = false, waypoints = false;
 		// What happens to potions picked up while potions are locked.
 		potion_lock::Mode potionMode = potion_lock::Mode::SetAside;
+		// The charges of the Tome of Town Portal that Town Portal Access brings (0 = none).
+		int portalTomeCharges = 20;
 	} locks;
 	// Trap tuning; the defaults are the traps from before these were options.
 	struct Traps {

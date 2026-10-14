@@ -10,7 +10,7 @@ from . import client  # noqa: F401  (adds the Launcher button)
 from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SIDE_AREAS, SKILL_FORMS, SKILL_ROLES, SKILL_SLOTS, SKILL_USERS,
                    SKILLS, SPECIAL_ITEMS, START_ATTACK_SKILLS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
 from .ids import (ACTS, BASIC_LOOT, COW_CHECKS, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT, KEY_NAMES, KILL_COUNTS, LEVEL_CAPS,
-                  LEVEL_STEP, LOCKS, MERCHANT_ACCESS, SET_FINDS, SKILL_POINT, TRAPS, UNIQUE_FINDS, UNIQUE_LOOT, act_key_name, area_location_name,
+                  LEVEL_STEP, LOCKS, MERCHANT_ACCESS, SET_FINDS, SKILL_POINT, TOWN_PORTAL_ACCESS, TRAPS, UNIQUE_FINDS, UNIQUE_LOOT, act_key_name, area_location_name,
                   cow_location_name, find_count_location_name, find_location_name, item_name_to_id, kill_location_name,
                   level_location_name, location_name_to_id, quest_item_location_name, quest_location_name,
                   set_location_name, shop_location_name, skill_item_name, skill_names_by_class,
@@ -231,6 +231,10 @@ class D2RWorld(World):
                     if self.options.merchant_lock:
                         add_rule(acts[difficulty * len(ACTS) + 4].locations[-1],
                                  lambda state: state.has(MERCHANT_ACCESS, self.player))
+                    # The Town Portal lock sets every tome aside until Town Portal Access.
+                    if self.options.town_portal_lock:
+                        add_rule(acts[difficulty * len(ACTS) + 4].locations[-1],
+                                 lambda state: state.has(TOWN_PORTAL_ACCESS, self.player))
         # Collections can take a long time (or luck), so they only hold filler.
         for _number, name in RUNES[:self.options.rune_checks.value]:
             add(acts[0], find_location_name(name), filler_only=True)
@@ -308,7 +312,8 @@ class D2RWorld(World):
         self.multiworld.completion_condition[self.player] = lambda state: state.has("Victory", self.player)
 
     def create_item(self, name: str) -> D2RItem:
-        if name in KEY_NAMES or (name == CUBE_ACCESS and self.cube_gates_checks()) or (name == MERCHANT_ACCESS and self.merchants_gate_checks()):
+        if name in KEY_NAMES or (name == CUBE_ACCESS and self.cube_gates_checks()) or (name == MERCHANT_ACCESS and self.merchants_gate_checks()) \
+                or (name == TOWN_PORTAL_ACCESS and self.portals_gate_checks()):
             classification = ItemClassification.progression
         elif name in self.idle_locks():
             # The lock is on but no check in this seed waits for it, so it can go anywhere, filler-only
@@ -425,8 +430,8 @@ class D2RWorld(World):
 
     def idle_locks(self) -> set[str]:
         """The locks that are on but gate no check in this seed: the Cube Lock in a one-act game, and the
-        Merchant Lock with no shop checks and no cow level before the goal. The others never gate checks,
-        but they change every game, so they stay useful."""
+        Merchant Lock with no shop checks and no cow level before the goal. The others change every game,
+        so they stay useful even when no check waits for them."""
         idle = set()
         if self.options.cube_lock and not self.cube_gates_checks():
             idle.add(CUBE_ACCESS)
@@ -439,6 +444,11 @@ class D2RWorld(World):
         Tome of Town Portal) on a difficulty before the goal."""
         return self.shop_locked() or (bool(self.options.merchant_lock) and bool(self.options.cow_level_checks)
                                       and self.options.goal.value > 0)
+
+    def portals_gate_checks(self) -> bool:
+        """Whether any check waits for Town Portal Access: the cow level on a difficulty before the goal, as its
+        portal takes a Tome of Town Portal and the lock sets tomes aside."""
+        return bool(self.options.town_portal_lock) and bool(self.options.cow_level_checks) and self.options.goal.value > 0
 
     def lock_items(self) -> list[str]:
         """The lock items in the pool: one per lock that's on, and a Waypoints item per act in play up to
@@ -663,10 +673,12 @@ class D2RWorld(World):
             "kill_count_checks": bool(self.options.kill_count_checks),
             "find_count_checks": bool(self.options.find_count_checks),
             "enforce_act_keys": bool(self.options.enforce_act_keys),
+            "enforce_act_keys_mode": self.options.enforce_act_keys_mode.current_key,
             # The plugin blocks each of these until its item arrives.
             "locks": {
                 "cube": bool(self.options.cube_lock),
                 "town_portal": bool(self.options.town_portal_lock),
+                "town_portal_tome_charges": self.options.tp_access_tome_charges.value,
                 "potions": bool(self.options.potion_lock),
                 "potion_mode": self.options.potion_lock_mode.current_key,
                 "stash": bool(self.options.stash_lock),
