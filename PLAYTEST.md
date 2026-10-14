@@ -96,6 +96,10 @@ Built, pushed and installed, still to check in game:
       a normal exit? Note which.)
 - [ ] With the server down, the session log says "Could not connect" once, not every 5 seconds. While it
       retries, `ap-connect` to another server: the log shows "Connecting to" the new one right away.
+- [ ] Why a connection dropped (#134): while connected, stop the local server (Ctrl+C in its window): the log
+      says "Connection lost: the server closed the connection (...)" and it reconnects 5 seconds after the
+      server is back. Pull the network cable (or turn Wi-Fi off) on a hosted room: "Connection lost: receive
+      failed (error ...)". `ap-disconnect` says "Disconnected", with no "Connection lost" line.
 
 - [x] The **Archipelago Parcel** is in Akara's Misc tab now (shop item type fix) and buying it sends a check
       (section 2) (2026-10-13: "parcel delivered (Act I shop, 1 of 5)", then 2 of 5).

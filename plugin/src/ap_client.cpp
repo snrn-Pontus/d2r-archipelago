@@ -359,7 +359,7 @@ void Client::Run() {
 			status_ = "Connecting to " + server + "...";
 		}
 		const Target target = ParseServer(server);
-		std::string lastError;
+		std::string lastError, lostBecause;
 		for (const bool secure : target.secureAttempts) {
 			if (socket_.Connect(target.host, target.port, secure, lastError)) {
 				lastError.clear();
@@ -371,7 +371,7 @@ void Client::Run() {
 					current = wantConnection_ && generation == targetGeneration_;
 				}
 				if (current) {
-					Session(generation);
+					lostBecause = Session(generation);
 				} else {
 					socket_.Close();
 				}
@@ -397,7 +397,7 @@ void Client::Run() {
 		}
 		const bool wasConnected = state_ == ConnectionState::Connected;
 		state_ = ConnectionState::Connecting;
-		status_ = (lastError.empty() ? std::string("Connection lost") : "Could not connect: " + lastError) + ". Retrying in 5 seconds.";
+		status_ = (lastError.empty() ? "Connection lost: " + lostBecause : "Could not connect: " + lastError) + ". Retrying in 5 seconds.";
 		if (wasConnected) {
 			messages_.push_back("Archipelago: connection lost, reconnecting.");
 		}
@@ -405,9 +405,9 @@ void Client::Run() {
 	}
 }
 
-void Client::Session(uint64_t target) {
-	std::string message;
-	while (running_ && socket_.Receive(message)) {
+auto Client::Session(uint64_t target) -> std::string {
+	std::string message, ended;
+	while (running_ && socket_.Receive(message, ended)) {
 		try {
 			Handle(message, target);
 		} catch (const std::exception& error) {
@@ -415,6 +415,7 @@ void Client::Session(uint64_t target) {
 		}
 	}
 	socket_.Close();
+	return ended.empty() ? "closed by the plugin" : ended;
 }
 
 void Client::Send(const std::string& text) {

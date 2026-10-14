@@ -1072,6 +1072,17 @@ void TestOtherSends() {
 	EXPECT(feed.Empty());
 }
 
+void TestConnectionEndReasons() {
+	// The server's close: status, its name when it has one, and the reason on one line.
+	EXPECT(ap::DescribeClose(1001, "Server shutting down.") == "the server closed the connection (1001 going away: Server shutting down)");
+	EXPECT(ap::DescribeClose(1000, "") == "the server closed the connection (1000 normal)");
+	EXPECT(ap::DescribeClose(4000, "bye\r\nnow") == "the server closed the connection (4000: bye  now)");
+	// WinHTTP's errors keep their number; the system's text loses its line break and full stop.
+	EXPECT(ap::DescribeReceiveError(12030, "The connection with the server was terminated abnormally.\r\n")
+	       == "receive failed (error 12030: The connection with the server was terminated abnormally)");
+	EXPECT(ap::DescribeReceiveError(12030) == "receive failed (error 12030)");
+}
+
 void TestClientReconnect() {
 	ap::Client client([](const std::string&) {});
 	client.Handle(R"json([{"cmd":"RoomInfo","seed_name":"S1","games":["Diablo II Resurrected","Other Game"],
@@ -1990,6 +2001,7 @@ int main() {
 	TestHintPackets();
 	TestOtherSends();
 	TestClientReconnect();
+	TestConnectionEndReasons();
 	TestConfigRoundTrip();
 	TestConfigDefaults();
 	TestConfigNumericIds();

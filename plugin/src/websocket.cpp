@@ -12,7 +12,68 @@ namespace {
 // How long a Receive may stay blocked after Interrupt before the watchdog closes its handle.
 constexpr auto AbortAfter = std::chrono::seconds(3);
 
+// The server's or the system's text on one log line: control characters become spaces.
+auto OneLine(std::string_view text) -> std::string {
+	std::string line;
+	for (const char c : text) {
+		line += static_cast<unsigned char>(c) < 0x20 ? ' ' : c;
+	}
+	const auto end = line.find_last_not_of(" .");
+	line.erase(end == std::string::npos ? 0 : end + 1);
+	return line;
+}
+
+// WinHTTP's own text for its errors (12000 and up), the system's for the rest: in English when
+// Windows has it (the log is read in bug reports), else the user's language, as UTF-8.
+auto ErrorText(DWORD error) -> std::string {
+	wchar_t       buffer[256] {};
+	const HMODULE winhttp = error >= WINHTTP_ERROR_BASE && error <= WINHTTP_ERROR_LAST ? GetModuleHandleW(L"winhttp.dll") : nullptr;
+	const DWORD   flags = FORMAT_MESSAGE_IGNORE_INSERTS | (winhttp != nullptr ? FORMAT_MESSAGE_FROM_HMODULE : FORMAT_MESSAGE_FROM_SYSTEM);
+	DWORD         length = FormatMessageW(flags, winhttp, error, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), buffer, ARRAYSIZE(buffer), nullptr);
+	if (length == 0) {
+		length = FormatMessageW(flags, winhttp, error, 0, buffer, ARRAYSIZE(buffer), nullptr);
+	}
+	char utf8[512] {};
+	const int size = WideCharToMultiByte(CP_UTF8, 0, buffer, static_cast<int>(length), utf8, sizeof(utf8), nullptr, nullptr);
+	return std::string(utf8, size > 0 ? size : 0);
+}
+
 } // namespace
+
+auto DescribeClose(unsigned short status, std::string_view reason) -> std::string {
+	const char* meaning = nullptr;
+	switch (status) {
+	case 1000: meaning = "normal"; break;
+	case 1001: meaning = "going away"; break;
+	case 1002: meaning = "protocol error"; break;
+	case 1003: meaning = "unsupported data"; break;
+	case 1005: meaning = "no status"; break;
+	case 1006: meaning = "abnormal"; break;
+	case 1007: meaning = "invalid data"; break;
+	case 1008: meaning = "policy violation"; break;
+	case 1009: meaning = "message too big"; break;
+	case 1010: meaning = "extension required"; break;
+	case 1011: meaning = "server error"; break;
+	case 1012: meaning = "service restart"; break;
+	case 1013: meaning = "try again later"; break;
+	}
+	std::string text = "the server closed the connection (" + std::to_string(status);
+	if (meaning != nullptr) {
+		text += std::string(" ") + meaning;
+	}
+	if (const std::string line = OneLine(reason); !line.empty()) {
+		text += ": " + line;
+	}
+	return text + ")";
+}
+
+auto DescribeReceiveError(unsigned long error, std::string_view text) -> std::string {
+	std::string description = "receive failed (error " + std::to_string(error);
+	if (const std::string line = OneLine(text); !line.empty()) {
+		description += ": " + line;
+	}
+	return description + ")";
+}
 
 WebSocket::~WebSocket() {
 	Close();
@@ -83,21 +144,26 @@ bool WebSocket::Connect(const std::wstring& host, unsigned short port, bool secu
 	return true;
 }
 
-bool WebSocket::Receive(std::string& message) {
+bool WebSocket::Receive(std::string& message, std::string& ended) {
 	message.clear();
+	ended.clear();
+	const auto end = [&](std::string why) {
+		ended = std::move(why);
+		return false;
+	};
 	char buffer[16 * 1024];
 	for (;;) {
 		HINTERNET socket = nullptr;
 		{
 			std::lock_guard lock(handleMutex_);
 			if (interrupted_) {
-				return false;
+				return end("closed by the plugin");
 			}
 			// Only this thread closes the handle (or the watchdog, once this call is long under
 			// way), so it stays valid through the call below.
 			socket = socket_;
 			if (socket == nullptr) {
-				return false;
+				return end("not connected");
 			}
 			receiving_ = true;
 			++receiveSerial_;
@@ -105,12 +171,30 @@ bool WebSocket::Receive(std::string& message) {
 		DWORD                           read = 0;
 		WINHTTP_WEB_SOCKET_BUFFER_TYPE  type {};
 		const DWORD result = WinHttpWebSocketReceive(socket, buffer, sizeof(buffer), &read, &type);
+		const bool closed = type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE;
+		USHORT     status = 0;
+		char       reason[WINHTTP_WEB_SOCKET_MAX_CLOSE_REASON_LENGTH] {};
+		DWORD      length = 0;
+		DWORD      queried = ERROR_INVALID_HANDLE;
+		bool       interrupted = false;
 		{
 			std::lock_guard lock(handleMutex_);
 			receiving_ = false;
+			interrupted = interrupted_;
+			// Under the lock: only an Interrupt first (Abort) lets another thread close the handle.
+			if (result == NO_ERROR && closed && !interrupted && socket_ == socket) {
+				queried = WinHttpWebSocketQueryCloseStatus(socket, &status, reason, sizeof(reason), &length);
+			}
 		}
-		if (result != NO_ERROR || type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE) {
-			return false;
+		// After Interrupt, a close or an error (the watchdog cancelling the call) is ours.
+		if ((result != NO_ERROR || closed) && interrupted) {
+			return end("closed by the plugin");
+		}
+		if (result != NO_ERROR) {
+			return end(DescribeReceiveError(result, ErrorText(result)));
+		}
+		if (closed) {
+			return end(queried == NO_ERROR ? DescribeClose(status, std::string_view(reason, length)) : "the server closed the connection");
 		}
 		message.append(buffer, read);
 		if (type == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE || type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE) {
