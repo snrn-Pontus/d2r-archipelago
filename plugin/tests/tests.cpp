@@ -123,6 +123,12 @@ void TestQuestTriggers() {
 	EXPECT(QuestItemIndex(ap::quests::Code("leg")) == 1U);
 	EXPECT(QuestItemIndex(ap::quests::Code("tr2")) == std::size(ap::data::QuestItems) - 1);
 	EXPECT(!QuestItemIndex(ap::quests::Code("hp1")).has_value());
+	// Items made from quest items find their parts, which are all quest items (#136).
+	for (const auto& entry : ap::quests::QuestItemParts) {
+		EXPECT(QuestItemIndex(entry.part).has_value());
+		EXPECT(entry.made != entry.part);
+	}
+	EXPECT(ap::quests::QuestItemParts[0].part == ap::quests::Code("g34"));
 	EXPECT(std::string_view(ap::data::Quests[3].name) == "The Search for Cain" && ap::data::Quests[3].flag == ap::quests::SearchForCainFlag);
 }
 

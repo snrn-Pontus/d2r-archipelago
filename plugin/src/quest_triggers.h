@@ -94,4 +94,22 @@ inline constexpr auto QuestItemIndex(uint32_t code) -> std::optional<uint32_t> {
 	return std::nullopt;
 }
 
+// Quest items given for, or cubed from, other quest items, which can be gone before
+// an item scan sees them, so finding one finds its parts too (#136): Alkor gives the
+// Potion of Life only for The Golden Bird, and the Cube makes Khalim's Will from his
+// Eye, Heart, Brain and Flail, and the Horadric Staff from the Staff of Kings.
+struct QuestItemPart {
+	uint32_t made;
+	uint32_t part;
+};
+
+inline constexpr QuestItemPart QuestItemParts[] = {
+	{ Code("xyz"), Code("g34") },
+	{ Code("qf2"), Code("qey") },
+	{ Code("qf2"), Code("qhr") },
+	{ Code("qf2"), Code("qbr") },
+	{ Code("qf2"), Code("qf1") },
+	{ Code("hst"), Code("msf") },
+};
+
 } // namespace ap::quests
