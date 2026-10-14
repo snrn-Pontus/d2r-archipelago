@@ -112,6 +112,10 @@ struct SlotData {
 	} traps;
 	// Reward tuning (gold, experience, uniques' level window, jewels, high runes, shrines).
 	loot::RewardSettings rewards;
+	// Gold and items the seed's character gets once (starting_items.h): items as
+	// (item code, copies), in the slot data's order.
+	int  startingGold = 0;
+	std::vector<std::pair<std::string, int>> startingItems;
 	// Deaths are shared with the other DeathLink players.
 	bool deathLink   = false;
 	// What another player's death does to this one, and how many of this one's

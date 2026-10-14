@@ -27,6 +27,7 @@
 #include "skill_table.h"
 #include "sounds.h"
 #include "starter_kit.h"
+#include "starting_items.h"
 #include "sprite.h"
 
 #include <nlohmann/json.hpp>
@@ -488,6 +489,8 @@ void TestSaveStateRoundTrip() {
 	state.unlockedSkills = { 126, 54 };
 	state.skillPointsGiven = 3;
 	state.portalTomeGiven = true;
+	state.startingGoldGiven = true;
+	state.startingItemsGiven = 4;
 	state.notifiedItems = 12;
 	state.unsentDeaths = 2;
 	state.heldPotions = { 0x20317068, 0x20317068, 0x206C7672 };
@@ -504,6 +507,7 @@ void TestSaveStateRoundTrip() {
 	EXPECT(loaded.ownHints == state.ownHints && loaded.otherHints == state.otherHints && loaded.prophecies == 2
 	       && loaded.unlockedSkills == state.unlockedSkills && loaded.skillPointsGiven == 3 && loaded.portalTomeGiven && loaded.notifiedItems == 12
 	       && loaded.unsentDeaths == 2);
+	EXPECT(loaded.startingGoldGiven && loaded.startingItemsGiven == 4);
 	EXPECT(loaded.heldPotions == state.heldPotions);
 	EXPECT(loaded.heldPortals == state.heldPortals);
 	EXPECT(loaded.rewardCopies == state.rewardCopies);
@@ -936,6 +940,37 @@ void TestCheckThresholds() {
 	EXPECT(slots.uniqueFinds == (std::vector<uint32_t> { 2, 10 }) && slots.setFinds.empty());
 }
 
+// Starting gold and items (starting_items.h): one entry per copy, in order, each handed out once.
+void TestStartingItems() {
+	using namespace ap::starting;
+	std::set<std::string> codes;
+	for (const auto& item : Items) {
+		EXPECT(std::strlen(item.code) == 3 && std::strlen(item.name) > 0 && ap::loot::CodeFromText(item.code) != 0);
+		codes.insert(item.code);
+	}
+	// 15 potions, 2 scrolls, 7 perfect gems and the 33 runes, none twice.
+	EXPECT(std::size(Items) == 57 && codes.size() == std::size(Items));
+	EXPECT(Find("rvl") != nullptr && std::string_view(Find("rvl")->name) == "Full Rejuvenation Potion");
+	EXPECT(std::string_view(Find("r30")->name) == "Ber Rune" && std::string_view(Find("skz")->name) == "Perfect Skull");
+	// Things outside the list (a Horadric Cube, a tome, a key) aren't handed out.
+	EXPECT(Find("box") == nullptr && Find("tbk") == nullptr && Find("key") == nullptr && Find("") == nullptr);
+
+	const std::vector<std::pair<std::string, int>> entries = { { "rvl", 2 }, { "box", 3 }, { "r30", 1 }, { "tsc", 0 }, { "isc", -4 }, { "gpw", 99 } };
+	const auto copies = Expand(entries);
+	EXPECT(copies.size() == 2 + 1 + MaxCopies);
+	EXPECT(copies[0] == Find("rvl") && copies[1] == Find("rvl") && copies[2] == Find("r30") && copies[3] == Find("gpw") && copies.back() == Find("gpw"));
+	EXPECT(Expand({}).empty());
+
+	EXPECT(GoldToGive(5000, false) == 5000 && GoldToGive(5000, true) == 0 && GoldToGive(-5, false) == 0 && GoldToGive(1'000'000, false) == MaxGold);
+	EXPECT(!Pending(0, 0, false, 0));
+	EXPECT(Pending(100, 0, false, 0) && !Pending(100, 0, true, 0));
+	EXPECT(Pending(0, 3, true, 2) && !Pending(0, 3, true, 3) && !Pending(0, 3, true, 5));
+
+	EXPECT(Describe(copies).starts_with("2 x Full Rejuvenation Potion, Ber Rune, 20 x Perfect Diamond"));
+	const std::vector<const Item*> one = { Find("isc") };
+	EXPECT(Describe(one) == "Scroll of Identify" && Describe({}).empty());
+}
+
 // ap-debug kills and cows: one short of the first check the save hasn't got.
 void TestDebugCounts() {
 	using ap::ids::CowLocation;
@@ -1139,7 +1174,8 @@ void TestClientSurvivesBadPackets() {
 	client.Handle(R"json([{"cmd":"Connected","team":0,"slot":1,"players":[{"team":0,"slot":1,"alias":7,"name":"Snrn"}],
 		"missing_locations":[2420002,"x"],"checked_locations":"none","slot_data":{"goal":"two","level_cap":90,"locks":true,
 		"hints":[[1,"2",3],[4,1,5]],"randomizer":{"skill_tree":[[1,-2]],"xp_multiplier":"lots","death_xp_penalty":250,
-		"parcel_price":9999,"prophecy_price":"cheap","shop_vendor":7}},
+		"parcel_price":9999,"prophecy_price":"cheap","shop_vendor":7,"free_merc_revive":"yes"},
+		"starting_gold":"lots","starting_items":[["rvl"],["r30","2"],[5,1],"tsc",["isc",2]]},
 		"slot_info":{"one":{"game":"Diablo II Resurrected"},"1":{"game":5}}},
 		{"cmd":"ReceivedItems","index":0,"items":[{"item":2430054,"location":-2,"player":1,"flags":1}]}])json");
 	EXPECT(client.State() == ap::ConnectionState::Connected);
@@ -1150,6 +1186,8 @@ void TestClientSurvivesBadPackets() {
 	EXPECT(client.Slots().randomizer.deathXpPenalty == 100);
 	EXPECT(client.Slots().randomizer.parcelPrice == 500 && client.Slots().randomizer.prophecyPrice == 100
 	       && client.Slots().randomizer.shopVendor == ap::randomizer::ShopVendor::PotionSeller);
+	EXPECT(!client.Slots().randomizer.freeMercRevive && client.Slots().startingGold == 0);
+	EXPECT(client.Slots().startingItems == (std::vector<std::pair<std::string, int>> { { "isc", 2 } }));
 	EXPECT(client.PlayerName(1) == "Snrn");
 	EXPECT(client.Items().size() == 1 && client.ItemsSynced());
 	client.TakeMessages();
@@ -1202,8 +1240,11 @@ void TestClientDeathLink() {
 		"side_areas":[2421019,2421325],
 		"hints":[[77,2,2430951],[2420001,1,2430054]],"hint_balance":30,"hint_sources":{"cain":true,"page_chance":25,"prophecy_shop":true},
 		"locks":{"cube":true,"waypoints":true,"potion_mode":"drink","town_portal_tome_charges":5},
-		"randomizer":{"parcel_price":50,"prophecy_price":250,"shop_vendor":1}},"slot_info":{}}])json");
+		"randomizer":{"parcel_price":50,"prophecy_price":250,"shop_vendor":1,"free_merc_revive":true},
+		"starting_gold":5000,"starting_items":[["rvl",3],["r30",1]]},"slot_info":{}}])json");
 	EXPECT(client.Slots().locks.potionMode == ap::potion_lock::Mode::Drink);
+	EXPECT(client.Slots().randomizer.freeMercRevive && client.Slots().startingGold == 5000);
+	EXPECT(client.Slots().startingItems == (std::vector<std::pair<std::string, int>> { { "rvl", 3 }, { "r30", 1 } }));
 	EXPECT(client.Slots().randomizer.parcelPrice == 50 && client.Slots().randomizer.prophecyPrice == 250
 	       && client.Slots().randomizer.shopVendor == ap::randomizer::ShopVendor::Blacksmith);
 	EXPECT(client.Slots().locks.portalTomeCharges == 5 && client.Slots().enforceActKeysMode == ap::act_lock::Mode::MessageOnly);
@@ -1902,10 +1943,15 @@ void TestSuperUniqueShuffle() {
 	shop.shopVendor = ap::randomizer::ShopVendor::Blacksmith;
 	EXPECT(shop.Any() && shop.Stamp().find(" shop_vendor=1") != std::string::npos);
 	// A mod left with changed shop prices is stale even for a seed that changes nothing.
-	EXPECT(ap::randomizer::StampChangesShop(shop.Stamp()) && !ap::randomizer::StampChangesShop(ap::randomizer::Settings {}.Stamp()));
+	EXPECT(ap::randomizer::StampChangesPrices(shop.Stamp()) && !ap::randomizer::StampChangesPrices(ap::randomizer::Settings {}.Stamp()));
 	shop = {};
 	shop.prophecyPrice = 50;
-	EXPECT(ap::randomizer::StampChangesShop(shop.Stamp()) && !ap::randomizer::StampChangesShop(settings.Stamp()));
+	EXPECT(ap::randomizer::StampChangesPrices(shop.Stamp()) && !ap::randomizer::StampChangesPrices(settings.Stamp()));
+	// Free mercenary revives the same way: only when on, and a stale mod with them is caught.
+	shop = {};
+	EXPECT(shop.Stamp().find("merc_revive") == std::string::npos);
+	shop.freeMercRevive = true;
+	EXPECT(shop.Any() && shop.Stamp().find(" merc_revive=0") != std::string::npos && ap::randomizer::StampChangesPrices(shop.Stamp()));
 	// Tuning for a shuffle that's off leaves the stamp alone.
 	ap::randomizer::Settings quiet;
 	quiet.shuffleTolerance = 9;
@@ -2303,6 +2349,15 @@ void TestTableEdits() {
 	auto noPenalty = ap::Table::Parse("Name\tResistPenalty\r\nHell\t-100\r\n");
 	EXPECT(!ap::randomizer::ScaleDeathPenalty(noPenalty, 50));
 
+	// Free mercenary revives: the multiplier and the cap go to 0, the divisor and the rest stay.
+	auto hirelings = ap::Table::Parse("Hireling\tGold\tresurrectcostmultiplier\tresurrectcostdivisor\tresurrectcostmax\r\n"
+	                                  "Rogue Scout\t100\t15\t2\t50000\r\nExpansion\t\t\t\t\r\nBarbarian\t6000\t15\t2\t50000\r\n");
+	EXPECT(ap::randomizer::FreeMercRevive(hirelings));
+	EXPECT(hirelings.Cell(0, 2) == "0" && hirelings.Cell(0, 3) == "2" && hirelings.Cell(0, 4) == "0" && hirelings.Cell(0, 1) == "100");
+	EXPECT(hirelings.Cell(1, 2).empty() && hirelings.Cell(1, 4).empty() && hirelings.Cell(2, 2) == "0" && hirelings.Cell(2, 4) == "0");
+	auto noCost = ap::Table::Parse("Hireling\tGold\r\nRogue Scout\t100\r\n");
+	EXPECT(!ap::randomizer::FreeMercRevive(noCost) && noCost.Cell(0, 1) == "100");
+
 	auto armor = ap::Table::Parse("name\treqstr\treqdex\tlevelreq\r\nCap\t0\t\t1\r\nMonarch\t156\t\t54\r\n");
 	ap::randomizer::ClearRequirements(armor, true, false);
 	EXPECT(armor.Cell(1, 1) == "156" && armor.Cell(1, 3) == "0");
@@ -2620,6 +2675,7 @@ int main() {
 	TestUncleanExit();
 	TestSessionLog();
 	TestStarterKit();
+	TestStartingItems();
 	TestPotionLock();
 	TestPortalLock();
 	TestActLock();

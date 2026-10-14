@@ -1,5 +1,6 @@
 """The Archipelago Launcher's "Diablo II Resurrected Options" button: an editor for a player's options YAML, with a
-checkbox for each toggle, a dropdown for each choice and a slider for each range.
+checkbox for each toggle, a dropdown for each choice, a slider for each range and a number for each item of a count
+list.
 
 Archipelago's own Options Creator covers the same options but only writes new files, so this one opens an existing
 YAML, applies the presets from options.py and saves back. Every control comes from the option classes (their type,
@@ -15,7 +16,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from Options import Choice, NamedRange, Option, OptionSet, Range, Toggle, Visibility
+from Options import Choice, NamedRange, Option, OptionCounter, OptionSet, Range, Toggle, Visibility
 
 from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions, SkillMode
 
@@ -33,6 +34,8 @@ def option_kind(option: type[Option]) -> str | None:
         return "range"
     if issubclass(option, OptionSet) and option.valid_keys:
         return "set"
+    if issubclass(option, OptionCounter) and option.valid_keys:
+        return "counter"
     return None
 
 
@@ -63,6 +66,9 @@ def read_value(option: type[Option], raw: Any) -> Any:
         return bool(value)
     if kind == "set":
         return sorted(value) if set(value) <= set(option.valid_keys) else None
+    if kind == "counter":
+        fits = set(value) <= set(option.valid_keys) and all(counter_allows(option, count) for count in value.values())
+        return counts(value) if fits else None
     if kind == "range" and not range_allows(option, value):
         return None
     return value
@@ -75,6 +81,18 @@ def special_values(option: type[Option]) -> list[int]:
 def range_allows(option: type[Option], value: int) -> bool:
     """A range takes its span and its named values, which may lie outside it (like 0 for "same")."""
     return option.range_start <= value <= option.range_end or value in special_values(option)
+
+
+def counts(value: dict[str, int]) -> dict[str, int]:
+    """A counter's editor value: its keys in order, without the zeros."""
+    return {key: count for key, count in sorted(value.items()) if count}
+
+
+def counter_allows(option: type[Option], count: Any) -> bool:
+    """A whole number within the counter's limits (older Archipelago versions don't check the type)."""
+    if not isinstance(count, int) or isinstance(count, bool):
+        return False
+    return (option.min is None or count >= option.min) and (option.max is None or count <= option.max)
 
 
 def snap_range(option: type[Option], value: int) -> int:
@@ -93,6 +111,8 @@ def write_value(option: type[Option], value: Any) -> Any:
         return next((name for name, number in option.special_range_names.items() if number == value), value)
     if kind == "set":
         return sorted(value)
+    if kind == "counter":
+        return counts(value)
     return value
 
 
@@ -432,6 +452,33 @@ def run_editor(path: str | None = None) -> None:
 
                     box.bind(active=ticked)
                     cell.add_widget(box)
+                    name_label = Label(text=str(key), halign="left", valign="middle")
+                    name_label.bind(size=name_label.setter("text_size"))
+                    cell.add_widget(name_label)
+                    grid.add_widget(cell)
+                row.add_widget(grid)
+            elif kind == "counter":
+                chosen_counts = dict(value)
+                grid = GridLayout(cols=3, size_hint_y=None, height=dp(32) * -(-len(option.valid_keys) // 3))
+                for key in sorted(option.valid_keys):
+                    cell = BoxLayout(spacing=dp(4))
+                    number = TextInput(text=str(chosen_counts.get(key, 0)), multiline=False, write_tab=False, input_filter="int",
+                                       size_hint_x=None, width=dp(48))
+
+                    def typed(field: TextInput, text: str, key: str = key) -> None:
+                        try:
+                            count = int(text)
+                        except ValueError:
+                            count = 0
+                        allowed = max(option.min or 0, min(count, option.max if option.max is not None else count))
+                        if text and allowed != count:
+                            field.text = str(allowed)
+                            return
+                        chosen_counts[key] = allowed
+                        changed(counts(chosen_counts))
+
+                    number.bind(text=typed)
+                    cell.add_widget(number)
                     name_label = Label(text=str(key), halign="left", valign="middle")
                     name_label.bind(size=name_label.setter("text_size"))
                     cell.add_widget(name_label)

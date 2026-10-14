@@ -85,6 +85,26 @@ class TestOptionsEditor(unittest.TestCase):
         # A slider between "same" (0) and the range's start (50) snaps to the nearer one.
         self.assertEqual((snap_range(density, 10), snap_range(density, 40), snap_range(density, 120)), (0, 50, 120))
 
+    def test_item_counts(self) -> None:
+        from ..options_editor import write_value
+        option = options.StartingItems
+        self.assertEqual(option_kind(option), "counter")
+        self.assertEqual(read_value(option, {"Ber Rune": 1, "Full Rejuvenation Potion": 3, "El Rune": 0}),
+                         {"Ber Rune": 1, "Full Rejuvenation Potion": 3})
+        self.assertEqual(read_value(option, {}), {})
+        # Unknown items, counts past the limit and non-numbers are kept as the file has them.
+        self.assertIsNone(read_value(option, {"Horadric Cube": 1}))
+        self.assertIsNone(read_value(option, {"Ber Rune": 21}))
+        self.assertIsNone(read_value(option, {"Ber Rune": "one"}))
+        self.assertEqual(write_value(option, {"Zod Rune": 2, "El Rune": 0, "Antidote Potion": 1}), {"Antidote Potion": 1, "Zod Rune": 2})
+        values, kept = load_options({})
+        self.assertEqual(values["starting_items"], {})
+        values["starting_items"] = {"Ber Rune": 1}
+        saved, text = render_yaml(FILE, parse_yaml(FILE), "Snrn", values, load_options(parse_yaml(FILE))[1])
+        self.assertEqual(parse_yaml(text), saved)
+        self.assertEqual(saved[GAME]["starting_items"], {"Ber Rune": 1})
+        self.assertEqual(load_options(saved)[0]["starting_items"], {"Ber Rune": 1})
+
     def test_keeps_what_it_cannot_show(self) -> None:
         section = {"goal": {"normal": 50, "hell": 50}, "goal_act": "random-high", "monster_shuffle": "sideways",
                    "skill_classes": ["Paladin", "Clown"], "shop_checks": 99}

@@ -1,6 +1,10 @@
+import re
+from pathlib import Path
+
 from . import D2RTestBase
 from ..data import SIDE_AREAS
 from ..ids import ITEM_BASE, LOCATION_BASE, area_location_name
+from ..options import STARTING_ITEMS, StartingGold, StartingItems
 
 
 class TestDefaults(D2RTestBase):
@@ -271,6 +275,29 @@ class TestCodexLevels(D2RTestBase):
                          (3, 2, 99))
 
 
+class TestStartingOptions(D2RTestBase):
+    options = {"starting_gold": 5000, "starting_items": {"Full Rejuvenation Potion": 3, "Ber Rune": 1, "Scroll of Identify": 0},
+               "free_merc_revive": True}
+
+    def test_slot_data(self) -> None:
+        data = self.world.fill_slot_data()
+        self.assertEqual(data["starting_gold"], 5000)
+        # Item codes in name order; zero counts left out.
+        self.assertEqual(data["starting_items"], [["r30", 1], ["rvl", 3]])
+        self.assertTrue(data["randomizer"]["free_merc_revive"])
+
+    def test_items_match_plugin(self) -> None:
+        # The plugin only hands out the codes in its own list (starting_items.h).
+        header = Path(__file__).resolve().parents[3] / "plugin" / "src" / "starting_items.h"
+        if not header.exists():
+            self.skipTest("no plugin source next to this apworld")
+        text = header.read_text(encoding="utf-8")
+        pairs = re.findall(r'\{ "(\w{3})", "([^"]+)" \}', text)
+        self.assertEqual({name: code for code, name in pairs}, STARTING_ITEMS)
+        self.assertIn(f"MaxCopies = {StartingItems.max};", text)
+        self.assertIn(f"MaxGold = {StartingGold.range_end};", text)
+
+
 class TestShortGame(D2RTestBase):
     options = {"goal": "normal", "goal_act": 2}
 
@@ -306,6 +333,9 @@ class TestShortGame(D2RTestBase):
         # Shop prices and vendor default to the game as it was: full price, potion sellers.
         self.assertEqual((data["randomizer"]["parcel_price"], data["randomizer"]["prophecy_price"],
                           data["randomizer"]["shop_vendor"]), (100, 100, 0))
+        # No starting gold or items, and mercenaries cost the usual to revive.
+        self.assertEqual((data["starting_gold"], data["starting_items"]), (0, []))
+        self.assertFalse(data["randomizer"]["free_merc_revive"])
         self.assertTrue(data["superunique_checks"])
         self.assertFalse(data["death_link"])
         # DeathLink defaults to what it always did: die, and send every death.
