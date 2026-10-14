@@ -1350,6 +1350,8 @@ void BindSession(uint64_t session) {
 		gKeyItems = UINT64_MAX;
 		level = gPlayerLevel;
 		gBoundSession = session;
+		// A DeathLink from the last session doesn't excuse a death under this one.
+		gLinkKillAt = {};
 		gRepairOffer.Cancel();
 		gBindPending = false;
 		gCodexDirty = true;
