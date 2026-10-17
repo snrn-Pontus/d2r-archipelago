@@ -84,10 +84,11 @@ class TestOptionsEditor(unittest.TestCase):
     def test_greyed_out_options(self) -> None:
         values, kept = load_options({})
         # Defaults: Normal goal, Codex mode, no DeathLink.
-        for name in ("cow_level_checks", "uber_checks", "monster_density_hell", "death_experience_penalty",
+        for name in ("cow_level_checks", "uber_checks", "special_item_checks",
                      "skill_points", "death_link_mode", "death_link_amnesty", "monster_shuffle_tolerance"):
             self.assertIsNotNone(inactive(name, values, kept), name)
-        for name in ("act_keys", "skill_pool_size", "level_check_step", "goal", "shuffle_cow_level"):
+        for name in ("act_keys", "skill_pool_size", "level_check_step", "goal", "shuffle_cow_level",
+                     "monster_density_hell", "death_experience_penalty"):
             self.assertIsNone(inactive(name, values, kept), name)
         self.assertEqual(inactive("death_link_mode", values, kept), "Needs DeathLink")
 
@@ -115,10 +116,12 @@ class TestOptionsEditor(unittest.TestCase):
         self.assertIsNotNone(inactive("traps_wait_for_town", junk_only, kept))
         self.assertIsNone(inactive("junk_backpack_size", junk_only, kept))
 
-        # A one-act game has no act keys; a parent set to random keeps its dependents.
+        # Act Keys and Skills Per Act still matter in a one-act game (enforcement, skill classification).
         one_act = {**values, "goal_act": 1}
-        self.assertIsNotNone(inactive("act_keys", one_act, kept))
-        self.assertIsNone(inactive("act_keys", one_act, {"goal_act": "random"}))
+        self.assertIsNone(inactive("act_keys", one_act, kept))
+        self.assertIsNone(inactive("skills_per_act", one_act, kept))
+        self.assertIsNotNone(inactive("act_key_window", {**values, "act_keys": False}, kept))
+        # A parent set to random keeps its dependents.
         self.assertIsNone(inactive("death_link_mode", values, {"death_link": "random"}))
 
     def test_early_locks_need_their_lock(self) -> None:

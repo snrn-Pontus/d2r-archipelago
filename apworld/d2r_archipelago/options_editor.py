@@ -147,11 +147,6 @@ def needed_toggle(name: str, key: str) -> str | None:
     return "waypoint_lock" if key.endswith(" Waypoints") else LOCK_TOGGLES.get(key)
 
 
-def acts(values: dict[str, Any]) -> int:
-    """Acts in play, as the world counts them."""
-    return values["goal"] * 5 + values["goal_act"]
-
-
 def tree_mode(values: dict[str, Any]) -> bool:
     return values["skill_mode"] == SkillMode.option_tree or bool(values["skill_tree_shuffle"])
 
@@ -188,12 +183,10 @@ CODEX = "Needs Skill Mode codex"
 # Option -> (the options it hangs on, what it needs, whether it applies), for options that do nothing unless another
 # option is set. The editor greys them out and says what they need; their values stay, and still save.
 APPLIES: dict[str, tuple[tuple[str, ...], str, Any]] = {
-    "act_keys": (("goal", "goal_act"), "Needs a goal past Normal Act I", lambda v: acts(v) > 1),
-    "skills_per_act": (("goal", "goal_act"), "Needs a goal past Normal Act I", lambda v: acts(v) > 1),
-    **{name: (("act_keys", "goal", "goal_act"), "Needs Act Keys", lambda v: bool(v["act_keys"]) and acts(v) > 1)
+    **{name: (("act_keys",), "Needs Act Keys", lambda v: bool(v["act_keys"]))
        for name in ("enforce_act_keys", "act_key_window")},
-    "enforce_act_keys_mode": (("act_keys", "enforce_act_keys", "goal", "goal_act"), "Needs Enforce Act Keys",
-                              lambda v: bool(v["act_keys"] and v["enforce_act_keys"]) and acts(v) > 1),
+    "enforce_act_keys_mode": (("act_keys", "enforce_act_keys"), "Needs Enforce Act Keys",
+                              lambda v: bool(v["act_keys"] and v["enforce_act_keys"])),
     **{name: (("skill_mode", "skill_tree_shuffle"), CODEX, lambda v: not tree_mode(v))
        for name in ("skill_pool_size", "skill_focus", "skill_classes", "scale_with_length", "skill_level_scaling",
                     "codex_empowerments", "levels_per_copy", "codex_level_cap")},
@@ -267,14 +260,10 @@ APPLIES: dict[str, tuple[tuple[str, ...], str, Any]] = {
                           lambda v: v["monster_shuffle"] != MonsterShuffle.option_off),
     **{name: (("superunique_shuffle",), "Needs Superunique Shuffle",
               lambda v: v["superunique_shuffle"] != SuperUniqueShuffle.option_off)
-       for name in ("main_path_superunique_cap", "main_path_superunique_minions", "main_path_superunique_level")},
+       for name in ("main_path_superunique_cap", "main_path_superunique_minions")},
     "superunique_shuffle_spread": (("superunique_shuffle",), "Needs Superunique Shuffle nearby",
                                    lambda v: v["superunique_shuffle"] == SuperUniqueShuffle.option_nearby),
     "runeword_rune_spread": (("runeword_shuffle",), "Needs Runeword Shuffle", lambda v: bool(v["runeword_shuffle"])),
-    **{name: (("goal",), "Needs a Nightmare or Hell goal", lambda v: v["goal"] >= Goal.option_nightmare)
-       for name in ("monster_density_nightmare", "experience_multiplier_nightmare", "death_experience_penalty")},
-    **{name: (("goal",), "Needs a Hell goal", lambda v: v["goal"] == Goal.option_hell)
-       for name in ("monster_density_hell", "experience_multiplier_hell")},
     **{name: (("death_link",), "Needs DeathLink", lambda v: bool(v["death_link"]))
        for name in ("death_link_mode", "death_link_amnesty")},
 }
