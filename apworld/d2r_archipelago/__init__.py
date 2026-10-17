@@ -163,6 +163,13 @@ class D2RWorld(World):
             open_areas = [area for area in SIDE_AREAS if difficulty * len(ACTS) + area[1] < self.act_count]
             picked = self.random.sample(open_areas, min(self.options.side_area_checks.value, len(open_areas)))
             self.side_areas[difficulty] = sorted(picked)
+        # Early Locks: Archipelago's fill puts these in the first reachable checks, anyone's or this world's.
+        on = set(self.lock_items())
+        local = self.options.local_early_locks.value
+        for name in sorted(on & local):
+            self.multiworld.local_early_items[self.player][name] = 1
+        for name in sorted(on & (self.options.early_locks.value - local)):
+            self.multiworld.early_items[self.player][name] = 1
 
     def key_fits(self, item: Item, act_index: int) -> bool:
         """Act Key Window: whether a D2 act key may sit at a location in act `act_index` of this world, by the

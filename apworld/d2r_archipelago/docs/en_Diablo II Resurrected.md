@@ -144,6 +144,11 @@ Each lock item needs a location that isn't filler-only, so in a short game they 
 game should use at most a couple of locks. A lock that gates no check in your seed (the Cube Lock in a one-act
 game, or the Merchant Lock with no shop checks and no cow level) counts as filler and can turn up anywhere.
 
+To have a lock early, list its item in `local_early_locks` (your own first checks: Act I with act keys on) or
+`early_locks` (the first checks anyone in the multiworld can reach, in any game), for example
+`local_early_locks: ["Town Portal Access", "Act I Waypoints"]`. Only locks that are on count. A lock in both
+lists goes in your own checks.
+
 ## What else is randomized?
 
 The setup tool rewrites the game's tables for your seed:

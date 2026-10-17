@@ -47,6 +47,10 @@ two Ral runes or `ap-debug give lsd 1 3` for a 3-socket Long Sword to try a shuf
 
 Built, pushed and installed, still to check in game:
 
+- [ ] Early locks (#166, new seed needed): with the locks on, `local_early_locks: ["Town Portal Access",
+      "Act I Waypoints"]` and `early_locks: ["Merchant Access", "Potion Access"]`. The spoiler puts the first two
+      on Normal Act I checks and the other two on someone's first checks; in game they arrive in Act I (or as soon
+      as the other players start).
 - [ ] DeathLink modes and amnesty (#41, new seed needed): `death_link_mode` one_hp / lose_gold / random_trap
       and `death_link_amnesty`, see 7a. Most of all, that D2RCore's `depletehealth 1` really leaves 1 life.
 
