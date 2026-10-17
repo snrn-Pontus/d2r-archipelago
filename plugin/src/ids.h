@@ -37,16 +37,6 @@ inline constexpr auto LevelLocation(uint32_t level) noexcept -> int64_t {
 	return LocationBase + 2000 + level;
 }
 
-// The act index a level milestone counts toward: the apworld spreads them over the
-// acts in play (goal * 5 + goal act) in proportion to the level cap.
-inline constexpr auto LevelAct(int level, int actCount, int levelCap) noexcept -> int {
-	if (actCount <= 0 || levelCap <= 0) {
-		return -1;
-	}
-	const int act = (level - 1) * actCount / levelCap;
-	return act < actCount - 1 ? act : actCount - 1;
-}
-
 // Field superunique kills: data::SuperUniques ids (all below 100) per difficulty.
 inline constexpr auto SuperUniqueLocation(uint32_t difficulty, uint32_t superUnique) noexcept -> int64_t {
 	return LocationBase + 3000 + difficulty * 100 + superUnique;

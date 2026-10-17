@@ -326,9 +326,9 @@ class D2RWorld(World):
         if self.options.level_checks:
             cap = self.level_cap
             for level in self.level_milestones():
-                # Spread the milestones over the acts in proportion to the level cap. The plugin holds
-                # each one for its act's key the same way (ids::LevelAct). Past the grind level they take
-                # hours of grinding, so they only hold filler.
+                # Spread the milestones over the acts in proportion to the level cap, where logic expects
+                # them. The plugin never holds them for a key: sending one early only hands its item out
+                # sooner. Past the grind level they take hours of grinding, so they only hold filler.
                 add(acts[min(self.act_count - 1, (level - 1) * self.act_count // cap)], level_location_name(level),
                     filler_only=level > self.options.grind_level.value)
 

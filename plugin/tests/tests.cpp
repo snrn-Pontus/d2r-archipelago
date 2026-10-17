@@ -1349,9 +1349,6 @@ void TestIdsMatchApworld() {
 	EXPECT(ap::ids::AreaLocation(0, 38) == 2'421'038);
 	EXPECT(ap::ids::AreaLocation(2, 132) == 2'421'532);
 	EXPECT(ap::ids::LevelLocation(30) == 2'422'030);
-	// Level milestones' acts, as the apworld places them: Normal to Diablo (4 acts, cap 30), all of Hell (15, 90).
-	EXPECT(ap::ids::LevelAct(5, 4, 30) == 0 && ap::ids::LevelAct(10, 4, 30) == 1 && ap::ids::LevelAct(30, 4, 30) == 3);
-	EXPECT(ap::ids::LevelAct(80, 15, 90) == 13 && ap::ids::LevelAct(90, 15, 90) == 14);
 	EXPECT(ap::ids::SuperUniqueLocation(0, 0) == 2'423'000);
 	EXPECT(ap::ids::SuperUniqueLocation(2, 59) == 2'423'259);
 	EXPECT(ap::ids::RuneLocation(33) == 2'425'033);
