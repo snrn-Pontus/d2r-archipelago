@@ -4,7 +4,8 @@ from Utils import parse_yaml
 
 from .. import GAME, options
 from ..options import OPTION_PRESETS, D2ROptions
-from ..options_editor import (OPTIONS, grouped_options, linked_changes, load_options, name_problem, needed_toggle,
+from ..options_editor import (APPLIES, OPTIONS, grouped_options, inactive, linked_changes, load_options, name_problem,
+                              needed_toggle,
                               option_kind, preset_values, read_value, render_yaml, save_options)
 
 FILE = """# My settings.
@@ -52,6 +53,61 @@ class TestOptionsEditor(unittest.TestCase):
         values, kept = load_options(data)
         self.assertEqual(values["skill_mode"], tree)
         self.assertEqual(save_options(data, "Old", values, kept)[GAME]["skill_mode"], "tree")
+
+    def test_dependent_options_name_real_options(self) -> None:
+        for name, (parents, needs, _applies) in APPLIES.items():
+            self.assertIn(name, OPTIONS)
+            self.assertTrue(needs.startswith("Needs "), name)
+            for parent in parents:
+                self.assertIn(parent, OPTIONS, name)
+
+    def test_dependent_options_only_read_their_parents(self) -> None:
+        # A parent the file sets to weights or random keeps its dependents active, so every option a rule reads
+        # must be listed as a parent.
+        class Reads(dict):
+            def __init__(self, values: dict) -> None:
+                super().__init__(values)
+                self.read: set[str] = set()
+
+            def __getitem__(self, key: str):
+                self.read.add(key)
+                return super().__getitem__(key)
+
+        presets = [load_options({})[0], *(preset_values(preset) for preset in OPTION_PRESETS)]
+        tree = {**presets[0], "skill_mode": options.SkillMode.option_tree, "death_link": True, "goal": 2}
+        for values in [*presets, tree]:
+            for name, (parents, _needs, applies) in APPLIES.items():
+                reads = Reads(values)
+                applies(reads)
+                self.assertLessEqual(reads.read, set(parents), name)
+
+    def test_greyed_out_options(self) -> None:
+        values, kept = load_options({})
+        # Defaults: Normal goal, Codex mode, no DeathLink.
+        for name in ("cow_level_checks", "uber_checks", "monster_density_hell", "death_experience_penalty",
+                     "skill_points", "death_link_mode", "death_link_amnesty", "monster_shuffle_tolerance"):
+            self.assertIsNotNone(inactive(name, values, kept), name)
+        for name in ("act_keys", "skill_pool_size", "level_check_step", "goal", "shuffle_cow_level"):
+            self.assertIsNone(inactive(name, values, kept), name)
+        self.assertEqual(inactive("death_link_mode", values, kept), "Needs DeathLink")
+
+        tree = {**values, "skill_tree_shuffle": True}
+        self.assertIsNotNone(inactive("skill_pool_size", tree, kept))
+        self.assertIsNone(inactive("skill_points", tree, kept))
+
+        # DeathLink's random_trap sets off traps with Trap Percentage at 0 (but never a Junk Backpack).
+        no_traps = {**values, "trap_percentage": 0}
+        self.assertIsNotNone(inactive("ambush_size", no_traps, kept))
+        random_trap = {**no_traps, "death_link": True, "death_link_mode": options.DeathLinkMode.option_random_trap}
+        for name in ("ambush_size", "ambush_weight", "tax_collector_gold", "traps_wait_for_town"):
+            self.assertIsNone(inactive(name, random_trap, kept), name)
+        self.assertIsNotNone(inactive("junk_backpack_weight", random_trap, kept))
+
+        # A one-act game has no act keys; a parent set to random keeps its dependents.
+        one_act = {**values, "goal_act": 1}
+        self.assertIsNotNone(inactive("act_keys", one_act, kept))
+        self.assertIsNone(inactive("act_keys", one_act, {"goal_act": "random"}))
+        self.assertIsNone(inactive("death_link_mode", values, {"death_link": "random"}))
 
     def test_early_locks_need_their_lock(self) -> None:
         for name in ("early_locks", "local_early_locks"):
