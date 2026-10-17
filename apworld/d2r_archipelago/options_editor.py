@@ -204,8 +204,6 @@ APPLIES: dict[str, tuple[tuple[str, ...], str, Any]] = {
     "useful_starting_skills": (("starting_skills",), "Needs Starting Skills above 0", lambda v: v["starting_skills"] > 0),
     **{name: (("level_checks",), "Needs Level Checks", lambda v: bool(v["level_checks"]))
        for name in ("level_check_step", "grind_level")},
-    **{name: (("shop_checks",), "Needs Shop Checks above 0", lambda v: v["shop_checks"] > 0)
-       for name in ("shop_vendor", "parcel_price_multiplier")},
     **{name: (("goal", "goal_act"), "Needs Goal Difficulty hell and Goal Act 5",
               lambda v: v["goal"] == Goal.option_hell and v["goal_act"] == 5)
        for name in ("uber_checks", "special_item_checks")},
@@ -217,7 +215,6 @@ APPLIES: dict[str, tuple[tuple[str, ...], str, Any]] = {
                        lambda v: bool(v["cow_level_checks"]) and v["goal"] > Goal.option_normal),
     "tp_access_tome_charges": (("town_portal_lock",), "Needs Town Portal Lock", lambda v: bool(v["town_portal_lock"])),
     "potion_lock_mode": (("potion_lock",), "Needs Potion Lock", lambda v: bool(v["potion_lock"])),
-    "prophecy_price_multiplier": (("prophecy_shop",), "Needs Prophecy Shop", lambda v: bool(v["prophecy_shop"])),
     "hint_balance": (("cain_hints", "page_hint_chance", "prophecy_shop", "prophecy_weight"),
                      "Needs a way to find hints (Cain Hints, Page Hint Chance, Prophecy Shop or Prophecy Weight)",
                      lambda v: bool(v["cain_hints"] or v["prophecy_shop"]) or v["page_hint_chance"] > 0
