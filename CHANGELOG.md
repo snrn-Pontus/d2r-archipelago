@@ -2,6 +2,14 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.14.1 - 2026-10-17
+
+Works with seeds from 0.14.0; no need to rerun `d2r-ap-setup`.
+
+- The Options editor greys out settings that do nothing with your other choices (DeathLink Mode without
+  DeathLink, trap settings without traps, Codex settings in tree mode...) and says what each one needs.
+  Their values are kept, so turning the other setting back on restores them. (#168)
+
 ## 0.14.0 - 2026-10-17
 
 New options, so make a new seed to use them and rerun `d2r-ap-setup` so the plugin matches. They default
