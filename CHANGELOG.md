@@ -2,6 +2,15 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.14.0 - 2026-10-17
+
+New options, so make a new seed to use them and rerun `d2r-ap-setup` so the plugin matches. They default
+to how the game played before.
+
+- Choose locks to get early: `local_early_locks` puts them in your own first checks (Act I with act keys
+  on), `early_locks` in the first checks anyone in the multiworld can reach, in any game. In the Options
+  editor, a lock's box only ticks while that lock is on. (#166)
+
 ## 0.13.1 - 2026-10-14
 
 Works with seeds from 0.13.0; no need to rerun `d2r-ap-setup`.
