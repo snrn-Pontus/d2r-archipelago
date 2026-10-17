@@ -19,7 +19,8 @@ from typing import Any
 from Options import Choice, NamedRange, Option, OptionCounter, OptionSet, Range, Toggle, Visibility
 
 from .ids import CUBE_ACCESS, MERCHANT_ACCESS, TOWN_PORTAL_ACCESS
-from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions, SkillMode
+from .options import (OPTION_GROUPS, OPTION_PRESETS, BossRewardType, CharacterClass, D2ROptions, DeathLinkMode, Goal,
+                      MonsterShuffle, SkillFocus, SkillMode, SuperUniqueShuffle)
 
 GAME = "Diablo II Resurrected"
 TITLE = f"{GAME} Options"
@@ -144,6 +145,136 @@ def needed_toggle(name: str, key: str) -> str | None:
     if name not in ("early_locks", "local_early_locks"):
         return None
     return "waypoint_lock" if key.endswith(" Waypoints") else LOCK_TOGGLES.get(key)
+
+
+def tree_mode(values: dict[str, Any]) -> bool:
+    return values["skill_mode"] == SkillMode.option_tree or bool(values["skill_tree_shuffle"])
+
+
+def death_link_traps(values: dict[str, Any]) -> bool:
+    """DeathLink's random_trap mode sets off the seed's traps (by their weights, Junk Backpack aside)."""
+    return bool(values["death_link"]) and values["death_link_mode"] == DeathLinkMode.option_random_trap
+
+
+def traps_on(values: dict[str, Any]) -> bool:
+    return values["trap_percentage"] > 0 or death_link_traps(values)
+
+
+# The traps that go off where you are (and can wait for town); a Junk Backpack fills the inventory at once.
+COMMAND_TRAPS = ("ambush_weight", "poison_cloud_weight", "firestorm_weight", "mana_drain_weight", "tax_collector_weight",
+                 "mercenary_down_weight")
+TRAP_PARENTS = ("trap_percentage", "death_link", "death_link_mode", *COMMAND_TRAPS)
+
+
+def trap_goes_off(values: dict[str, Any], weight: str) -> bool:
+    """Whether a command trap can go off: by its weight, from the pool or DeathLink random_trap, or as one of
+    random_trap's fallbacks (Ambush, Poison Cloud, Firestorm, Mana Drain, Tax Collector) with every weight at 0."""
+    if values[weight] > 0:
+        return traps_on(values)
+    return (death_link_traps(values) and weight != "mercenary_down_weight"
+            and all(values[other] == 0 for other in COMMAND_TRAPS))
+
+
+def boss_reward(values: dict[str, Any], *rewards: int) -> bool:
+    return bool(values["boss_quests_give_uniques"]) and values["boss_reward_type"] in rewards
+
+
+CODEX = "Needs Skill Mode codex"
+# Option -> (the options it hangs on, what it needs, whether it applies), for options that do nothing unless another
+# option is set. The editor greys them out and says what they need; their values stay, and still save.
+APPLIES: dict[str, tuple[tuple[str, ...], str, Any]] = {
+    **{name: (("act_keys",), "Needs Act Keys", lambda v: bool(v["act_keys"]))
+       for name in ("enforce_act_keys", "act_key_window")},
+    "enforce_act_keys_mode": (("act_keys", "enforce_act_keys"), "Needs Enforce Act Keys",
+                              lambda v: bool(v["act_keys"] and v["enforce_act_keys"])),
+    **{name: (("skill_mode", "skill_tree_shuffle"), CODEX, lambda v: not tree_mode(v))
+       for name in ("skill_pool_size", "skill_focus", "skill_classes", "scale_with_length", "skill_level_scaling",
+                    "codex_empowerments", "levels_per_copy", "codex_level_cap")},
+    "skill_scaling_cap": (("skill_mode", "skill_tree_shuffle", "skill_level_scaling"),
+                          "Needs Skill Mode codex and Skill Level Scaling above 0",
+                          lambda v: not tree_mode(v) and v["skill_level_scaling"] > 0),
+    "levels_per_empowerment": (("skill_mode", "skill_tree_shuffle", "codex_empowerments"),
+                               "Needs Skill Mode codex and Codex Empowerments above 0",
+                               lambda v: not tree_mode(v) and v["codex_empowerments"] > 0),
+    "class_weight_percent": (("skill_mode", "skill_tree_shuffle", "skill_focus", "character_class"),
+                             "Needs Skill Mode codex, Skill Focus class_weighted and a Character Class",
+                             lambda v: not tree_mode(v) and v["skill_focus"] == SkillFocus.option_class_weighted
+                             and v["character_class"] != CharacterClass.option_any),
+    "skill_points": (("skill_mode", "skill_tree_shuffle"), "Needs Skill Mode tree", tree_mode),
+    "useful_starting_skills": (("starting_skills",), "Needs Starting Skills above 0", lambda v: v["starting_skills"] > 0),
+    **{name: (("level_checks",), "Needs Level Checks", lambda v: bool(v["level_checks"]))
+       for name in ("level_check_step", "grind_level")},
+    **{name: (("goal", "goal_act"), "Needs Goal Difficulty hell and Goal Act 5",
+              lambda v: v["goal"] == Goal.option_hell and v["goal_act"] == 5)
+       for name in ("uber_checks", "special_item_checks")},
+    "kill_count_multiplier": (("kill_count_checks",), "Needs Kill Count Checks", lambda v: bool(v["kill_count_checks"])),
+    "find_count_multiplier": (("find_count_checks",), "Needs Find Count Checks", lambda v: bool(v["find_count_checks"])),
+    "cow_level_checks": (("goal",), "Needs a goal past Normal (cows count on a difficulty finished before the goal)",
+                         lambda v: v["goal"] > Goal.option_normal),
+    "cow_kill_count": (("cow_level_checks", "goal"), "Needs Cow Level Checks and a goal past Normal",
+                       lambda v: bool(v["cow_level_checks"]) and v["goal"] > Goal.option_normal),
+    "tp_access_tome_charges": (("town_portal_lock",), "Needs Town Portal Lock", lambda v: bool(v["town_portal_lock"])),
+    "potion_lock_mode": (("potion_lock",), "Needs Potion Lock", lambda v: bool(v["potion_lock"])),
+    "hint_balance": (("cain_hints", "page_hint_chance", "prophecy_shop", "prophecy_weight"),
+                     "Needs a way to find hints (Cain Hints, Page Hint Chance, Prophecy Shop or Prophecy Weight)",
+                     lambda v: bool(v["cain_hints"] or v["prophecy_shop"]) or v["page_hint_chance"] > 0
+                     or v["prophecy_weight"] > 0),
+    "boss_reward_type": (("boss_quests_give_uniques",), "Needs Boss Quests Give Uniques",
+                         lambda v: bool(v["boss_quests_give_uniques"])),
+    "gold_reward_per_level": (("gold_weight",), "Needs Gold Weight above 0", lambda v: v["gold_weight"] > 0),
+    "experience_reward_percent": (("experience_weight",), "Needs Experience Weight above 0",
+                                  lambda v: v["experience_weight"] > 0),
+    **{name: (("unique_weight", "set_item_weight", "boss_quests_give_uniques", "boss_reward_type"),
+              "Needs Unique Weight or Set Item Weight above 0, or unique or set boss rewards",
+              lambda v: v["unique_weight"] > 0 or v["set_item_weight"] > 0 or boss_reward(v, *range(5)))
+       for name in ("reward_level_below", "reward_level_above")},
+    "jewel_share": (("charm_weight",), "Needs Charm Weight above 0", lambda v: v["charm_weight"] > 0),
+    "rare_jewel_chance": (("charm_weight", "jewel_share"), "Needs Charm Weight and Jewel Share above 0",
+                          lambda v: v["charm_weight"] > 0 and v["jewel_share"] > 0),
+    "high_rune_curve": (("high_rune_weight", "boss_quests_give_uniques", "boss_reward_type"),
+                        "Needs High Rune Weight above 0, or High Rune boss rewards",
+                        lambda v: v["high_rune_weight"] > 0 or boss_reward(v, BossRewardType.option_high_rune)),
+    "shrine_pool": (("shrine_weight",), "Needs Shrine Weight above 0", lambda v: v["shrine_weight"] > 0),
+    **{name: (("trap_percentage", "death_link", "death_link_mode"),
+              "Needs Trap Percentage above 0, or DeathLink Mode random_trap", traps_on)
+       for name in COMMAND_TRAPS},
+    "traps_wait_for_town": (TRAP_PARENTS, "Needs a trap other than Junk Backpack that can go off",
+                            lambda v: any(trap_goes_off(v, weight) for weight in COMMAND_TRAPS)),
+    "junk_backpack_weight": (("trap_percentage",), "Needs Trap Percentage above 0", lambda v: v["trap_percentage"] > 0),
+    **{name: (TRAP_PARENTS, "Needs Ambush traps: Ambush Weight above 0, with Trap Percentage above 0 or DeathLink "
+                            "Mode random_trap", lambda v: trap_goes_off(v, "ambush_weight"))
+       for name in ("ambush_size", "ambush_monsters")},
+    "tax_collector_gold": (TRAP_PARENTS, "Needs Tax Collector traps (Tax Collector Weight above 0, with Trap Percentage "
+                                         "above 0 or DeathLink Mode random_trap), or DeathLink Mode lose_gold",
+                           lambda v: trap_goes_off(v, "tax_collector_weight")
+                           or (bool(v["death_link"]) and v["death_link_mode"] == DeathLinkMode.option_lose_gold)),
+    "junk_backpack_size": (("trap_percentage", "junk_backpack_weight"),
+                           "Needs Trap Percentage and Junk Backpack Weight above 0",
+                           lambda v: v["trap_percentage"] > 0 and v["junk_backpack_weight"] > 0),
+    "monster_shuffle_tolerance": (("monster_shuffle",), "Needs Monster Shuffle anywhere",
+                                  lambda v: v["monster_shuffle"] == MonsterShuffle.option_anywhere),
+    "shuffle_cow_level": (("monster_shuffle",), "Needs Monster Shuffle",
+                          lambda v: v["monster_shuffle"] != MonsterShuffle.option_off),
+    **{name: (("superunique_shuffle",), "Needs Superunique Shuffle",
+              lambda v: v["superunique_shuffle"] != SuperUniqueShuffle.option_off)
+       for name in ("main_path_superunique_cap", "main_path_superunique_minions")},
+    "superunique_shuffle_spread": (("superunique_shuffle",), "Needs Superunique Shuffle nearby",
+                                   lambda v: v["superunique_shuffle"] == SuperUniqueShuffle.option_nearby),
+    "runeword_rune_spread": (("runeword_shuffle",), "Needs Runeword Shuffle", lambda v: bool(v["runeword_shuffle"])),
+    **{name: (("death_link",), "Needs DeathLink", lambda v: bool(v["death_link"]))
+       for name in ("death_link_mode", "death_link_amnesty")},
+}
+
+
+def inactive(name: str, values: dict[str, Any], kept: dict[str, Any]) -> str | None:
+    """What an option needs when it does nothing with these values, or None when it applies. An option hanging on one
+    the file sets to weights or random may apply, so it stays active."""
+    if name not in APPLIES:
+        return None
+    parents, needs, applies = APPLIES[name]
+    if any(parent in kept for parent in parents) or applies(values):
+        return None
+    return needs
 
 
 def game_section(data: dict) -> dict:
@@ -391,10 +522,26 @@ def run_editor(path: str | None = None) -> None:
             self.setters: dict[str, Any] = {}
             # Called with a toggle's new value, for set entries that need it (needed_toggle).
             self.watchers: dict[str, list[Any]] = {}
+            # Option -> its row and the "Needs ..." line shown while it doesn't apply (APPLIES).
+            self.dependents: dict[str, tuple[BoxLayout, Label]] = {}
             for group, names in grouped_options():
                 self.list.add_widget(wrapped(f"[b]{group}[/b]", markup=True, font_size=sp(19), color=(1, 0.8, 0.4, 1)))
                 for name in names:
                     self.list.add_widget(self.option_row(name))
+            self.grey_out()
+
+        def grey_out(self) -> None:
+            """Greys out the options that do nothing with the current values, with what they need."""
+            for name, (row, needs) in self.dependents.items():
+                reason = inactive(name, self.values, self.kept)
+                row.disabled = reason is not None
+                if reason is None and needs.parent:
+                    row.remove_widget(needs)
+                elif reason is not None:
+                    needs.text = reason
+                    if not needs.parent:
+                        # Right under the option's name.
+                        row.add_widget(needs, index=len(row.children) - 1)
 
         def option_row(self, name: str) -> BoxLayout:
             option = OPTIONS[name]
@@ -416,6 +563,7 @@ def run_editor(path: str | None = None) -> None:
                         self.setters[other](linked)
                 for watch in self.watchers.get(name, []):
                     watch(value)
+                self.grey_out()
 
             def set_control(widget, attribute: str, shown: Any, value: Any) -> None:
                 setattr(widget, attribute, shown)
@@ -517,6 +665,10 @@ def run_editor(path: str | None = None) -> None:
                                font_size=sp(13), color=(1, 0.6, 0.3, 1))
                 notes.append(note)
                 row.add_widget(note)
+            if name in APPLIES:
+                # Stays bright while the rest of the row is greyed out.
+                needs = wrapped("", font_size=sp(13), color=(1, 0.6, 0.3, 1), disabled_color=(1, 0.6, 0.3, 1))
+                self.dependents[name] = (row, needs)
             return row
 
         def apply_preset(self, preset: str) -> None:
