@@ -35,7 +35,8 @@ class TestLinkedEarlyLocks(unittest.TestCase):
     def test_linked_lock_is_still_early(self) -> None:
         link = [{"name": "Locks", "item_pool": ["Merchant Access", "Potion Access"], "replacement_item": None,
                  "link_replacement": None}]
-        options = [{**ALL_LOCKS, "item_links": link, "early_locks": ["Merchant Access"]},
+        # Player 1 asks for Potion Access anywhere, player 2 in their own checks: player 2's wins.
+        options = [{**ALL_LOCKS, "item_links": link, "early_locks": ["Merchant Access", "Potion Access"]},
                    {**ALL_LOCKS, "item_links": link, "local_early_locks": ["Potion Access"]}]
         for seed in range(5):
             multiworld = setup_multiworld([AutoWorldRegister.world_types[GAME]] * 2, steps=(), seed=seed, options=options)

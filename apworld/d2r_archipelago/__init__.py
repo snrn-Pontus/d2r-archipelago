@@ -172,25 +172,35 @@ class D2RWorld(World):
     def pre_fill(self) -> None:
         """Early Locks for item-linked locks: the link swaps this player's lock for one its group owns, which
         Archipelago's early fill never looks at (it only goes through the players), so it's placed here: in a
-        first check of this player's for Local Early Locks, of anyone's for Early Locks."""
-        requests = {**dict.fromkeys(self.multiworld.early_items[self.player], None),
-                    **dict.fromkeys(self.multiworld.local_early_items[self.player], self.player)}
-        groups = [group_id for group_id, group in self.multiworld.groups.items() if self.player in group["players"]]
-        if not requests or not groups:
-            return
-        state = self.multiworld.state.copy()
-        state.sweep_for_advancements(locations=[location for location in self.multiworld.get_filled_locations()
-                                                if location.address is None])
-        for name in sorted(requests):
-            item = next((item for item in self.multiworld.itempool if item.name == name and item.player in groups), None)
-            if item is None:
+        first check of a player who asked for it in Local Early Locks, or else of anyone's for Early Locks. Each
+        link's first player places them, from every linked player's requests."""
+        for group_id, group in self.multiworld.groups.items():
+            members = sorted(group["players"])
+            if members[0] != self.player:
                 continue
-            spots = [location for location in self.multiworld.get_unfilled_locations(requests[name])
-                     if location.can_fill(state, item)
-                     and not (item.advancement and location.progress_type == LocationProgressType.EXCLUDED)]
-            if spots:
-                self.multiworld.itempool.remove(item)
-                self.random.choice(spots).place_locked_item(item)
+            # Lock name -> the players who want it in their own checks (none: anyone's).
+            wanted: dict[str, set[int]] = {}
+            for member in members:
+                for name in self.multiworld.early_items[member]:
+                    wanted.setdefault(name, set())
+                for name in self.multiworld.local_early_items[member]:
+                    wanted.setdefault(name, set()).add(member)
+            state = None
+            for name, owners in sorted(wanted.items()):
+                item = next((item for item in self.multiworld.itempool if item.name == name and item.player == group_id),
+                            None)
+                if item is None:
+                    continue
+                if state is None:
+                    state = self.multiworld.state.copy()
+                    state.sweep_for_advancements(locations=[location for location in self.multiworld.get_filled_locations()
+                                                            if location.address is None])
+                spots = [location for location in self.multiworld.get_unfilled_locations()
+                         if (not owners or location.player in owners) and location.can_fill(state, item)
+                         and not (item.advancement and location.progress_type == LocationProgressType.EXCLUDED)]
+                if spots:
+                    self.multiworld.itempool.remove(item)
+                    self.random.choice(spots).place_locked_item(item)
 
     def key_fits(self, item: Item, act_index: int) -> bool:
         """Act Key Window: whether a D2 act key may sit at a location in act `act_index` of this world, by the
