@@ -2,6 +2,13 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.14.2 - 2026-10-17
+
+Works with seeds from 0.14.0; no need to rerun `d2r-ap-setup`.
+
+- Level checks are sent as soon as you reach the level, wherever you are, instead of being held until a
+  later act's key arrives. Ones already held go out the next time a check is sent (#170)
+
 ## 0.14.1 - 2026-10-17
 
 Works with seeds from 0.14.0; no need to rerun `d2r-ap-setup`.
