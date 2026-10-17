@@ -4,9 +4,9 @@ from Utils import parse_yaml
 
 from .. import GAME, options
 from ..options import OPTION_PRESETS, D2ROptions
-from ..options_editor import (APPLIES, OPTIONS, grouped_options, inactive, linked_changes, load_options, name_problem,
-                              needed_toggle,
-                              option_kind, preset_values, read_value, render_yaml, save_options)
+from ..options_editor import (APPLIES, COMMAND_TRAPS, OPTIONS, grouped_options, inactive, linked_changes, load_options,
+                              name_problem, needed_toggle, option_kind, preset_values, read_value, render_yaml,
+                              save_options)
 
 FILE = """# My settings.
 name: Old
@@ -102,6 +102,18 @@ class TestOptionsEditor(unittest.TestCase):
         for name in ("ambush_size", "ambush_weight", "tax_collector_gold", "traps_wait_for_town"):
             self.assertIsNone(inactive(name, random_trap, kept), name)
         self.assertIsNotNone(inactive("junk_backpack_weight", random_trap, kept))
+        # A trap at weight 0 never goes off, unless every weight is 0 and random_trap falls back to the five.
+        no_ambush = {**random_trap, "ambush_weight": 0, "poison_cloud_weight": 5}
+        self.assertIsNotNone(inactive("ambush_size", no_ambush, kept))
+        weights = {weight: 0 for weight in COMMAND_TRAPS}
+        fallback = {**random_trap, **weights}
+        for name in ("ambush_size", "tax_collector_gold", "traps_wait_for_town"):
+            self.assertIsNone(inactive(name, fallback, kept), name)
+        self.assertIsNone(inactive("tax_collector_gold", {**fallback, "death_link_mode": 2}, kept))
+        # Junk Backpacks alone never wait for town.
+        junk_only = {**values, **weights, "trap_percentage": 20, "junk_backpack_weight": 10}
+        self.assertIsNotNone(inactive("traps_wait_for_town", junk_only, kept))
+        self.assertIsNone(inactive("junk_backpack_size", junk_only, kept))
 
         # A one-act game has no act keys; a parent set to random keeps its dependents.
         one_act = {**values, "goal_act": 1}

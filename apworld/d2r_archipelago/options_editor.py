@@ -165,6 +165,21 @@ def traps_on(values: dict[str, Any]) -> bool:
     return values["trap_percentage"] > 0 or death_link_traps(values)
 
 
+# The traps that go off where you are (and can wait for town); a Junk Backpack fills the inventory at once.
+COMMAND_TRAPS = ("ambush_weight", "poison_cloud_weight", "firestorm_weight", "mana_drain_weight", "tax_collector_weight",
+                 "mercenary_down_weight")
+TRAP_PARENTS = ("trap_percentage", "death_link", "death_link_mode", *COMMAND_TRAPS)
+
+
+def trap_goes_off(values: dict[str, Any], weight: str) -> bool:
+    """Whether a command trap can go off: by its weight, from the pool or DeathLink random_trap, or as one of
+    random_trap's fallbacks (Ambush, Poison Cloud, Firestorm, Mana Drain, Tax Collector) with every weight at 0."""
+    if values[weight] > 0:
+        return traps_on(values)
+    return (death_link_traps(values) and weight != "mercenary_down_weight"
+            and all(values[other] == 0 for other in COMMAND_TRAPS))
+
+
 def boss_reward(values: dict[str, Any], *rewards: int) -> bool:
     return bool(values["boss_quests_give_uniques"]) and values["boss_reward_type"] in rewards
 
@@ -232,19 +247,17 @@ APPLIES: dict[str, tuple[tuple[str, ...], str, Any]] = {
     "shrine_pool": (("shrine_weight",), "Needs Shrine Weight above 0", lambda v: v["shrine_weight"] > 0),
     **{name: (("trap_percentage", "death_link", "death_link_mode"),
               "Needs Trap Percentage above 0, or DeathLink Mode random_trap", traps_on)
-       for name in ("ambush_weight", "poison_cloud_weight", "firestorm_weight", "mana_drain_weight",
-                    "tax_collector_weight", "mercenary_down_weight", "traps_wait_for_town")},
+       for name in COMMAND_TRAPS},
+    "traps_wait_for_town": (TRAP_PARENTS, "Needs a trap other than Junk Backpack that can go off",
+                            lambda v: any(trap_goes_off(v, weight) for weight in COMMAND_TRAPS)),
     "junk_backpack_weight": (("trap_percentage",), "Needs Trap Percentage above 0", lambda v: v["trap_percentage"] > 0),
-    **{name: (("trap_percentage", "ambush_weight", "death_link", "death_link_mode"),
-              "Needs Ambush traps (Trap Percentage and Ambush Weight above 0), or DeathLink Mode random_trap",
-              lambda v: (v["trap_percentage"] > 0 and v["ambush_weight"] > 0) or death_link_traps(v))
+    **{name: (TRAP_PARENTS, "Needs Ambush traps: Ambush Weight above 0, with Trap Percentage above 0 or DeathLink "
+                            "Mode random_trap", lambda v: trap_goes_off(v, "ambush_weight"))
        for name in ("ambush_size", "ambush_monsters")},
-    "tax_collector_gold": (("trap_percentage", "tax_collector_weight", "death_link", "death_link_mode"),
-                           "Needs Tax Collector traps (Trap Percentage and Tax Collector Weight above 0), or DeathLink "
-                           "Mode lose_gold or random_trap",
-                           lambda v: (v["trap_percentage"] > 0 and v["tax_collector_weight"] > 0)
-                           or (bool(v["death_link"]) and v["death_link_mode"] in (DeathLinkMode.option_lose_gold,
-                                                                                  DeathLinkMode.option_random_trap))),
+    "tax_collector_gold": (TRAP_PARENTS, "Needs Tax Collector traps (Tax Collector Weight above 0, with Trap Percentage "
+                                         "above 0 or DeathLink Mode random_trap), or DeathLink Mode lose_gold",
+                           lambda v: trap_goes_off(v, "tax_collector_weight")
+                           or (bool(v["death_link"]) and v["death_link_mode"] == DeathLinkMode.option_lose_gold)),
     "junk_backpack_size": (("trap_percentage", "junk_backpack_weight"),
                            "Needs Trap Percentage and Junk Backpack Weight above 0",
                            lambda v: v["trap_percentage"] > 0 and v["junk_backpack_weight"] > 0),
