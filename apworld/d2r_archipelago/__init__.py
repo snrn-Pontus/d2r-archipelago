@@ -11,7 +11,7 @@ from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SIDE_
                    SKILLS, SPECIAL_ITEMS, START_ATTACK_SKILLS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
 from .ids import (ACTS, BASE_KILL_COUNTS, BASE_SET_FINDS, BASE_UNIQUE_FINDS, BASIC_LOOT, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT,
                   FIRST_LEVEL_CHECK, KEY_NAMES, LEVEL_CAPS, LOOT, LOCKS, MERCHANT_ACCESS, SKILL_POINT, TOWN_PORTAL_ACCESS, TRAPS,
-                  UNIQUE_LOOT, act_key_name, area_location_name, cow_kill_check, cow_location_name, find_count_location_name,
+                  UNIQUE_LOOT, WAYPOINT_LOCK_ACTS, act_key_name, area_location_name, cow_kill_check, cow_location_name, find_count_location_name,
                   find_location_name, item_name_to_id, kill_location_name, level_location_name, location_name_to_id,
                   quest_item_location_name, quest_location_name, scaled_counts, set_location_name, shop_location_name,
                   skill_item_name, skill_names_by_class, superunique_location_name)
@@ -28,8 +28,6 @@ USEFUL_LOOT = {"Random Unique", *UNIQUE_LOOT, "Random Set Item", "High Rune", EM
 # With the Cube Lock, these need the Horadric Cube (the Horadric Staff and Khalim's Will), on every difficulty.
 CUBE_QUESTS = ("The Horadric Staff", "The Seven Tombs", "Khalim's Will", "The Blackened Temple", "The Guardian")
 CUBE_AREAS = ("Duriel's Lair", "Durance of Hate Level 2", "Durance of Hate Level 3")
-# Waypoint Lock covers Acts I to III, the acts you can leave backwards without a waypoint.
-WAYPOINT_LOCK_ACTS = 3
 # Skill item name -> skill id.
 SKILL_IDS = {skill_item_name(skill_id, name, cls): skill_id for skill_id, name, cls in SKILLS}
 # Roles that can carry a character (Useful Starting Skills starts you with one), and the ones it replaces first.
@@ -170,6 +168,28 @@ class D2RWorld(World):
             self.multiworld.local_early_items[self.player][name] = 1
         for name in sorted(on & (self.options.early_locks.value - local)):
             self.multiworld.early_items[self.player][name] = 1
+
+    def pre_fill(self) -> None:
+        """Early Locks for item-linked locks: the link swaps this player's lock for one its group owns, which
+        Archipelago's early fill never looks at (it only goes through the players), so it's placed here, in a
+        first check anyone can reach (a linked lock goes to every linked player, so own checks don't apply)."""
+        requests = {**self.multiworld.early_items[self.player], **self.multiworld.local_early_items[self.player]}
+        groups = [group_id for group_id, group in self.multiworld.groups.items() if self.player in group["players"]]
+        if not requests or not groups:
+            return
+        state = self.multiworld.state.copy()
+        state.sweep_for_advancements(locations=[location for location in self.multiworld.get_filled_locations()
+                                                if location.address is None])
+        for name in sorted(requests):
+            item = next((item for item in self.multiworld.itempool if item.name == name and item.player in groups), None)
+            if item is None:
+                continue
+            spots = [location for location in self.multiworld.get_unfilled_locations()
+                     if location.can_fill(state, item)
+                     and not (item.advancement and location.progress_type == LocationProgressType.EXCLUDED)]
+            if spots:
+                self.multiworld.itempool.remove(item)
+                self.random.choice(spots).place_locked_item(item)
 
     def key_fits(self, item: Item, act_index: int) -> bool:
         """Act Key Window: whether a D2 act key may sit at a location in act `act_index` of this world, by the

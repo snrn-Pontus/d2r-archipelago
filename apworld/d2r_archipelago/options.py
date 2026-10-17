@@ -6,7 +6,7 @@ from Options import (Choice, DeathLink, DefaultOnToggle, NamedRange, OptionCount
                      Range, Toggle)
 
 from .data import CLASSES
-from .ids import LOCKS, skill_names_by_class
+from .ids import POOL_LOCKS, skill_names_by_class
 
 
 class Goal(Choice):
@@ -430,7 +430,7 @@ class EarlyLocks(OptionSet):
     are on count. Horadric Cube Access, Town Portal Access, Potion Access, Stash Access, Merchant Access, Act I
     Waypoints, Act II Waypoints, Act III Waypoints."""
     display_name = "Early Locks"
-    valid_keys = sorted(LOCKS)
+    valid_keys = sorted(POOL_LOCKS)
     default = frozenset()
 
 
@@ -438,7 +438,7 @@ class LocalEarlyLocks(OptionSet):
     """Locks whose item goes in your own first checks (Act I with act keys on). Only locks that are on count; one
     in both lists goes here. Same names as Early Locks."""
     display_name = "Local Early Locks"
-    valid_keys = sorted(LOCKS)
+    valid_keys = sorted(POOL_LOCKS)
     default = frozenset()
 
 

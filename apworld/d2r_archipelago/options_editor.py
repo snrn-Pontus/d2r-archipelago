@@ -18,6 +18,7 @@ from typing import Any
 
 from Options import Choice, NamedRange, Option, OptionCounter, OptionSet, Range, Toggle, Visibility
 
+from .ids import CUBE_ACCESS, MERCHANT_ACCESS, TOWN_PORTAL_ACCESS
 from .options import OPTION_GROUPS, OPTION_PRESETS, D2ROptions, SkillMode
 
 GAME = "Diablo II Resurrected"
@@ -131,6 +132,18 @@ def linked_changes(name: str, value: Any) -> dict[str, Any]:
     if name == "skill_mode" and value != SkillMode.option_tree:
         return {"skill_tree_shuffle": False}
     return {}
+
+
+LOCK_TOGGLES = {CUBE_ACCESS: "cube_lock", TOWN_PORTAL_ACCESS: "town_portal_lock", "Potion Access": "potion_lock",
+                "Stash Access": "stash_lock", MERCHANT_ACCESS: "merchant_lock"}
+
+
+def needed_toggle(name: str, key: str) -> str | None:
+    """The toggle a set option's entry needs on, so the editor only lets you tick it then: an early lock needs its lock
+    (Merchant Access in Early Locks needs Merchant Lock)."""
+    if name not in ("early_locks", "local_early_locks"):
+        return None
+    return "waypoint_lock" if key.endswith(" Waypoints") else LOCK_TOGGLES.get(key)
 
 
 def game_section(data: dict) -> dict:
@@ -376,6 +389,8 @@ def run_editor(path: str | None = None) -> None:
             self.list.clear_widgets()
             # Sets an option's control from code, for linked_changes.
             self.setters: dict[str, Any] = {}
+            # Called with a toggle's new value, for set entries that need it (needed_toggle).
+            self.watchers: dict[str, list[Any]] = {}
             for group, names in grouped_options():
                 self.list.add_widget(wrapped(f"[b]{group}[/b]", markup=True, font_size=sp(19), color=(1, 0.8, 0.4, 1)))
                 for name in names:
@@ -399,6 +414,8 @@ def run_editor(path: str | None = None) -> None:
                 for other, linked in linked_changes(name, value).items():
                     if other in self.setters:
                         self.setters[other](linked)
+                for watch in self.watchers.get(name, []):
+                    watch(value)
 
             def set_control(widget, attribute: str, shown: Any, value: Any) -> None:
                 setattr(widget, attribute, shown)
@@ -451,6 +468,16 @@ def run_editor(path: str | None = None) -> None:
                         changed(sorted(chosen))
 
                     box.bind(active=ticked)
+                    needs = needed_toggle(name, key)
+                    if needs:
+                        # Greyed out while its toggle is off; turning the toggle off unticks it.
+                        def toggled(on: Any, box: CheckBox = box) -> None:
+                            box.disabled = not on
+                            if not on:
+                                box.active = False
+
+                        box.disabled = not self.values.get(needs)
+                        self.watchers.setdefault(needs, []).append(toggled)
                     cell.add_widget(box)
                     name_label = Label(text=str(key), halign="left", valign="middle")
                     name_label.bind(size=name_label.setter("text_size"))

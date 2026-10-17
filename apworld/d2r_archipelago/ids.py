@@ -74,6 +74,10 @@ MERCHANT_ACCESS = "Merchant Access"
 TOWN_PORTAL_ACCESS = "Town Portal Access"
 LOCKS = (CUBE_ACCESS, TOWN_PORTAL_ACCESS, "Potion Access", "Stash Access", MERCHANT_ACCESS,
          *(f"{act} Waypoints" for act in ACTS))
+# Waypoint Lock covers Acts I to III, the acts you can leave backwards without a waypoint.
+WAYPOINT_LOCK_ACTS = 3
+# The lock items a seed can have: Acts IV and V never lock their waypoints.
+POOL_LOCKS = (*LOCKS[:5], *(f"{act} Waypoints" for act in ACTS[:WAYPOINT_LOCK_ACTS]))
 
 
 def skill_item_name(skill_id: int, name: str, cls: str) -> str:
