@@ -171,9 +171,10 @@ class D2RWorld(World):
 
     def pre_fill(self) -> None:
         """Early Locks for item-linked locks: the link swaps this player's lock for one its group owns, which
-        Archipelago's early fill never looks at (it only goes through the players), so it's placed here, in a
-        first check anyone can reach (a linked lock goes to every linked player, so own checks don't apply)."""
-        requests = {**self.multiworld.early_items[self.player], **self.multiworld.local_early_items[self.player]}
+        Archipelago's early fill never looks at (it only goes through the players), so it's placed here: in a
+        first check of this player's for Local Early Locks, of anyone's for Early Locks."""
+        requests = {**dict.fromkeys(self.multiworld.early_items[self.player], None),
+                    **dict.fromkeys(self.multiworld.local_early_items[self.player], self.player)}
         groups = [group_id for group_id, group in self.multiworld.groups.items() if self.player in group["players"]]
         if not requests or not groups:
             return
@@ -184,7 +185,7 @@ class D2RWorld(World):
             item = next((item for item in self.multiworld.itempool if item.name == name and item.player in groups), None)
             if item is None:
                 continue
-            spots = [location for location in self.multiworld.get_unfilled_locations()
+            spots = [location for location in self.multiworld.get_unfilled_locations(requests[name])
                      if location.can_fill(state, item)
                      and not (item.advancement and location.progress_type == LocationProgressType.EXCLUDED)]
             if spots:

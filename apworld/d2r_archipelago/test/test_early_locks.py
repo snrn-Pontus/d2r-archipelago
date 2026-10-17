@@ -51,6 +51,9 @@ class TestLinkedEarlyLocks(unittest.TestCase):
                 location = next(location for location in multiworld.get_filled_locations()
                                 if location.item.name == name and location.item.player in multiworld.groups)
                 self.assertTrue(location.can_reach(start), f"seed {seed}: {name} at {location.name}")
+                if name == "Potion Access":
+                    # Player 2 asked for it locally.
+                    self.assertEqual(location.player, 2, f"seed {seed}: {location.name}")
 
 
 class TestEarlyLocksOff(D2RTestBase):
