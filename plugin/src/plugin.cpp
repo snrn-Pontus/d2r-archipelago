@@ -834,8 +834,10 @@ auto ActLabel(int act) -> std::string {
 }
 
 // The act (0 = Normal Act I ... 14 = Hell Act V) a location belongs to, or -1
-// for checks that aren't tied to an act (level milestones).
-auto ActOfLocation(int64_t location, const ap::SlotData& slots) -> int {
+// for checks that aren't tied to an act, like level milestones: you reach a level
+// wherever you are, so they're never held for a key (the apworld's act for them only
+// says where logic expects them).
+auto ActOfLocation(int64_t location) -> int {
 	const int64_t offset = location - ap::ids::LocationBase;
 	if (offset >= 0 && offset < 300) {
 		for (const auto& quest : ap::data::Quests) {
@@ -851,8 +853,6 @@ auto ActOfLocation(int64_t location, const ap::SlotData& slots) -> int {
 				}
 			}
 		}
-	} else if (offset >= 2000 && offset < 2100) {
-		return ap::ids::LevelAct(static_cast<int>(offset - 2000), slots.goal * 5 + slots.goalAct, slots.levelCap);
 	} else if (offset >= 5400 && offset < 5430) {
 		return static_cast<int>((offset - 5400) / 10) * 5 + 4;
 	} else if (offset >= 5500 && offset < 5550) {
@@ -955,7 +955,7 @@ void SendReady() {
 			return;
 		}
 		for (const int64_t check : gSave.checks) {
-			if (!server.contains(check) && !gSent.contains(check) && open(ActOfLocation(check, slots))) {
+			if (!server.contains(check) && !gSent.contains(check) && open(ActOfLocation(check))) {
 				ready.push_back(check);
 				gSent.insert(check);
 			}
@@ -1011,7 +1011,7 @@ void AddChecks(const std::vector<int64_t>& locations, uint64_t session = 0) {
 			if (gBoundSession != 0 ? gSave.checks.insert(location).second : gUnbound.insert(location).second) {
 				added = true;
 				fresh.push_back(location);
-				const int act = ActOfLocation(location, slots);
+				const int act = ActOfLocation(location);
 				if (gBoundSession != 0) {
 					announce.emplace_back(location, slots.actKeys && act > 0 && !unlocked.contains(act));
 				}
@@ -4848,7 +4848,6 @@ struct CheckCounts {
 
 auto CountChecks() -> CheckCounts {
 	CheckCounts counts;
-	const ap::SlotData slots = gClient->Slots();
 	std::set<int64_t> found;
 	{
 		std::lock_guard lock(gMutex);
@@ -4856,12 +4855,12 @@ auto CountChecks() -> CheckCounts {
 		counts.here = std::clamp(gDifficulty, 0, 2) * 5 + std::clamp(gAct, 0, 4);
 	}
 	for (const int64_t location : gClient->Checked()) {
-		auto& [done, total] = counts.acts[ActOfLocation(location, slots)];
+		auto& [done, total] = counts.acts[ActOfLocation(location)];
 		++done;
 		++total;
 	}
 	for (const int64_t location : gClient->Missing()) {
-		auto& [done, total] = counts.acts[ActOfLocation(location, slots)];
+		auto& [done, total] = counts.acts[ActOfLocation(location)];
 		++total;
 		if (found.contains(location)) {
 			++done;
@@ -5464,7 +5463,6 @@ auto CommandMissing(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 	}
 	const auto args = SplitArgs(command);
 	const bool all = !args.empty() && args[0] == "all";
-	const ap::SlotData slots = gClient->Slots();
 	std::set<int64_t> found;
 	int here = 0;
 	{
@@ -5476,7 +5474,7 @@ auto CommandMissing(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comma
 	std::map<int, std::vector<int64_t>> left;
 	std::map<int, int> held;
 	for (const int64_t location : gClient->Missing()) {
-		const int act = ActOfLocation(location, slots);
+		const int act = ActOfLocation(location);
 		if (found.contains(location)) {
 			++held[act];
 		} else {

@@ -92,7 +92,7 @@ sends each one); the count carries over between sessions.
 With `act_keys` (on by default), every act after the first needs its key, such as "Normal Act II Key", and
 the keys are shuffled into the multiworld. You can still walk into a locked act, but the quests and areas
 you complete there (and the superuniques you kill) are only recorded; they're sent, all at once, when the key arrives. Level milestones
-count toward the act they're spread over (level 30 toward Act IV on a Normal goal), and are held the same way. The defaults (Normal to Diablo, with a little more experience and loot) aim at a 4 to 6 hour
+are never held: they're sent as soon as you reach the level, wherever you are. The defaults (Normal to Diablo, with a little more experience and loot) aim at a 4 to 6 hour
 game.
 
 When several players play Diablo II, `act_key_window` (1 by default) keeps your keys from sitting deep in

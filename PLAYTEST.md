@@ -679,6 +679,9 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 - [ ] In a multiworld with another D2 slot (default `act_key_window: 1`), the spoiler log has no Normal
       Act II Key in the other D2 world past its Act II, and the Options Creator lists Act Key Window
       under Goal and Length.
+- [ ] Level checks are never held (#170): with only Act I open, reaching level 10 (Level 6 / 30 on the debug
+      panel) sends "Reach Character Level 10" at once, with no "(held)" on its banner. `ap-missing all` lists
+      the level checks under "Any act".
 
 ## 4. Locks
 
