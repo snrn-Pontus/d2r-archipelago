@@ -6,7 +6,7 @@ from Options import (Choice, DeathLink, DefaultOnToggle, NamedRange, OptionCount
                      Range, Toggle)
 
 from .data import CLASSES
-from .ids import skill_names_by_class
+from .ids import POOL_LOCKS, skill_names_by_class
 
 
 class Goal(Choice):
@@ -423,6 +423,23 @@ class WaypointLock(Toggle):
     """The waypoints of Acts I to III only work once you find that act's Waypoints item (Act I Waypoints...).
     Acts IV and V keep theirs, since a waypoint is the only way back to an earlier act from there."""
     display_name = "Waypoint Lock"
+
+
+class EarlyLocks(OptionSet):
+    """Locks whose item goes in the first checks anyone in the multiworld can reach, in any game. Only locks that
+    are on count. Horadric Cube Access, Town Portal Access, Potion Access, Stash Access, Merchant Access, Act I
+    Waypoints, Act II Waypoints, Act III Waypoints."""
+    display_name = "Early Locks"
+    valid_keys = sorted(POOL_LOCKS)
+    default = frozenset()
+
+
+class LocalEarlyLocks(OptionSet):
+    """Locks whose item goes in your own first checks (Act I with act keys on). Only locks that are on count; one
+    in both lists goes here. Same names as Early Locks."""
+    display_name = "Local Early Locks"
+    valid_keys = sorted(POOL_LOCKS)
+    default = frozenset()
 
 
 class CainHints(DefaultOnToggle):
@@ -1236,6 +1253,8 @@ class D2ROptions(PerGameCommonOptions):
     stash_lock: StashLock
     merchant_lock: MerchantLock
     waypoint_lock: WaypointLock
+    early_locks: EarlyLocks
+    local_early_locks: LocalEarlyLocks
     cow_level_checks: CowLevelChecks
     cow_kill_count: CowKillCount
     cain_hints: CainHints
@@ -1332,7 +1351,8 @@ OPTION_GROUPS = [
                            ShopChecks, ShopVendor, ParcelPriceMultiplier, CowLevelChecks, CowKillCount]),
     OptionGroup("Extra Checks (Filler Only)", [RuneChecks, GemChecks, SetChecks, SpecialItemChecks, UberChecks, KillCountChecks,
                                                KillCountMultiplier, FindCountChecks, FindCountMultiplier], start_collapsed=True),
-    OptionGroup("Locks", [CubeLock, TownPortalLock, TownPortalAccessTomeCharges, PotionLock, PotionLockMode, StashLock, MerchantLock, WaypointLock]),
+    OptionGroup("Locks", [CubeLock, TownPortalLock, TownPortalAccessTomeCharges, PotionLock, PotionLockMode, StashLock, MerchantLock, WaypointLock,
+                             EarlyLocks, LocalEarlyLocks]),
     OptionGroup("Hints", [CainHints, PageHintChance, ProphecyShop, ProphecyPriceMultiplier, HintBalance]),
     OptionGroup("Rewards", [BossQuestsGiveUniques, BossRewardType, BasicLootWeight, UniqueWeight, SetItemWeight, HighRuneWeight,
                             SocketedBaseWeight, GoldWeight, ExperienceWeight, CharmWeight, JewelShare, ShrineWeight, ProphecyWeight,

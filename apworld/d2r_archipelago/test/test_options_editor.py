@@ -4,8 +4,8 @@ from Utils import parse_yaml
 
 from .. import GAME, options
 from ..options import OPTION_PRESETS, D2ROptions
-from ..options_editor import (OPTIONS, grouped_options, linked_changes, load_options, name_problem, option_kind,
-                              preset_values, read_value, render_yaml, save_options)
+from ..options_editor import (OPTIONS, grouped_options, linked_changes, load_options, name_problem, needed_toggle,
+                              option_kind, preset_values, read_value, render_yaml, save_options)
 
 FILE = """# My settings.
 name: Old
@@ -52,6 +52,14 @@ class TestOptionsEditor(unittest.TestCase):
         values, kept = load_options(data)
         self.assertEqual(values["skill_mode"], tree)
         self.assertEqual(save_options(data, "Old", values, kept)[GAME]["skill_mode"], "tree")
+
+    def test_early_locks_need_their_lock(self) -> None:
+        for name in ("early_locks", "local_early_locks"):
+            for key in OPTIONS[name].valid_keys:
+                self.assertIs(option_kind(OPTIONS[needed_toggle(name, key)]), "toggle", key)
+        self.assertEqual(needed_toggle("early_locks", "Merchant Access"), "merchant_lock")
+        self.assertEqual(needed_toggle("local_early_locks", "Act II Waypoints"), "waypoint_lock")
+        self.assertIsNone(needed_toggle("skill_classes", "Barbarian"))
 
     def test_reads_plain_and_template_values(self) -> None:
         values, kept = load_options({GAME: {
