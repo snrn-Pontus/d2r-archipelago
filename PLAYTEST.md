@@ -776,6 +776,9 @@ Any seed. Send each with `/send`, standing outside town for the traps.
       (a grimoire, Sling, Opalvein, Entropy Locket, Hellwarden's Will) or Bane's/Horazon's pieces, and they
       arrive with their names and stats (the log says "created ... as record ..." with the record asked for).
       A Lord of Destruction character never gets one.
+      2026-10-31 (0.15.1, level 60, `item_level_requirements: false`): one Rewards press gave Horazon's Legacy
+      (record 138 asked and created), with no level requirement, and it works. Still open: a Warlock pack
+      unique, and the Lord of Destruction side.
 
 - [ ] Teleport Charm (#178), `teleport_charm: start`, rerun `d2r-ap-setup`: on joining, the chat says "your
       Teleport Charm is in your inventory" and a unique small charm "Archipelago Teleport Charm" with +1 to
