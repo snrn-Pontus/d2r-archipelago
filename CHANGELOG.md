@@ -2,6 +2,13 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.15.4 - 2026-10-31
+
+Works with seeds from 0.15.0; no need to rerun `d2r-ap-setup`.
+
+- Runes, gems, set pieces and uniques other characters left in the shared stash no longer send "Find" checks
+  when a new character joins; only your own containers count (#186)
+
 ## 0.15.3 - 2026-10-31
 
 Works with seeds from 0.15.0; rerun `d2r-ap-setup` (New Seed does it) for the names.
