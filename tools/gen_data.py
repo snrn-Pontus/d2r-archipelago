@@ -422,13 +422,19 @@ def main() -> None:
 
     def quality_rows(table: str, code_column: str):
         rows = []
+        rotw = False
         for position, row in enumerate(read_table(excel / table)):
             # Reign of the Warlock items: uniques after the "Warlock Class Pack"
             # divider and sets past McAuley's Folly. Lord of Destruction
-            # characters can't receive them.
+            # characters can't receive them, so they're Warlock-only (a Warlock
+            # is always a Reign of the Warlock character), and only the ones
+            # that drop (not Warlord's Glory).
             if row.get("index") == "Warlock Class Pack":
-                break
-            if table == "setitems.txt" and row.get("*ID", "").isdigit() and int(row["*ID"]) > LAST_LOD_SET_ID:
+                rotw = True
+                continue
+            if table == "setitems.txt" and row.get("*ID", "").isdigit():
+                rotw = int(row["*ID"]) > LAST_LOD_SET_ID
+            if rotw and row.get("spawnable") != "1":
                 continue
             code = row.get(code_column, "")
             if code in QUEST_ITEM_CODES:
@@ -438,7 +444,8 @@ def main() -> None:
             kind = kind_of(code)
             if kind is None or not row.get("lvl req", "").isdigit():
                 continue
-            rows.append((position, code, int(row["lvl"] or 1), int(row["lvl req"]), kind, base_class.get(code, -1), row["index"]))
+            cls = class_codes.index("war") if rotw else base_class.get(code, -1)
+            rows.append((position, code, int(row["lvl"] or 1), int(row["lvl req"]), kind, cls, row["index"]))
         return rows
 
     # The Codex charm's forced affix: "Stout" (+1 Defense), the small-charm prefix

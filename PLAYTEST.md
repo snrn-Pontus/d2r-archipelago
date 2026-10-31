@@ -771,6 +771,12 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 
 Any seed. Send each with `/send`, standing outside town for the traps.
 
+- [ ] Warlock rewards (#180), on a Reign of the Warlock Warlock: send several `Random Unique Armor`,
+      `Random Unique Jewelry` and `Set Item` (low level for Bane's Garments). Some are Warlock pack items
+      (a grimoire, Sling, Opalvein, Entropy Locket, Hellwarden's Will) or Bane's/Horazon's pieces, and they
+      arrive with their names and stats (the log says "created ... as record ..." with the record asked for).
+      A Lord of Destruction character never gets one.
+
 - [ ] Teleport Charm (#178), `teleport_charm: start`, rerun `d2r-ap-setup`: on joining, the chat says "your
       Teleport Charm is in your inventory" and a unique small charm "Archipelago Teleport Charm" with +1 to
       Teleport is there. On a Barbarian, Teleport shows on the skill list from level 6 and works outside town.
