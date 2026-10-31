@@ -340,10 +340,13 @@ Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fana
 - [ ] Other classes' skills on a Warlock (#174): cast a few that came from each class (a bow or javelin
       skill, a curse, a summon, a warcry, a martial art if one landed). Do they animate and hit? A skill
       that fails is engine-tied to its class: add it to `ENGINE_CLASS_SKILLS` in `tools/gen_data.py`.
-- [ ] Warlock skills on another class (#174): `character_class: sorceress` (or any), `include_warlock: true`,
-      `skill_tree_shuffle: true`, on a new Reign of the Warlock Sorceress. Cast the Warlock skills in her tree,
-      especially the summons (Goatman, Tainted, Defiler, Bind Demon), Levitate, Blade Warp, Mirrored Blades and
-      the hexes. Any that fail go in `ENGINE_CLASS_SKILLS` under `war`.
+- [x] Warlock skills on another class (#174): a Reign of the Warlock Sorceress on seed 333 (2026-10-31).
+      Summon Goatman, Summon Tainted, Miasma Bolt, Miasma Chains, Blood Boil, Apocalypse, Hex Siphon, Hex Purge
+      and Sigil Lethargy work. Mirrored Blades doesn't, so SQ sequences now stay with their class (#176):
+      Mirrored Blades, Cleave and Bind Demon, like Inferno and Arctic Blast.
+- [ ] Still untried on another class: Summon Defiler, Death Mark, Engorge, Consume, Levitate, Eldritch Blast,
+      Hex Bane, Psychic Ward, Echoing Strike, Blade Warp, Ring of Fire, Sigil Rancor, Flame Wave, Sigil Death,
+      Abyss (and the passives). `e2e/warlock_seeds.py` finds a seed that deals many to one class.
 - [ ] A Lord of Destruction character on an Include Warlock shuffle seed isn't supported (its tables have
       no tree places for the Warlock's skills, so some slots overlap). Note what happens, in case a warning
       is needed.
