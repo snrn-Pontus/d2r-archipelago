@@ -250,7 +250,7 @@ SKILLS = [
 STARTER_SKILLS = frozenset([6, 7, 8, 10, 36, 38, 39, 40, 66, 67, 68, 70, 96, 97, 98, 99, 100, 126, 130, 131, 221, 222, 223, 225, 251, 253, 254, 255, 373, 385, 395])
 
 # Starter skills that deal damage of their own or summon, for the starting weapon's skill in tree mode.
-START_ATTACK_SKILLS = frozenset([6, 7, 36, 38, 39, 67, 70, 221, 222, 225, 251, 253, 373, 385, 395])
+START_ATTACK_SKILLS = frozenset([6, 7, 36, 38, 39, 67, 70, 221, 222, 225, 251, 253, 373, 395])
 
 # Skills only these classes can use (claws, two weapons, animations, Druid forms, engine class skills).
 SKILL_USERS = {
@@ -766,6 +766,36 @@ SKILL_SLOTS = [
     (278, 2, 6, 1, False),
     (279, 2, 6, 2, False),
     (280, 3, 6, 2, False),
+    (373, 1, 1, 3, True),
+    (374, 1, 1, 1, True),
+    (375, 1, 2, 2, True),
+    (376, 1, 3, 3, True),
+    (377, 1, 4, 3, True),
+    (378, 1, 2, 1, True),
+    (379, 1, 5, 2, True),
+    (380, 1, 4, 2, True),
+    (381, 1, 6, 1, True),
+    (382, 1, 6, 3, True),
+    (383, 2, 1, 1, True),
+    (384, 2, 5, 2, True),
+    (385, 2, 1, 3, True),
+    (386, 2, 5, 3, True),
+    (387, 2, 4, 2, True),
+    (388, 2, 3, 1, True),
+    (389, 2, 3, 3, True),
+    (390, 2, 4, 1, True),
+    (391, 2, 2, 2, True),
+    (392, 2, 6, 2, True),
+    (393, 3, 2, 2, True),
+    (394, 3, 2, 1, True),
+    (395, 3, 1, 3, True),
+    (396, 3, 3, 2, True),
+    (397, 3, 5, 3, True),
+    (398, 3, 4, 1, True),
+    (399, 3, 3, 3, True),
+    (400, 3, 5, 2, True),
+    (401, 3, 6, 1, True),
+    (402, 3, 6, 3, True),
 ]
 
 # (level id, act index, name)

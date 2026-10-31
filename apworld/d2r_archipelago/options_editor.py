@@ -200,6 +200,8 @@ APPLIES: dict[str, tuple[tuple[str, ...], str, Any]] = {
                              "Needs Skill Mode codex, Skill Focus class_weighted and a Character Class",
                              lambda v: not tree_mode(v) and v["skill_focus"] == SkillFocus.option_class_weighted
                              and v["character_class"] != CharacterClass.option_any),
+    "include_warlock": (("character_class",), "Needs a Character Class other than warlock (which turns it on)",
+                        lambda v: v["character_class"] != CharacterClass.option_warlock),
     "skill_points": (("skill_mode", "skill_tree_shuffle"), "Needs Skill Mode tree", tree_mode),
     "useful_starting_skills": (("starting_skills",), "Needs Starting Skills above 0", lambda v: v["starting_skills"] > 0),
     **{name: (("level_checks",), "Needs Level Checks", lambda v: bool(v["level_checks"]))

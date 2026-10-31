@@ -280,7 +280,10 @@ def main() -> None:
             if row.get("reqlevel") == "1" and row.get("passive") != "1":
                 starters.append(int(row["*Id"]))
                 # Damage of its own (not a weapon swing or a heal) or a summon: something that can carry a start.
-                if row.get("MinDam", "0") not in ("", "0") or (row.get("EType") and row.get("EMin", "0") not in ("", "0")) or row.get("summon"):
+                # A curse with damage (Hex Bane) doesn't.
+                if roles[int(row["*Id"])] in ("damage", "summon") and (
+                        row.get("MinDam", "0") not in ("", "0") or (row.get("EType") and row.get("EMin", "0") not in ("", "0"))
+                        or row.get("summon")):
                     start_attacks.append(int(row["*Id"]))
     skills.sort()
     # A misspelt or moved engine skill would silently stay usable by everyone.
@@ -294,16 +297,16 @@ def main() -> None:
             if name not in class_of:
                 sys.exit(f"NAMED_ROLES: {name} isn't a class skill in skills.txt")
 
-    # Tree slots for the skill tree shuffle: (skill id, tree page, row, column, pinned). The Warlock
-    # (Reign of the Warlock only) and skills without a tree place stay out; the Druid's forms and the
-    # attacks that need one (restrict 2) are pinned to the Druid.
+    # Tree slots for the skill tree shuffle: (skill id, tree page, row, column, pinned). Skills without a
+    # tree place stay out; the Druid's forms and the attacks that need one (restrict 2) are pinned to the
+    # Druid, and the Warlock's skills (Reign of the Warlock only) to the Warlock.
     descs = {row["skilldesc"]: row for row in read_table(excel / "skilldesc.txt")}
     skill_slots = []
     for row in read_table(excel / "skills.txt"):
         cls = row.get("charclass", "")
         desc = descs.get(row.get("skilldesc", ""), {})
-        if cls in CLASSES and cls != "war" and row.get("*Id", "").isdigit() and desc.get("SkillPage", "0") not in ("", "0"):
-            pinned = row["skill"] in PINNED_SKILLS or row.get("restrict") == "2"
+        if cls in CLASSES and row.get("*Id", "").isdigit() and desc.get("SkillPage", "0") not in ("", "0"):
+            pinned = row["skill"] in PINNED_SKILLS or row.get("restrict") == "2" or cls == "war"
             skill_slots.append((int(row["*Id"]), int(desc["SkillPage"]), int(desc["SkillRow"]), int(desc["SkillColumn"]), pinned))
     skill_slots.sort()
 

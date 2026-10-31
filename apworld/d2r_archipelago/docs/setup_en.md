@@ -44,7 +44,8 @@ With the game closed, do one of these:
 
 A window shows the setup, then the game starts with the `Archipelago` mod and connects on its own. If
 something goes wrong, the window stays open and says what. Start a new Lord of Destruction character for
-each new seed.
+each new seed, or a Reign of the Warlock one for a seed with Warlock skills (Character Class warlock or
+Include Warlock).
 
 The setup:
 

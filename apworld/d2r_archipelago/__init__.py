@@ -126,6 +126,9 @@ class D2RWorld(World):
     item_name_groups = {SKILLS_GROUP: set().union(*skill_names_by_class.values()), **skill_names_by_class, "Act Keys": set(KEY_NAMES)}
 
     def generate_early(self) -> None:
+        # A Warlock seed is for a Reign of the Warlock character, so its skills belong in the pool.
+        if self.options.character_class == self.options.character_class.option_warlock:
+            self.options.include_warlock.value = True
         goal, goal_act = self.options.goal.value, self.options.goal_act.value
         # Acts in play, counting every act of the easier difficulties.
         self.act_count = goal * len(ACTS) + goal_act
@@ -594,8 +597,6 @@ class D2RWorld(World):
         With no class chosen, any skills from the pool. Useful Starting Skills then makes sure one of them deals
         damage or summons (see make_start_useful)."""
         own = self.class_name()
-        if own == "Warlock" and not self.options.include_warlock:
-            own = ""
         if not own:
             return self.make_start_useful(self.random.sample(candidates, count), candidates)
         mine = [skill_item_name(sid, name, cls) for sid, name, cls in SKILLS

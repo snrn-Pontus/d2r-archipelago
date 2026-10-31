@@ -328,6 +328,13 @@ Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fana
 - [ ] Druid and Assassin skills dealt elsewhere: their tooltips list the new synergy partners.
 - [ ] A Reign of the Warlock character: the other classes' trees are dealt the same way, and the Warlock's
       tree is unchanged.
+- [ ] Warlock seed (#172): `character_class: warlock`, `skill_tree_shuffle: true`, Include Warlock left off,
+      on a new Reign of the Warlock Warlock. The tree is the Warlock's own, with its arrows; the locked skills
+      show padlocks (HD and low-end); the starting skills are top-row ones (Summon Goatman or Miasma Bolt on the
+      starting weapon, never Hex Bane); a found skill loses its padlock and takes points. Setup says
+      "N locked skills show a padlock" with the Warlock's 30 counted.
+- [ ] Warlock seed in Codex mode (#172): `character_class: warlock`, Include Warlock off. The Codex starts
+      with Warlock skills, and Warlock skills arrive from the pool.
 
 ## 1. Tracking: status line and ap-missing
 
