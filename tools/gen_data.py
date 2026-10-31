@@ -299,14 +299,14 @@ def main() -> None:
 
     # Tree slots for the skill tree shuffle: (skill id, tree page, row, column, pinned). Skills without a
     # tree place stay out; the Druid's forms and the attacks that need one (restrict 2) are pinned to the
-    # Druid, and the Warlock's skills (Reign of the Warlock only) to the Warlock.
+    # Druid. The Warlock's (Reign of the Warlock only) are dealt only with Include Warlock.
     descs = {row["skilldesc"]: row for row in read_table(excel / "skilldesc.txt")}
     skill_slots = []
     for row in read_table(excel / "skills.txt"):
         cls = row.get("charclass", "")
         desc = descs.get(row.get("skilldesc", ""), {})
         if cls in CLASSES and row.get("*Id", "").isdigit() and desc.get("SkillPage", "0") not in ("", "0"):
-            pinned = row["skill"] in PINNED_SKILLS or row.get("restrict") == "2" or cls == "war"
+            pinned = row["skill"] in PINNED_SKILLS or row.get("restrict") == "2"
             skill_slots.append((int(row["*Id"]), int(desc["SkillPage"]), int(desc["SkillRow"]), int(desc["SkillColumn"]), pinned))
     skill_slots.sort()
 
