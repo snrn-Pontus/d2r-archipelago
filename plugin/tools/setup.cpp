@@ -468,9 +468,46 @@ auto PatchTable(HANDLE storage, const fs::path& excel, const std::string& bank, 
 	return true;
 }
 
+// The highest string id in any of the game's strings files. D2R shares the ids
+// across all of them, so a new string has to come after every one (item-names.json's
+// own highest id is taken by ui.json and item-modifiers.json strings).
+auto MaxStringId(HANDLE storage) -> int {
+	constexpr std::string_view Folder = "data\\local\\lng\\strings\\";
+	int maxId = 0;
+	CASC_FIND_DATA data {};
+	HANDLE search = CascFindFirstFile(storage, "*", &data, nullptr);
+	for (bool more = search != nullptr; more; more = CascFindNextFile(search, &data)) {
+		// Names look like "data:data\local\lng\strings\ui.json".
+		std::string_view name(data.szFileName);
+		name.remove_prefix(name.find(':') == std::string_view::npos ? 0 : name.find(':') + 1);
+		if (!name.starts_with(Folder) || !name.ends_with(".json")) {
+			continue;
+		}
+		std::string text;
+		if (!ReadCascFile(storage, std::string(name), text)) {
+			continue;
+		}
+		const bool bom = text.rfind("\xEF\xBB\xBF", 0) == 0;
+		const auto strings = nlohmann::json::parse(bom ? text.substr(3) : text, nullptr, false);
+		if (!strings.is_array()) {
+			continue;
+		}
+		for (const auto& entry : strings) {
+			// Only numeric ids: value() would throw on any other kind.
+			if (entry.is_object() && entry.contains("id") && entry["id"].is_number_integer()) {
+				maxId = std::max(maxId, entry["id"].get<int>());
+			}
+		}
+	}
+	if (search != nullptr) {
+		CascFindClose(search);
+	}
+	return maxId;
+}
+
 // Names the items this tool adds: D2R shows "An Evil Force" for a unique whose
 // name has no string. Appends an entry per name, the same in every language,
-// to the game's own item-names.json.
+// to the game's own item-names.json, with ids after every strings file's.
 auto AddItemNames(HANDLE storage, const fs::path& mpq, const std::vector<std::string>& names) -> bool {
 	constexpr const char* Path = "data\\local\\lng\\strings\\item-names.json";
 	std::string text;
@@ -482,7 +519,7 @@ auto AddItemNames(HANDLE storage, const fs::path& mpq, const std::vector<std::st
 	if (!strings.is_array() || strings.empty()) {
 		return false;
 	}
-	int maxId = 0;
+	int maxId = MaxStringId(storage);
 	std::set<std::string> keys;
 	for (const auto& entry : strings) {
 		maxId = std::max(maxId, entry.value("id", 0));
