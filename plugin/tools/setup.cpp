@@ -821,6 +821,9 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 					}
 				}
 				blocked = rnd::BlockClassSkills(t, settings.treeMode);
+				if (settings.teleportCharm) {
+					rnd::ClearSkillLevel(t, "Teleport");
+				}
 				locked = rnd::LockSkillIcons(t, skilldesc, iconFrames);
 			});
 			PatchTable(storage, excel, bank, "skilldesc.txt", [&](Table& t) { t = skilldesc; });
@@ -832,7 +835,13 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 				std::printf("  %s: %zu locked skills show a padlock until they unlock\n", label, locked.size());
 			}
 		} else {
-			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) { blocked = rnd::BlockClassSkills(t, settings.treeMode); });
+			PatchTable(storage, excel, bank, "skills.txt", [&](Table& t) {
+				blocked = rnd::BlockClassSkills(t, settings.treeMode);
+				// The charm's oskill asks Teleport's level requirement (+6 for another class).
+				if (settings.teleportCharm) {
+					rnd::ClearSkillLevel(t, "Teleport");
+				}
+			});
 		}
 		std::printf("  %s: locked %d class skills\n", label, blocked);
 		if (!settings.startClass.empty()) {

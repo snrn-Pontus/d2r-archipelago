@@ -74,6 +74,9 @@ struct Settings {
 	SkillTree skillTree;
 	// Tree mode: skills are unlocked in the tree, so the trees keep their level requirements.
 	bool     treeMode = false;
+	// The seed has a Teleport Charm: Teleport's level requirement goes to 0, since an
+	// oskill asks it (+6 for other classes) of the charm.
+	bool     teleportCharm = false;
 	// Tree mode: this class's starting weapon gives +1 to startSkill (none when negative).
 	// An empty class leaves charstats.txt alone.
 	std::string startClass;
@@ -102,6 +105,10 @@ auto StampChangesPrices(const std::string& stamp) -> bool;
 // keepLevels leaves the level requirements (tree mode, where you spend points).
 // Returns how many skills it locked.
 auto BlockClassSkills(Table& skills, bool keepLevels = false) -> int;
+
+// Sets one skill's level requirement to 0 (the Teleport Charm's Teleport in tree
+// mode, where the trees keep theirs). Returns whether the skill was found.
+auto ClearSkillLevel(Table& skills, std::string_view skill) -> bool;
 
 // A skill's icon after a tree shuffle: frame `fromCel` of its old class's icon
 // sheet belongs at frame `toCel` (and the pressed frames after each) of the new one.

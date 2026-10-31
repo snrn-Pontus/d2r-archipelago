@@ -2603,6 +2603,10 @@ void TestTableEdits() {
 	EXPECT(skills.Cell(0, 3).empty());
 	EXPECT(skills.Cell(1, 2) == "0" && skills.Cell(1, 3) == "Fire Bolt");
 	EXPECT(skills.Cell(2, 2) == "0" && skills.Cell(2, 3) == "Abyss" && skills.Cell(2, 4).empty());
+	auto tree = ap::Table::Parse("skill\tcharclass\treqlevel\treqskill1\treqskill2\treqskill3\r\nTeleport\tsor\t18\t\t\t\r\n");
+	EXPECT(ap::randomizer::BlockClassSkills(tree, true) == 1 && tree.Cell(0, 2) == "18");
+	EXPECT(ap::randomizer::ClearSkillLevel(tree, "Teleport") && tree.Cell(0, 2) == "0");
+	EXPECT(!ap::randomizer::ClearSkillLevel(tree, "Blizzard"));
 
 	const auto ids = ap::Table::Parse("skill\t*Id\r\nFire Bolt\t36\r\nBash\t126\r\n");
 	auto charstats = ap::Table::Parse("class\tStartSkill\r\nSorceress\tfire bolt\r\nBarbarian\t\r\n");
