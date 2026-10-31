@@ -2167,8 +2167,9 @@ struct ItemScan {
 };
 
 auto __cdecl CollectItems(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
+	// The shared stash belongs to every character, so another one's runes and gems there aren't finds (#186).
 	if (item == nullptr || item->structSize < D2RL::Items::ItemInfoRequiredSize || item->container == D2RL::Items::ItemContainer::Ground
-		|| item->container == D2RL::Items::ItemContainer::Trade) {
+		|| item->container == D2RL::Items::ItemContainer::Trade || item->container == D2RL::Items::ItemContainer::SharedStash) {
 		return D2RL::Inventory::IterationAction::Continue;
 	}
 	auto* scan = static_cast<ItemScan*>(userData);
@@ -2261,7 +2262,7 @@ void FindQuestItem(uint32_t code) {
 }
 
 // Quest items and collections anywhere on the character (worn, inventory,
-// belt, cube, stash, cursor).
+// belt, cube, personal stash, cursor), not the shared stash.
 void ScanItems(D2RL::PlayerHandle player) {
 	ItemScan scan;
 	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
