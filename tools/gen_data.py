@@ -230,12 +230,16 @@ def mode_users(row: dict[str, str]) -> set[str]:
 def skill_users(row: dict[str, str]) -> tuple[str, ...] | None:
     """The classes that can use a skill, or None for every class: claw skills need claws (Assassin
     only), two-weapon skills a class that dual wields, S1-S4 skills the animation mode (ANIM_MODES),
-    A1 sequences a class with sequences, form attacks a Druid form, and the engine's own class skills
-    (ENGINE_CLASS_SKILLS) their class."""
+    A1 sequences a class with sequences, SQ sequences and the engine's own class skills
+    (ENGINE_CLASS_SKILLS) their class, and form attacks a Druid form."""
     users = set(CLASSES)
     for cls, names in ENGINE_CLASS_SKILLS.items():
         if row["skill"] in names:
             users &= {cls}
+    # Channelled sequences of their own (SQ) only play for their class: Inferno, Arctic Blast and Mirrored
+    # Blades fail elsewhere (Mirrored Blades on a Sorceress, 2026-10-31); Cleave and Bind Demon are built the same.
+    if row.get("anim") == "SQ" and row.get("seqtrans") == "SQ":
+        users &= {row["charclass"]}
     if row.get("anim") == "SQ" and row.get("seqtrans") == "A1":
         users -= set(NO_SEQUENCE_CLASSES)
     if any(row.get(column) in ("h2h", "h2h2") for column in ("itypea1", "itypea2", "itypea3", "itypeb1", "itypeb2", "itypeb3")):

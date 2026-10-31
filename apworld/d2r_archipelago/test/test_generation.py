@@ -979,9 +979,11 @@ class TestTreeShuffleUsable(D2RTestBase):
         slot_class = {sid: cls for sid, _name, cls in SKILLS}
         id_of = {f"{name} ({CLASSES[cls]})": sid for sid, name, cls in SKILLS}
         pinned = {id_of[f"{name} ({owner})"] for owner, names in ENGINE_CLASS_SKILLS.items() for name in names}
+        # The SQ sequences (#176).
+        pinned |= {id_of[name] for name in ("Mirrored Blades (Warlock)", "Cleave (Warlock)", "Bind Demon (Warlock)")}
         charge = id_of["Charge (Paladin)"]
         for seed in range(200):
-            dealt = deal_skill_trees(random.Random(seed))
+            dealt = deal_skill_trees(random.Random(seed), seed % 2 == 1)
             for skill in pinned & set(dealt):
                 self.assertEqual(slot_class[dealt[skill]], slot_class[skill], f"seed {seed}: {skill}")
             if charge in dealt:

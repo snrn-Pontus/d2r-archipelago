@@ -297,6 +297,9 @@ SKILL_USERS = {
     274: ('ass',),
     275: ('ass',),
     276: ('ass',),
+    382: ('war',),
+    391: ('war',),
+    392: ('war',),
 }
 
 # Skill id -> role: damage, summon, curse, aura, buff, passive or utility.
