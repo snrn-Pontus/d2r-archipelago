@@ -2,6 +2,13 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.15.1 - 2026-10-31
+
+Works with seeds from 0.15.0; no need to rerun `d2r-ap-setup`.
+
+- Warlocks can get the Reign of the Warlock uniques (the grimoires, Dreadfang, Sling, Entropy Locket and the
+  rest) and the Bane's Garments and Horazon's Splendor sets as rewards (#180)
+
 ## 0.15.0 - 2026-10-31
 
 Make a new seed and rerun `d2r-ap-setup`.
