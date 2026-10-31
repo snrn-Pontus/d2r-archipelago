@@ -2,6 +2,14 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.15.0 - 2026-10-31
+
+Make a new seed and rerun `d2r-ap-setup`.
+
+- New option Teleport Charm: a unique small charm with +1 to Teleport that any class can use from its
+  inventory (from level 6 for classes other than the Sorceress). Start with it, find it in one of your first
+  checks, or anywhere in the pool. If you lose or sell it, you get a new one (#178)
+
 ## 0.14.5 - 2026-10-31
 
 Works with seeds from 0.14.0; the fix applies to new seeds.
