@@ -2643,6 +2643,10 @@ void TestTableEdits() {
 	EXPECT(uniques.Rows().size() == 2);
 	EXPECT(uniques.Cell(1, 0) == "Archipelago Codex" && uniques.Cell(1, 1) == "1" && uniques.Cell(1, 3) == "0" && uniques.Cell(1, 5) == "1");
 	EXPECT(uniques.Cell(1, 6) == "cm1" && uniques.Rows()[1].size() == 11);
+	ap::randomizer::AddTeleportCharmUnique(uniques, 2);
+	ap::randomizer::AddTeleportCharmUnique(uniques, 2);
+	EXPECT(uniques.Rows().size() == 3);
+	EXPECT(uniques.Cell(2, 0) == "Archipelago Teleport Charm" && uniques.Cell(2, 1) == "2" && uniques.Cell(2, 6) == "cm1");
 
 	ap::randomizer::Settings settings;
 	EXPECT(!settings.Any());

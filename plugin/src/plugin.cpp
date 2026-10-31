@@ -1935,6 +1935,13 @@ auto IsEmblemOnCharacter(const D2RL::Items::ItemInfo* item) -> bool {
 	    && item->container != D2RL::Items::ItemContainer::SharedStash && item->container != D2RL::Items::ItemContainer::Ground;
 }
 
+// The Teleport Charm's seed: its marker and random bits.
+constexpr uint32_t TeleportCharmMarker = 0xB9000000U;
+
+auto IsTeleportCharm(const D2RL::Items::ItemInfo& item) -> bool {
+	return (item.itemSeed & CodexMarkerMask) == TeleportCharmMarker || (item.generationSeed & CodexMarkerMask) == TeleportCharmMarker;
+}
+
 auto DescribeItem(const D2RL::Items::ItemInfo& item) -> std::string {
 	char text[200] {};
 	std::snprintf(text, sizeof(text), "container=%u quality=%u itemSeed=%08X generationSeed=%08X prefix=%u suffix=%u", static_cast<uint32_t>(item.container),
@@ -2172,7 +2179,7 @@ auto __cdecl CollectItems(const D2RL::PluginContext*, const D2RL::Items::ItemInf
 		if (item->quality == D2RL::Items::Quality::Set) {
 			scan->setRecords.insert(item->qualityRecordId);
 			scan->setSeeds.insert(seed);
-		} else if (item->quality == D2RL::Items::Quality::Unique && CodexSeedOf(*item) == 0) {
+		} else if (item->quality == D2RL::Items::Quality::Unique && CodexSeedOf(*item) == 0 && !IsTeleportCharm(*item)) {
 			scan->uniqueRecords.insert(item->qualityRecordId);
 			scan->uniqueSeeds.insert(seed);
 		}
@@ -2727,6 +2734,64 @@ void GiveEmblem(D2RL::PlayerHandle player) {
 	}
 }
 
+Clock::time_point gTeleportCharmRetryAt;
+
+auto __cdecl FindTeleportCharm(const D2RL::PluginContext*, const D2RL::Items::ItemInfo* item, void* userData) noexcept -> D2RL::Inventory::IterationAction {
+	if (item != nullptr && item->structSize >= D2RL::Items::ItemInfoRequiredSize && IsTeleportCharm(*item)) {
+		*static_cast<bool*>(userData) = true;
+		return D2RL::Inventory::IterationAction::Stop;
+	}
+	return D2RL::Inventory::IterationAction::Continue;
+}
+
+// The Teleport Charm item: once it's received, the character keeps one unique
+// charm with +1 to Teleport (oskill), made again if it's gone. One anywhere
+// (stash, cube, shared stash, ground) counts, so it's never doubled.
+void GiveTeleportCharm(D2RL::PlayerHandle player, const std::vector<ap::NetworkItem>& items, const ap::Config& config) {
+	if (std::ranges::none_of(items, [](const ap::NetworkItem& item) { return item.item == ap::ids::TeleportCharmItem; })) {
+		return;
+	}
+	{
+		std::lock_guard lock(gMutex);
+		if (Clock::now() < gTeleportCharmRetryAt) {
+			return;
+		}
+	}
+	bool found = false;
+	const D2RL::Inventory::ItemFilter filter { .structSize = D2RL::Inventory::ItemFilterSize, .containerMask = D2RL::Items::AllItemContainers };
+	if (gInventory->forEachInventoryItem(gContext, player, &filter, FindTeleportCharm, &found) != D2RL::Inventory::Result::Success || found) {
+		return;
+	}
+	auto spec = MakeSpec(ap::loot::CodeFromText("cm1"), D2RL::Items::Quality::Unique, D2RL::Items::ItemContainer::Inventory);
+	static std::mt19937 seeds(static_cast<uint32_t>(Clock::now().time_since_epoch().count()));
+	spec.flags = D2RL::Items::ItemCreateFlagBit(D2RL::Items::ItemCreateFlag::AllowDuplicateUnique);
+	spec.seedMode = D2RL::Items::SeedMode::Deterministic;
+	spec.generationSeed = TeleportCharmMarker | (seeds() & ~CodexMarkerMask);
+	spec.itemSeed = spec.generationSeed;
+	// oskill: Teleport for any class (D2 asks level 6 of a class that isn't the Sorceress).
+	const auto teleport = D2RL::Items::MakeExactProperty(config.oskillProperty, 1, static_cast<int32_t>(ap::randomizer::TeleportSkill));
+	spec.propertyCount = 1;
+	spec.properties = &teleport;
+	auto result = D2RL::Items::Result::NotFound;
+	// RotW's row first, then Classic/LoD's: only the character's own bank takes.
+	for (const uint32_t record : UniqueRecords(ap::randomizer::TeleportCharmName)) {
+		spec.qualityRecordId = record;
+		D2RL::ItemHandle item = D2RL::InvalidItemHandle;
+		result = gItems->createItem(gContext, player, &spec, &item);
+		if (result == D2RL::Items::Result::Success) {
+			break;
+		}
+	}
+	if (result != D2RL::Items::Result::Success) {
+		Log("Archipelago: couldn't make the Teleport Charm (result " + std::to_string(static_cast<uint32_t>(result))
+			+ "); make room in your inventory, or rerun d2r-ap-setup if the mod predates it.");
+		std::lock_guard lock(gMutex);
+		gTeleportCharmRetryAt = Clock::now() + std::chrono::seconds(60);
+		return;
+	}
+	Feed("Archipelago: your Teleport Charm is in your inventory; keep it there to teleport.");
+}
+
 // Tree mode: unlocks each received skill in the tree with D2RCore's skadd (its
 // first point; the tree's self-prerequisite lock then lets you spend more), and
 // hands out extra copies and Skill Points as unspent skill points.
@@ -3157,6 +3222,7 @@ void __cdecl GameWork(const D2RL::PluginContext*, void*) noexcept {
 	if (slots.randomizer.treeMode) {
 		GiveEmblem(player);
 	}
+	GiveTeleportCharm(player, items, config);
 	{
 		auto records = UniqueRecords("Archipelago Codex");
 		std::lock_guard lock(gMutex);
@@ -4124,7 +4190,7 @@ void AnnounceItems() {
 			const bool trap = ap::ids::IsLootItem(item.item)
 			               && (loot == Loot::JunkBackpack || (loot >= Loot::AmbushTrap && loot <= Loot::MercenaryDownTrap));
 			const bool important = ap::ids::IsKeyItem(item.item) || ap::ids::IsLockItem(item.item) || ap::ids::IsSkillItem(item.item)
-			                    || item.item == ap::ids::EmpowermentItem || item.item == ap::ids::SkillPointItem;
+			                    || item.item == ap::ids::EmpowermentItem || item.item == ap::ids::SkillPointItem || item.item == ap::ids::TeleportCharmItem;
 			std::string text = "Received: " + gClient->ItemName(item.item, me);
 			if (item.player > 0 && item.player != me) {
 				text += " from " + gClient->PlayerName(item.player);

@@ -153,6 +153,40 @@ class TestNoWarlockByDefault(D2RTestBase):
             self.assertNotIn(item.name, warlock)
 
 
+class TestNoTeleportCharmByDefault(D2RTestBase):
+    def test_no_charm(self) -> None:
+        names = [item.name for item in [*self.multiworld.itempool, *self.multiworld.precollected_items[self.player]]]
+        self.assertNotIn("Teleport Charm", names)
+
+
+class TestTeleportCharmAtStart(D2RTestBase):
+    options = {"teleport_charm": "start"}
+
+    def test_charm_is_a_starting_item(self) -> None:
+        self.assertIn("Teleport Charm", [item.name for item in self.multiworld.precollected_items[self.player]])
+        self.assertNotIn("Teleport Charm", [item.name for item in self.multiworld.itempool])
+
+
+class TestTeleportCharmEarly(D2RTestBase):
+    options = {"teleport_charm": "early"}
+
+    def test_charm_is_in_an_early_check_of_your_own(self) -> None:
+        from BaseClasses import ItemClassification
+        charm = [item for item in self.multiworld.itempool if item.name == "Teleport Charm"]
+        self.assertEqual(len(charm), 1)
+        self.assertEqual(charm[0].classification, ItemClassification.useful)
+        self.assertEqual(self.multiworld.local_early_items[self.player].get("Teleport Charm"), 1)
+
+
+class TestTeleportCharmAnywhere(D2RTestBase):
+    options = {"teleport_charm": "anywhere"}
+
+    def test_charm_is_in_the_pool(self) -> None:
+        self.assertEqual([item.name for item in self.multiworld.itempool].count("Teleport Charm"), 1)
+        self.assertNotIn("Teleport Charm", self.multiworld.local_early_items[self.player])
+        self.assertEqual(len(self.multiworld.itempool), len(self.multiworld.get_unfilled_locations(self.player)))
+
+
 class TestSingleClass(D2RTestBase):
     options = {"skill_classes": ["Warlock"], "include_warlock": True, "skills_per_act": 0, "skill_pool_size": 30}
 

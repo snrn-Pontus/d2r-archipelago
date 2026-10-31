@@ -771,6 +771,14 @@ Defaults (`act_keys` and `enforce_act_keys` on).
 
 Any seed. Send each with `/send`, standing outside town for the traps.
 
+- [ ] Teleport Charm (#178), `teleport_charm: start`, rerun `d2r-ap-setup`: on joining, the chat says "your
+      Teleport Charm is in your inventory" and a unique small charm "Archipelago Teleport Charm" with +1 to
+      Teleport is there. On a Barbarian, Teleport shows on the skill list from level 6 and works outside town.
+      It doesn't send "Find 1 Unique". Drop it and leave the game: no new one while it's on the ground; sell it
+      and you get a new one within seconds. A Sorceress gets it at level 1. Try a Lord of Destruction character
+      too.
+- [ ] `teleport_charm: early`: the charm is in one of the first few checks (Den of Evil, Blood Moor areas).
+
 - [ ] Switching slots (#66): connect to another player's slot of the same seed by mistake, get an item or
       two, then `ap-connect` to your own slot that has received nothing yet. Nothing from the other slot
       arrives, the Codex and locks reset to your own slot, and the first item `/send`-ed to your slot after
