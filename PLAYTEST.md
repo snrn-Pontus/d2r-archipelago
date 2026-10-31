@@ -792,6 +792,9 @@ Any seed. Send each with `/send`, standing outside town for the traps.
 - [x] Teleport Charm level (#182), tree mode (Skill Tree Shuffle or `skill_mode: tree`), rerun `d2r-ap-setup`:
       the charm asks level 6 of a non-Sorceress and works from 6 (Warlock, 0.15.2, 2026-10-31). Where Teleport
       sits in a tree, it takes points from level 1 once unlocked. In Codex mode it was 6 already.
+- [ ] Shared stash (#186): with runes or gems another character left in the shared stash, a new character
+      joins without sending their Find checks (2026-10-31 a new Sorceress sent 14 that way). A rune this
+      character picks up still sends its check, and moving it to the shared stash afterwards changes nothing.
 - [ ] Item names (#184), rerun `d2r-ap-setup`: the Teleport Charm is named "Archipelago Teleport Charm", not
       "An Evil Force" (seen 2026-10-31: its string id was another strings file's). Also check the Codex charm
       ("Archipelago Codex"), a shop Parcel, a Scroll of Prophecy, the Emblem and the Writ of Absolution, and
