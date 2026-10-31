@@ -1804,6 +1804,15 @@ void TestLootFitsClass() {
 		}
 	}
 	EXPECT(sawSorceressItem);
+	// A Warlock (7) also gets the Reign of the Warlock uniques and sets (#180).
+	bool sawWarlockUnique = false, sawWarlockSet = false;
+	for (int i = 0; i < 2000 && !(sawWarlockUnique && sawWarlockSet); ++i) {
+		const auto* unique = FindRecord(ap::data::Uniques, ap::loot::Roll(ap::loot::Loot::RandomUnique, 60, random, 7).record);
+		const auto* set = FindRecord(ap::data::SetItems, ap::loot::Roll(ap::loot::Loot::SetItem, 10, random, 7).record);
+		sawWarlockUnique = sawWarlockUnique || (unique != nullptr && unique->cls == 7);
+		sawWarlockSet = sawWarlockSet || (set != nullptr && std::string_view(set->name).starts_with("Bane's"));
+	}
+	EXPECT(sawWarlockUnique && sawWarlockSet);
 	// With the class unknown, class items still turn up.
 	bool sawClassItem = false;
 	for (int i = 0; i < 500 && !sawClassItem; ++i) {

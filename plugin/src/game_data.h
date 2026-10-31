@@ -972,6 +972,18 @@ inline constexpr QualityItem Uniques[] = {
 	{ 398, "jew", 85, 49, Jewelry, -1, "Rainbow Facet" },
 	{ 399, "jew", 85, 49, Jewelry, -1, "Rainbow Facet" },
 	{ 400, "jew", 85, 49, Jewelry, -1, "Rainbow Facet" },
+	{ 409, "waf", 85, 80, Armor, 7, "Ars Al'Diablolos" },
+	{ 410, "wae", 85, 73, Armor, 7, "Ars Tor'Baalos" },
+	{ 411, "wac", 85, 78, Armor, 7, "Ars Dul'Mephistos" },
+	{ 412, "wa6", 58, 52, Armor, 7, "Measured Wrath" },
+	{ 413, "72h", 69, 61, Weapon, 7, "Dreadfang" },
+	{ 414, "utb", 73, 67, Armor, 7, "Wraithstep" },
+	{ 415, "7di", 73, 67, Weapon, 7, "Bloodpact Shard" },
+	{ 416, "rin", 58, 50, Jewelry, 7, "Sling" },
+	{ 417, "rin", 58, 50, Jewelry, 7, "Opalvein" },
+	{ 418, "amu", 60, 54, Jewelry, 7, "Entropy Locket" },
+	{ 419, "utc", 79, 71, Armor, 7, "Gheed's Wager" },
+	{ 420, "xsk", 55, 50, Armor, 7, "Unique Warlock Helm" },
 };
 
 inline constexpr QualityItem SetItems[] = {
@@ -1098,6 +1110,14 @@ inline constexpr QualityItem SetItems[] = {
 	{ 125, "vbt", 20, 20, Armor, -1, "McAuley's Riprap" },
 	{ 126, "vgl", 20, 28, Armor, -1, "McAuley's Taboo" },
 	{ 127, "bwn", 20, 25, Weapon, -1, "McAuley's Superstition" },
+	{ 133, "kri", 7, 8, Weapon, 7, "Bane's Oathmaker" },
+	{ 134, "hla", 7, 8, Armor, 7, "Bane's Wraithskin" },
+	{ 135, "vbl", 7, 8, Armor, 7, "Bane's Authority" },
+	{ 136, "usk", 40, 62, Armor, 7, "Horazon's Countenance" },
+	{ 137, "xpl", 40, 55, Armor, 7, "Horazon's Dominion" },
+	{ 138, "xlg", 40, 48, Armor, 7, "Horazon's Hold" },
+	{ 139, "utb", 40, 67, Armor, 7, "Horazon's Legacy" },
+	{ 140, "wad", 40, 57, Armor, 7, "Horazon's Secrets" },
 };
 
 inline constexpr Base SocketBases[] = {
