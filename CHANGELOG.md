@@ -2,6 +2,13 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.15.2 - 2026-10-31
+
+Works with seeds from 0.15.0. For the fix, make a new seed and rerun `d2r-ap-setup`.
+
+- The Teleport Charm needs level 6 (a Sorceress none) in tree mode too, instead of 24. Teleport itself
+  can then take points from level 1 once it's unlocked in your tree (#182)
+
 ## 0.15.1 - 2026-10-31
 
 Works with seeds from 0.15.0; no need to rerun `d2r-ap-setup`.
