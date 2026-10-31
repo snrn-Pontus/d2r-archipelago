@@ -493,8 +493,9 @@ auto MaxStringId(HANDLE storage) -> int {
 			continue;
 		}
 		for (const auto& entry : strings) {
-			if (entry.is_object()) {
-				maxId = std::max(maxId, entry.value("id", 0));
+			// Only numeric ids: value() would throw on any other kind.
+			if (entry.is_object() && entry.contains("id") && entry["id"].is_number_integer()) {
+				maxId = std::max(maxId, entry["id"].get<int>());
 			}
 		}
 	}
