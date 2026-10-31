@@ -605,12 +605,13 @@ struct TreeArt {
 constexpr TreeArt TreeArts[] = { { "data/hd/global/ui/spells/skill_trees/", 0.063, 0.06 },
 	{ "data/hd/global/ui/controller/panel/spells/v2/", 0.033, 0.035 } };
 
-auto WriteSkillTreeArt(HANDLE storage, const fs::path& mpq) -> int {
+auto WriteSkillTreeArt(HANDLE storage, const fs::path& mpq, const std::vector<rnd::IconMove>& icons) -> int {
+	// Without Include Warlock the shuffle leaves the Warlock's tree as it is, arrows and all.
+	const bool warlock = std::ranges::any_of(icons, [](const rnd::IconMove& icon) { return icon.fromClass == "war" || icon.toClass == "war"; });
 	int written = 0;
 	for (const auto& art : TreeArts) {
 		for (const auto& [cls, sheet] : IconSheets) {
-			// The shuffle leaves the Warlock's tree as it is.
-			if (cls == "war") {
+			if (cls == "war" && !warlock) {
 				continue;
 			}
 			// "barbarian/baskillicon" -> "baskilltree"
@@ -755,7 +756,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 
 	const rnd::Settings settings = seed != nullptr ? seed->settings : rnd::Settings {};
 	std::vector<std::string> recipes;
-	// Both banks shuffle the trees alike, so either one's icon moves will do.
+	// The tree shuffle's icon moves (RotW's, which has every class); the icon sheets serve both banks.
 	std::vector<rnd::IconMove> icons;
 	// Tree mode: each class's icon sheet length, where its locked icons start.
 	const auto iconFrames = settings.treeMode ? IconFrames(storage) : std::map<std::string, int> {};
@@ -814,7 +815,10 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 				if (!settings.skillTree.empty()) {
 					auto shuffle = rnd::ApplySkillTrees(t, skilldesc, settings.skillTree);
 					moved = shuffle.moved;
-					icons = std::move(shuffle.icons);
+					// RotW's moves: Classic/LoD's Warlock skills have no tree places, so it misses theirs.
+					if (bank.empty()) {
+						icons = std::move(shuffle.icons);
+					}
 				}
 				blocked = rnd::BlockClassSkills(t, settings.treeMode);
 				locked = rnd::LockSkillIcons(t, skilldesc, iconFrames);
@@ -950,7 +954,7 @@ int WriteMod(HANDLE storage, const Options& options, const Seed* seed) {
 		std::printf("  %d superunique monsters given their HD models\n", AddSuperUniqueModels(storage, mpq, superUniqueCopies));
 	}
 	if (!icons.empty()) {
-		const int trees = WriteSkillTreeArt(storage, mpq);
+		const int trees = WriteSkillTreeArt(storage, mpq, icons);
 		std::printf("  %d skill tree panels redrawn without arrows", trees);
 		std::puts("");
 	}

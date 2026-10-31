@@ -787,19 +787,28 @@ class TestTreeShuffleTurnsOnTreeMode(D2RTestBase):
 class TestWarlockTreeShuffle(D2RTestBase):
     options = {"character_class": "warlock", "skill_tree_shuffle": True, "starting_skills": 2}
 
-    def test_warlock_keeps_its_tree_and_starts_on_the_top_row(self) -> None:
-        from ..data import SKILL_SLOTS, SKILLS, START_ATTACK_SKILLS
+    def test_warlock_tree_is_dealt(self) -> None:
+        from ..data import SKILLS
         self.assertTrue(self.world.options.include_warlock)
-        warlock = {skill_id for skill_id, _name, cls in SKILLS if cls == "war"}
-        self.assertEqual(sorted(self.world.tree_skills()), sorted(self.world.item_name_groups["Warlock"]))
-        self.assertFalse(warlock & set(self.world.skill_tree))
-        top = {f"{name} (Warlock)" for sid, name, cls in SKILLS
-               if cls == "war" and any(slot == sid and row == 1 for slot, _page, row, _column, _pinned in SKILL_SLOTS)}
-        self.assertEqual(len(self.world.starting), 2)
-        self.assertTrue(set(self.world.starting) <= top)
-        start = self.world.fill_slot_data()["randomizer"]["start_skill"]
-        self.assertEqual(start["class"], "Warlock")
-        self.assertIn(start["skill"], START_ATTACK_SKILLS & warlock)
+        slot_class = {skill_id: cls for skill_id, _name, cls in SKILLS}
+        dealt = self.world.skill_tree
+        # Warlock skills go to other trees, and other classes' skills into the Warlock's.
+        self.assertTrue(any(slot_class[skill] == "war" and slot_class[slot] != "war" for skill, slot in dealt.items()))
+        self.assertTrue(any(slot_class[skill] != "war" and slot_class[slot] == "war" for skill, slot in dealt.items()))
+        tree = self.world.tree_skills()
+        self.assertEqual(len(tree), 30)
+        self.assertEqual(sorted(self.world.skill_pool + self.world.starting), sorted(tree))
+        self.assertEqual(self.world.fill_slot_data()["randomizer"]["start_skill"]["class"], "Warlock")
+
+
+class TestWarlockStaysOutOfTheShuffle(D2RTestBase):
+    options = {"character_class": "sorceress", "skill_tree_shuffle": True}
+
+    def test_no_warlock_in_the_deal(self) -> None:
+        from ..data import SKILLS
+        slot_class = {skill_id: cls for skill_id, _name, cls in SKILLS}
+        self.assertFalse(self.world.options.include_warlock)
+        self.assertTrue(all("war" not in (slot_class[skill], slot_class[slot]) for skill, slot in self.world.skill_tree.items()))
 
 
 class TestWarlockTurnsOnIncludeWarlock(D2RTestBase):
@@ -942,9 +951,10 @@ class TestTreeShuffleUsable(D2RTestBase):
         import random
         slot_class = {sid: cls for sid, _name, cls in SKILLS}
         for seed in range(50):
-            dealt = deal_skill_trees(random.Random(seed))
-            for skill, slot in dealt.items():
-                self.assertTrue(can_use(skill, slot_class[slot]), f"seed {seed}: {skill} in {slot_class[slot]}'s tree")
+            for warlock in (False, True):
+                dealt = deal_skill_trees(random.Random(seed), warlock)
+                for skill, slot in dealt.items():
+                    self.assertTrue(can_use(skill, slot_class[slot]), f"seed {seed}: {skill} in {slot_class[slot]}'s tree")
 
     def test_s1_skills_stay_with_classes_that_have_s1(self) -> None:
         from .. import deal_skill_trees

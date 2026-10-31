@@ -200,7 +200,8 @@ class SkillClasses(OptionSet):
 class IncludeWarlock(Toggle):
     """Put Warlock skills in the pool. Only for characters created in the Reign of the Warlock expansion:
     Lord of Destruction characters can't use them (the plugin leaves them off their Codex).
-    Character Class warlock turns this on."""
+    With Skill Tree Shuffle, the Warlock's tree is dealt with the others. Character Class warlock turns
+    this on."""
     display_name = "Include Warlock"
 
 
@@ -984,8 +985,9 @@ class BetterMagic(Range):
 
 class SkillTreeShuffle(Toggle):
     """Every class's skill tree is dealt skills from all classes, each in a row of its own level, with
-    synergies pointing at skills in the same tree. The Druid's shapeshifts stay with the Druid, and the
-    Warlock's tree stays as it is. Turns on Skill Mode tree: your tree's skills are the ones you find."""
+    synergies pointing at skills in the same tree. The Druid's shapeshifts stay with the Druid. The
+    Warlock's tree joins with Include Warlock (a Reign of the Warlock character); otherwise it stays as it
+    is. Turns on Skill Mode tree: your tree's skills are the ones you find."""
     display_name = "Skill Tree Shuffle"
 
 

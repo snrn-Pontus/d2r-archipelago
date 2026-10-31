@@ -326,13 +326,27 @@ Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fana
 - [ ] Low graphics quality (the low-end sprites): icons and the arrow-free panel.
 - [ ] Legacy graphics (Alt): the old icon files aren't rebuilt, so note what shows.
 - [ ] Druid and Assassin skills dealt elsewhere: their tooltips list the new synergy partners.
-- [ ] A Reign of the Warlock character: the other classes' trees are dealt the same way, and the Warlock's
-      tree is unchanged.
-- [ ] Warlock seed (#172): `character_class: warlock`, `skill_tree_shuffle: true`, Include Warlock left off,
-      on a new Reign of the Warlock Warlock. The tree is the Warlock's own, with its arrows; the locked skills
-      show padlocks (HD and low-end); the starting skills are top-row ones (Summon Goatman or Miasma Bolt on the
-      starting weapon, never Hex Bane); a found skill loses its padlock and takes points. Setup says
-      "N locked skills show a padlock" with the Warlock's 30 counted.
+- [ ] A Reign of the Warlock character, Include Warlock off: the other classes' trees are dealt the same way,
+      and the Warlock's tree is unchanged.
+- [ ] Warlock seed (#172): `character_class: warlock`, `skill_mode: tree` (no shuffle), Include Warlock left
+      off, on a new Reign of the Warlock Warlock. The tree is the Warlock's own, with its arrows; the locked
+      skills show padlocks (HD and low-end); the starting skills are top-row ones (Summon Goatman or Miasma
+      Bolt on the starting weapon, never Hex Bane); a found skill loses its padlock and takes points. Setup
+      says "N locked skills show a padlock" with the Warlock's 30 counted.
+- [ ] Warlock in the shuffle (#174): `character_class: warlock`, `skill_tree_shuffle: true`, on a new
+      Warlock (setup tested 2026-10-31: 174 moves in RotW, 32 panels without arrows, the Warlock's icon sheet
+      rebuilt; Teeth came out as the starting skill). In game: the Warlock's tree holds other classes'
+      skills with the right icons and padlocks and no arrows, and its starting weapon skill works.
+- [ ] Other classes' skills on a Warlock (#174): cast a few that came from each class (a bow or javelin
+      skill, a curse, a summon, a warcry, a martial art if one landed). Do they animate and hit? A skill
+      that fails is engine-tied to its class: add it to `ENGINE_CLASS_SKILLS` in `tools/gen_data.py`.
+- [ ] Warlock skills on another class (#174): `character_class: sorceress` (or any), `include_warlock: true`,
+      `skill_tree_shuffle: true`, on a new Reign of the Warlock Sorceress. Cast the Warlock skills in her tree,
+      especially the summons (Goatman, Tainted, Defiler, Bind Demon), Levitate, Blade Warp, Mirrored Blades and
+      the hexes. Any that fail go in `ENGINE_CLASS_SKILLS` under `war`.
+- [ ] A Lord of Destruction character on an Include Warlock shuffle seed isn't supported (its tables have
+      no tree places for the Warlock's skills, so some slots overlap). Note what happens, in case a warning
+      is needed.
 - [ ] Warlock seed in Codex mode (#172): `character_class: warlock`, Include Warlock off. The Codex starts
       with Warlock skills, and Warlock skills arrive from the pool.
 

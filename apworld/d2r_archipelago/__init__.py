@@ -47,14 +47,15 @@ def can_use(skill_id: int, cls: str) -> bool:
     return cls in SKILL_USERS.get(skill_id, (cls,))
 
 
-def deal_skill_trees(random) -> dict[int, int]:
+def deal_skill_trees(random, warlock: bool = False) -> dict[int, int]:
     """The skill tree shuffle: every unpinned class skill takes the tree slot of a random skill from the
-    same row (so the same level) of any class whose tree it can be used in. Returns skill id -> id of the
+    same row (so the same level) of any class whose tree it can be used in. The Warlock's skills and slots
+    join only with `warlock` (Lord of Destruction characters have none). Returns skill id -> id of the
     skill whose slot it takes."""
     slot_class = {skill_id: cls for skill_id, _name, cls in SKILLS}
     rows: dict[int, list[int]] = {}
     for skill_id, _page, row, _column, pinned in SKILL_SLOTS:
-        if not pinned:
+        if not pinned and (warlock or slot_class[skill_id] != "war"):
             rows.setdefault(row, []).append(skill_id)
     dealt = {}
     for row in sorted(rows):
@@ -157,7 +158,8 @@ class D2RWorld(World):
             self.class_choice = self.random.choice([value for value in range(1, len(CLASSES) + 1)
                                                     if value != self.options.character_class.option_warlock
                                                     or self.options.include_warlock])
-        self.skill_tree = deal_skill_trees(self.random) if self.options.skill_tree_shuffle else {}
+        self.skill_tree = (deal_skill_trees(self.random, bool(self.options.include_warlock))
+                           if self.options.skill_tree_shuffle else {})
         # Side Area Checks: each difficulty picks its own side areas, from the acts in play.
         self.side_areas: dict[int, list[tuple[int, int, str]]] = {}
         for difficulty in range(goal + 1):
