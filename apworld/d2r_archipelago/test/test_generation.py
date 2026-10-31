@@ -784,6 +784,34 @@ class TestTreeShuffleTurnsOnTreeMode(D2RTestBase):
         self.assertEqual(data["randomizer"]["start_skill"]["class"], "Necromancer")
 
 
+class TestWarlockTreeShuffle(D2RTestBase):
+    options = {"character_class": "warlock", "skill_tree_shuffle": True, "starting_skills": 2}
+
+    def test_warlock_keeps_its_tree_and_starts_on_the_top_row(self) -> None:
+        from ..data import SKILL_SLOTS, SKILLS, START_ATTACK_SKILLS
+        self.assertTrue(self.world.options.include_warlock)
+        warlock = {skill_id for skill_id, _name, cls in SKILLS if cls == "war"}
+        self.assertEqual(sorted(self.world.tree_skills()), sorted(self.world.item_name_groups["Warlock"]))
+        self.assertFalse(warlock & set(self.world.skill_tree))
+        top = {f"{name} (Warlock)" for sid, name, cls in SKILLS
+               if cls == "war" and any(slot == sid and row == 1 for slot, _page, row, _column, _pinned in SKILL_SLOTS)}
+        self.assertEqual(len(self.world.starting), 2)
+        self.assertTrue(set(self.world.starting) <= top)
+        start = self.world.fill_slot_data()["randomizer"]["start_skill"]
+        self.assertEqual(start["class"], "Warlock")
+        self.assertIn(start["skill"], START_ATTACK_SKILLS & warlock)
+
+
+class TestWarlockTurnsOnIncludeWarlock(D2RTestBase):
+    options = {"character_class": "warlock", "starting_skills": 2}
+
+    def test_warlock_starts_with_warlock_skills(self) -> None:
+        warlock = self.world.item_name_groups["Warlock"]
+        self.assertTrue(self.world.options.include_warlock)
+        self.assertTrue(all(name in warlock for name in self.world.starting))
+        self.assertTrue(any(name in warlock for name in self.world.skill_pool))
+
+
 class TestUnusableSkills(D2RTestBase):
     options = {"character_class": "sorceress", "skill_focus": "any_skills", "skill_pool_size": 240, "skill_copies": 1}
 

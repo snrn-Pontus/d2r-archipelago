@@ -510,7 +510,7 @@ auto AddItemNames(HANDLE storage, const fs::path& mpq, const std::vector<std::st
 const std::map<std::string, std::string> IconSheets = {
 	{ "ama", "amazon/amskillicon" }, { "sor", "sorceress/soskillicon" }, { "nec", "necromancer/neskillicon" },
 	{ "pal", "paladin/paskillicon" }, { "bar", "barbarian/baskillicon" }, { "dru", "druid/drskillicon" },
-	{ "ass", "assassin/asskillicon" },
+	{ "ass", "assassin/asskillicon" }, { "war", "warlock/waskillicon" },
 };
 
 // Each class's icon sheet length, for the classes whose HD and low-end sheets
@@ -609,6 +609,10 @@ auto WriteSkillTreeArt(HANDLE storage, const fs::path& mpq) -> int {
 	int written = 0;
 	for (const auto& art : TreeArts) {
 		for (const auto& [cls, sheet] : IconSheets) {
+			// The shuffle leaves the Warlock's tree as it is.
+			if (cls == "war") {
+				continue;
+			}
 			// "barbarian/baskillicon" -> "baskilltree"
 			const std::string name = sheet.substr(sheet.find('/') + 1, 2) + "skilltree";
 			for (const char* suffix : { ".sprite", ".lowend.sprite" }) {

@@ -199,7 +199,8 @@ class SkillClasses(OptionSet):
 
 class IncludeWarlock(Toggle):
     """Put Warlock skills in the pool. Only for characters created in the Reign of the Warlock expansion:
-    Lord of Destruction characters can't use them (the plugin leaves them off their Codex)."""
+    Lord of Destruction characters can't use them (the plugin leaves them off their Codex).
+    Character Class warlock turns this on."""
     display_name = "Include Warlock"
 
 
