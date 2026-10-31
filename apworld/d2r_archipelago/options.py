@@ -526,9 +526,9 @@ class GemChecks(Toggle):
 
 
 class SetChecks(Toggle):
-    """Holding every piece of a Lord of Destruction set at once (worn or anywhere in your bags or stash)
-    is a check, one per set (32). Only filler goes on these. Set items you receive from Archipelago
-    don't count."""
+    """Holding every piece of a Lord of Destruction set at once (worn or anywhere in your bags or personal
+    stash, not the shared stash) is a check, one per set (32). Only filler goes on these. Set items you
+    receive from Archipelago don't count."""
     display_name = "Set Checks"
 
 
