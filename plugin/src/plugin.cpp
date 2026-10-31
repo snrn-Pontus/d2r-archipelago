@@ -1938,8 +1938,10 @@ auto IsEmblemOnCharacter(const D2RL::Items::ItemInfo* item) -> bool {
 // The Teleport Charm's seed: its marker and random bits.
 constexpr uint32_t TeleportCharmMarker = 0xB9000000U;
 
+// A unique small charm with the marker: a found item's seed can start with it too.
 auto IsTeleportCharm(const D2RL::Items::ItemInfo& item) -> bool {
-	return (item.itemSeed & CodexMarkerMask) == TeleportCharmMarker || (item.generationSeed & CodexMarkerMask) == TeleportCharmMarker;
+	return item.code == ap::loot::CodeFromText("cm1") && item.quality == D2RL::Items::Quality::Unique
+	    && ((item.itemSeed & CodexMarkerMask) == TeleportCharmMarker || (item.generationSeed & CodexMarkerMask) == TeleportCharmMarker);
 }
 
 auto DescribeItem(const D2RL::Items::ItemInfo& item) -> std::string {
