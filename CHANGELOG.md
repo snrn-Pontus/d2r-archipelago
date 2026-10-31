@@ -2,6 +2,15 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.14.3 - 2026-10-31
+
+Works with seeds from 0.14.0. The Warlock fixes need a new seed, and rerun `d2r-ap-setup` for the padlocks.
+
+- Playing a Warlock: picking Character Class warlock now puts Warlock skills in the pool on its own, without
+  Include Warlock. In tree mode a Warlock starts with its level-1 skills (Summon Goatman or Miasma Bolt on the
+  starting weapon) instead of any of its skills, and its locked skills show padlocks like the other
+  classes' (#172)
+
 ## 0.14.2 - 2026-10-17
 
 Works with seeds from 0.14.0; no need to rerun `d2r-ap-setup`.
