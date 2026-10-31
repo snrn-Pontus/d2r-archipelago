@@ -13,6 +13,8 @@ inline constexpr int64_t LocationBase = 2'420'000;
 inline constexpr int64_t EmpowermentItem = ItemBase + 900;
 // Tree mode: one unspent skill point.
 inline constexpr int64_t SkillPointItem  = ItemBase + 901;
+// A unique charm with +1 to Teleport (oskill).
+inline constexpr int64_t TeleportCharmItem = ItemBase + 902;
 // Act keys: KeyBase + act index (1 = Normal Act II ... 14 = Hell Act V).
 inline constexpr int64_t KeyBase         = ItemBase + 950;
 // Locks: LockBase + Lock (Waypoints + act for each act's waypoints).

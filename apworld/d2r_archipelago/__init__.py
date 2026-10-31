@@ -10,7 +10,7 @@ from . import client  # noqa: F401  (adds the Launcher button)
 from .data import (AREAS, CLASSES, GEMS, QUEST_ITEMS, QUESTS, RUNES, SETS, SIDE_AREAS, SKILL_FORMS, SKILL_ROLES, SKILL_SLOTS, SKILL_USERS,
                    SKILLS, SPECIAL_ITEMS, START_ATTACK_SKILLS, STARTER_SKILLS, SUPERUNIQUES, UBERS)
 from .ids import (ACTS, BASE_KILL_COUNTS, BASE_SET_FINDS, BASE_UNIQUE_FINDS, BASIC_LOOT, CUBE_ACCESS, DIFFICULTIES, EMPOWERMENT,
-                  FIRST_LEVEL_CHECK, KEY_NAMES, LEVEL_CAPS, LOOT, LOCKS, MERCHANT_ACCESS, SKILL_POINT, TOWN_PORTAL_ACCESS, TRAPS,
+                  FIRST_LEVEL_CHECK, KEY_NAMES, LEVEL_CAPS, LOOT, LOCKS, MERCHANT_ACCESS, SKILL_POINT, TELEPORT_CHARM, TOWN_PORTAL_ACCESS, TRAPS,
                   UNIQUE_LOOT, WAYPOINT_LOCK_ACTS, act_key_name, area_location_name, cow_kill_check, cow_location_name, find_count_location_name,
                   find_location_name, item_name_to_id, kill_location_name, level_location_name, location_name_to_id,
                   quest_item_location_name, quest_location_name, scaled_counts, set_location_name, shop_location_name,
@@ -370,7 +370,7 @@ class D2RWorld(World):
             # The lock is on but no check in this seed waits for it, so it can go anywhere, filler-only
             # locations included, instead of taking a spot a skill could have.
             classification = ItemClassification.filler
-        elif name in LOCKS:
+        elif name in LOCKS or name == TELEPORT_CHARM:
             classification = ItemClassification.useful
         elif name in TRAPS:
             classification = ItemClassification.trap
@@ -410,6 +410,14 @@ class D2RWorld(World):
         locks = [self.create_item(name) for name in self.lock_items()]
         keys += [item for item in locks if item.classification != ItemClassification.filler]
         idle = [item for item in locks if item.classification == ItemClassification.filler]
+        charm = self.options.teleport_charm
+        if charm == charm.option_start:
+            self.multiworld.push_precollected(self.create_item(TELEPORT_CHARM))
+        elif charm in (charm.option_early, charm.option_anywhere):
+            # Useful, so it takes a location that isn't filler-only, like the keys.
+            keys.append(self.create_item(TELEPORT_CHARM))
+            if charm == charm.option_early:
+                self.multiworld.local_early_items[self.player][TELEPORT_CHARM] = 1
         unfilled = self.multiworld.get_unfilled_locations(self.player)
         # Keys, skills and empowerments can't go on filler-only locations.
         fillable = sum(1 for location in unfilled if location.progress_type != LocationProgressType.EXCLUDED)

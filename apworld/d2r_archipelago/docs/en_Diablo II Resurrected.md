@@ -219,6 +219,10 @@ scrolls, perfect gems and runes, e.g. `{"Full Rejuvenation Potion": 3, "Ber Rune
 character once, the first time it plays the seed, and send no checks. For Archipelago items (skills, locks,
 keys) use `start_inventory`.
 
+`teleport_charm` adds a **Teleport Charm**: a unique small charm with +1 to Teleport that any class can use
+from its inventory (from level 6, except a Sorceress). `start` gives it to you at once, `early` puts it in one
+of your own first checks, and `anywhere` puts it in the pool. If it's lost or sold, you get a new one.
+
 ## What does another world's item look like in Diablo II?
 
 Nothing drops. When you complete a check, a line at the top of the screen tells you what you sent and to whom.

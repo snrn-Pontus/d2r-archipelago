@@ -221,6 +221,12 @@ auto ShuffleRunewords(const std::vector<Table*>& banks, std::mt19937& random, in
 // received skills to it when it creates the charm.
 void AddCodexUnique(Table& uniques, uint32_t record);
 
+// The Teleport Charm item's unique small charm, added after the Codex the same
+// way; the plugin gives it +1 to Teleport (oskill) when it creates it.
+inline constexpr char TeleportCharmName[] = "Archipelago Teleport Charm";
+inline constexpr uint32_t TeleportSkill = 54;
+void AddTeleportCharmUnique(Table& uniques, uint32_t record);
+
 // Each act's potion seller and blacksmith, by their misc.txt column names.
 inline constexpr const char* PotionSellers[] = { "Akara", "Lysander", "Ormus", "Jamella", "Malah" };
 inline constexpr const char* Blacksmiths[] = { "Charsi", "Fara", "Hratli", "Halbu", "Larzuk" };

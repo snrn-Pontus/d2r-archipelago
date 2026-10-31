@@ -919,32 +919,46 @@ auto TuneMainPathSuperUniques(Table& monstats, const Table& before, int strength
 	return changed;
 }
 
-void AddCodexUnique(Table& uniques, uint32_t record) {
+namespace {
+
+// A unique small charm named `name` that never drops, with a light radius of 1
+// as its only property (the plugin adds the rest when it creates the charm).
+void AddCharmUnique(Table& uniques, const std::string& name, uint32_t record) {
 	const int index = uniques.Column("index");
 	if (index < 0) {
 		return;
 	}
 	for (size_t row = 0; row < uniques.Rows().size(); ++row) {
-		if (uniques.Cell(row, index) == "Archipelago Codex") {
+		if (uniques.Cell(row, index) == name) {
 			return;
 		}
 	}
 	const std::pair<const char*, std::string> values[] = {
-		{ "index", "Archipelago Codex" }, { "*ID", std::to_string(record) }, { "version", "100" }, { "spawnable", "0" }, { "rarity", "1" },
+		{ "index", name }, { "*ID", std::to_string(record) }, { "version", "100" }, { "spawnable", "0" }, { "rarity", "1" },
 		{ "lvl", "1" }, { "lvl req", "1" }, { "code", "cm1" }, { "*ItemName", "charm" }, { "cost mult", "1" }, { "cost add", "0" },
 		{ "dropsound", "item_gem" }, { "dropsfxframe", "12" }, { "usesound", "item_gem" }, { "prop1", "light" }, { "min1", "1" }, { "max1", "1" },
 		{ "*eol", "0" },
 	};
 	uniques.Rows().emplace_back();
 	const size_t row = uniques.Rows().size() - 1;
-	for (const auto& [name, value] : values) {
-		uniques.Set(row, uniques.Column(name), value);
+	for (const auto& [column, value] : values) {
+		uniques.Set(row, uniques.Column(column), value);
 	}
 	// Pad the row to the header width so every column is present.
 	const int last = uniques.Column("*eol");
 	if (last >= 0 && uniques.Rows()[row].size() < static_cast<size_t>(last) + 1) {
 		uniques.Rows()[row].resize(static_cast<size_t>(last) + 1);
 	}
+}
+
+} // namespace
+
+void AddCodexUnique(Table& uniques, uint32_t record) {
+	AddCharmUnique(uniques, "Archipelago Codex", record);
+}
+
+void AddTeleportCharmUnique(Table& uniques, uint32_t record) {
+	AddCharmUnique(uniques, TeleportCharmName, record);
 }
 
 auto AddShopParcels(Table& misc, int pricePercent, ShopVendor vendorChoice) -> int {

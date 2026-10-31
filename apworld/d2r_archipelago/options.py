@@ -1058,6 +1058,19 @@ class FreeMercRevive(Toggle):
     display_name = "Free Mercenary Revive"
 
 
+class TeleportCharm(Choice):
+    """A Teleport Charm: a unique small charm with +1 to Teleport, for any class (from level 6 for classes other
+    than the Sorceress). It works from your inventory, and you get a new one if you lose it.
+    off: none. start: you begin with it. early: it's in one of your own first checks. anywhere: it's in the
+    item pool like any useful item."""
+    display_name = "Teleport Charm"
+    option_off = 0
+    option_start = 1
+    option_early = 2
+    option_anywhere = 3
+    default = 0
+
+
 class StartingGold(Range):
     """Gold your character gets once, the first time it plays the seed. At most 10,000, what a level 1
     character can carry."""
@@ -1272,6 +1285,7 @@ class D2ROptions(PerGameCommonOptions):
     codex_empowerments: CodexEmpowerments
     boss_quests_give_uniques: BossQuestsGiveUniques
     boss_reward_type: BossRewardType
+    teleport_charm: TeleportCharm
     starting_gold: StartingGold
     starting_items: StartingItems
     basic_loot_weight: BasicLootWeight
@@ -1362,7 +1376,7 @@ OPTION_GROUPS = [
                             GoldRewardPerLevel, ExperienceRewardPercent, RewardLevelBelow, RewardLevelAbove, RareJewelChance,
                             HighRuneCurve, ShrinePool],
                 start_collapsed=True),
-    OptionGroup("Starting Gold and Items", [StartingGold, StartingItems], start_collapsed=True),
+    OptionGroup("Starting Gold and Items", [TeleportCharm, StartingGold, StartingItems], start_collapsed=True),
     OptionGroup("Traps", [TrapPercentage, JunkBackpackWeight, AmbushWeight, PoisonCloudWeight, FirestormWeight, ManaDrainWeight,
                           TaxCollectorWeight, MercenaryDownWeight, TrapsWaitForTown, AmbushSize, AmbushMonsters, TaxCollectorGold,
                           JunkBackpackSize], start_collapsed=True),
