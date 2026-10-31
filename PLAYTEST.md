@@ -789,9 +789,14 @@ Any seed. Send each with `/send`, standing outside town for the traps.
 - [ ] `teleport_charm: early`: the charm is in one of the first few checks (Den of Evil, Blood Moor areas).
 - [x] On a Warlock with Skill Tree Shuffle (0.15.1, 2026-10-31) the charm arrived and worked, but asked level
       24: an oskill asks its skill's level requirement, +6 for another class, and tree mode kept Teleport's 18.
-- [ ] Teleport Charm level (#182), tree mode (Skill Tree Shuffle or `skill_mode: tree`), rerun `d2r-ap-setup`:
-      the charm asks level 6 of a non-Sorceress and works from 6. Where Teleport sits in a tree, it takes
-      points from level 1 once unlocked. In Codex mode it was 6 already.
+- [x] Teleport Charm level (#182), tree mode (Skill Tree Shuffle or `skill_mode: tree`), rerun `d2r-ap-setup`:
+      the charm asks level 6 of a non-Sorceress and works from 6 (Warlock, 0.15.2, 2026-10-31). Where Teleport
+      sits in a tree, it takes points from level 1 once unlocked. In Codex mode it was 6 already.
+- [ ] Item names (#184), rerun `d2r-ap-setup`: the Teleport Charm is named "Archipelago Teleport Charm", not
+      "An Evil Force" (seen 2026-10-31: its string id was another strings file's). Also check the Codex charm
+      ("Archipelago Codex"), a shop Parcel, a Scroll of Prophecy, the Emblem and the Writ of Absolution, and
+      that the game's own texts near those ids still read right (ui.json's "Learn More", the loot filter's
+      controller help, the Chronicle reward title).
 
 - [ ] Switching slots (#66): connect to another player's slot of the same seed by mistake, get an item or
       two, then `ap-connect` to your own slot that has received nothing yet. Nothing from the other slot
