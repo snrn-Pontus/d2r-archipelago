@@ -2,6 +2,13 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.15.3 - 2026-10-31
+
+Works with seeds from 0.15.0; rerun `d2r-ap-setup` (New Seed does it) for the names.
+
+- The Teleport Charm and the Codex show their names instead of "An Evil Force", and a few of the game's own
+  texts that clashed with them (like "Learn More") read right again (#184)
+
 ## 0.15.2 - 2026-10-31
 
 Works with seeds from 0.15.0. For the fix, make a new seed and rerun `d2r-ap-setup`.
