@@ -2,6 +2,14 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.14.4 - 2026-10-31
+
+Works with seeds from 0.14.0. For a Warlock in the shuffle, make a new seed and rerun `d2r-ap-setup`.
+
+- Skill Tree Shuffle deals the Warlock in when Include Warlock is on (or your Character Class is warlock):
+  Warlock skills can land in any class's tree, and the Warlock's tree gets other classes' skills. Play
+  these seeds on a Reign of the Warlock character. Without Include Warlock, the shuffle is as before (#174)
+
 ## 0.14.3 - 2026-10-31
 
 Works with seeds from 0.14.0. The Warlock fixes need a new seed, and rerun `d2r-ap-setup` for the padlocks.
