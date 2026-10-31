@@ -2,6 +2,13 @@
 
 What changed for players in each release. The numbers are GitHub issues.
 
+## 0.14.5 - 2026-10-31
+
+Works with seeds from 0.14.0; the fix applies to new seeds.
+
+- Skill Tree Shuffle keeps Mirrored Blades, Cleave and Bind Demon in the Warlock's tree: Mirrored Blades
+  doesn't work for other classes, and the other two are built the same way (#176)
+
 ## 0.14.4 - 2026-10-31
 
 Works with seeds from 0.14.0. For a Warlock in the shuffle, make a new seed and rerun `d2r-ap-setup`.
