@@ -275,6 +275,7 @@ auto ReadSlotData(const json& data) -> SlotData {
 		}
 	}
 	slots.randomizer.treeMode = Get(randomizer, "tree_mode", false);
+	slots.randomizer.teleportCharm = Get(randomizer, "teleport_charm", false);
 	const json start = randomizer.value("start_skill", json());
 	if (start.is_object()) {
 		slots.randomizer.startClass = Get(start, "class", std::string());

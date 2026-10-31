@@ -337,9 +337,9 @@ Bishibosh holds Telekinesis, Dark Wood a Skill Point, the Scroll of Inifuss Fana
       Warlock (setup tested 2026-10-31: 174 moves in RotW, 32 panels without arrows, the Warlock's icon sheet
       rebuilt; Teeth came out as the starting skill). In game: the Warlock's tree holds other classes'
       skills with the right icons and padlocks and no arrows, and its starting weapon skill works.
-- [ ] Other classes' skills on a Warlock (#174): cast a few that came from each class (a bow or javelin
-      skill, a curse, a summon, a warcry, a martial art if one landed). Do they animate and hit? A skill
-      that fails is engine-tied to its class: add it to `ENGINE_CLASS_SKILLS` in `tools/gen_data.py`.
+- [x] Other classes' skills on a Warlock (#174), 0.15.1 seed on a Reign of the Warlock Warlock (2026-10-31):
+      Spirit of Barbs, Impale, Holy Shock, Poison Javelin, Amplify Damage, Poison Creeper (Plague Poppy), Bash,
+      Howl and Terror all work, and so does Miasma Bolt. Martial arts, bows and traps weren't in that tree.
 - [x] Warlock skills on another class (#174): a Reign of the Warlock Sorceress on seed 333 (2026-10-31).
       Summon Goatman, Summon Tainted, Miasma Bolt, Miasma Chains, Blood Boil, Apocalypse, Hex Siphon, Hex Purge
       and Sigil Lethargy work. Mirrored Blades doesn't, so SQ sequences now stay with their class (#176):
@@ -776,6 +776,9 @@ Any seed. Send each with `/send`, standing outside town for the traps.
       (a grimoire, Sling, Opalvein, Entropy Locket, Hellwarden's Will) or Bane's/Horazon's pieces, and they
       arrive with their names and stats (the log says "created ... as record ..." with the record asked for).
       A Lord of Destruction character never gets one.
+      2026-10-31 (0.15.1, level 60, `item_level_requirements: false`): one Rewards press gave Horazon's Legacy
+      (record 138 asked and created), with no level requirement, and it works. Still open: a Warlock pack
+      unique, and the Lord of Destruction side.
 
 - [ ] Teleport Charm (#178), `teleport_charm: start`, rerun `d2r-ap-setup`: on joining, the chat says "your
       Teleport Charm is in your inventory" and a unique small charm "Archipelago Teleport Charm" with +1 to
@@ -784,6 +787,11 @@ Any seed. Send each with `/send`, standing outside town for the traps.
       and you get a new one within seconds. A Sorceress gets it at level 1. Try a Lord of Destruction character
       too.
 - [ ] `teleport_charm: early`: the charm is in one of the first few checks (Den of Evil, Blood Moor areas).
+- [x] On a Warlock with Skill Tree Shuffle (0.15.1, 2026-10-31) the charm arrived and worked, but asked level
+      24: an oskill asks its skill's level requirement, +6 for another class, and tree mode kept Teleport's 18.
+- [ ] Teleport Charm level (#182), tree mode (Skill Tree Shuffle or `skill_mode: tree`), rerun `d2r-ap-setup`:
+      the charm asks level 6 of a non-Sorceress and works from 6. Where Teleport sits in a tree, it takes
+      points from level 1 once unlocked. In Codex mode it was 6 already.
 
 - [ ] Switching slots (#66): connect to another player's slot of the same seed by mistake, get an item or
       two, then `ap-connect` to your own slot that has received nothing yet. Nothing from the other slot

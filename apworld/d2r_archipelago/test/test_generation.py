@@ -157,6 +157,7 @@ class TestNoTeleportCharmByDefault(D2RTestBase):
     def test_no_charm(self) -> None:
         names = [item.name for item in [*self.multiworld.itempool, *self.multiworld.precollected_items[self.player]]]
         self.assertNotIn("Teleport Charm", names)
+        self.assertFalse(self.world.fill_slot_data()["randomizer"]["teleport_charm"])
 
 
 class TestTeleportCharmAtStart(D2RTestBase):
@@ -165,6 +166,9 @@ class TestTeleportCharmAtStart(D2RTestBase):
     def test_charm_is_a_starting_item(self) -> None:
         self.assertIn("Teleport Charm", [item.name for item in self.multiworld.precollected_items[self.player]])
         self.assertNotIn("Teleport Charm", [item.name for item in self.multiworld.itempool])
+
+    def test_slot_data_asks_setup_to_clear_teleports_level(self) -> None:
+        self.assertTrue(self.world.fill_slot_data()["randomizer"]["teleport_charm"])
 
 
 class TestTeleportCharmEarly(D2RTestBase):

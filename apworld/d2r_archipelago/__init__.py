@@ -803,6 +803,8 @@ class D2RWorld(World):
                 "skill_tree": sorted([skill, slot] for skill, slot in self.skill_tree.items() if skill != slot),
                 # Tree mode keeps the trees' level requirements (the Codex needs them at 0).
                 "tree_mode": self.tree_mode,
+                # With a Teleport Charm, Teleport's level requirement goes to 0 (the charm's oskill asks it, +6).
+                "teleport_charm": self.options.teleport_charm != self.options.teleport_charm.option_off,
                 # Tree mode: the class's starting weapon gives +1 to this skill (charstats StartSkill); -1 clears the
                 # vanilla one, which may sit in another class's tree or be locked.
                 "start_skill": {"class": self.class_name(), "skill": self.start_skill() or -1} if self.tree_mode else None,

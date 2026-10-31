@@ -81,7 +81,7 @@ auto Settings::Any() const -> bool {
 	return monsters != Shuffle::Off || superUniques != Shuffle::Off || runewords || xpPercent != PerDifficulty { 100, 100, 100 } || !itemLevelRequirements
 	    || !itemStatRequirements || monsterDensity != PerDifficulty { 100, 100, 100 } || championPacks != 100 || superUniqueMinions != 100
 	    || betterDrops != 100 || betterMagic != 100 || deathXpPenalty != 100 || parcelPrice != 100 || prophecyPrice != 100
-	    || shopVendor != ShopVendor::PotionSeller || freeMercRevive || SuperUniqueCopies() || !skillTree.empty() || treeMode;
+	    || shopVendor != ShopVendor::PotionSeller || freeMercRevive || SuperUniqueCopies() || !skillTree.empty() || treeMode || teleportCharm;
 }
 
 auto StampChangesPrices(const std::string& stamp) -> bool {
@@ -146,7 +146,7 @@ auto Settings::Stamp() const -> std::string {
 	// The count, so a mod written for an older superunique list doesn't
 	// match: the plugin finds each copy by its distance from the end.
 	return stamp + (superUniqueChecks ? " superunique_checks=" + std::to_string(std::size(data::SuperUniques)) : "")
-	     + (skillTree.empty() ? "" : " skill_tree=" + TreeStamp(skillTree)) + (treeMode ? " tree_mode=1" : "")
+	     + (skillTree.empty() ? "" : " skill_tree=" + TreeStamp(skillTree)) + (treeMode ? " tree_mode=1" : "") + (teleportCharm ? " teleport_charm=1" : "")
 	     + (startClass.empty() ? "" : " start_skill=" + startClass + ":" + std::to_string(startSkill));
 }
 
@@ -172,6 +172,21 @@ auto BlockClassSkills(Table& skills, bool keepLevels) -> int {
 		++locked;
 	}
 	return locked;
+}
+
+auto ClearSkillLevel(Table& skills, std::string_view skill) -> bool {
+	const int name = skills.Column("skill");
+	const int reqlevel = skills.Column("reqlevel");
+	if (name < 0 || reqlevel < 0) {
+		return false;
+	}
+	for (size_t row = 0; row < skills.Rows().size(); ++row) {
+		if (skills.Cell(row, name) == skill) {
+			skills.Set(row, reqlevel, "0");
+			return true;
+		}
+	}
+	return false;
 }
 
 // A class skill's tree position, read from skills.txt and skilldesc.txt.
